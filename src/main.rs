@@ -37,12 +37,6 @@ fn main() {
             .await
             .expect("Failed to request adapter!");
 
-        fn required_limits(adapter: &wgpu::Adapter) -> wgpu::Limits {
-            // Use the texture resolution limits from the adapter
-            // to support images the size of the surface
-            wgpu::Limits::default().using_resolution(adapter.limits())
-        }
-
         let required_features = wgpu::Features::empty();
         let optional_features = wgpu::Features::all();
         let (device, queue) = {
@@ -51,7 +45,8 @@ fn main() {
                 .request_device(
                     &wgpu::DeviceDescriptor {
                         features: (optional_features & adapter.features()) | required_features,
-                        limits: required_limits(&adapter),
+                        // Use the texture resolution limits from the adapter to support images the size of the surface
+                        limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                         label: Some("Render Device"),
                     },
                     None,
