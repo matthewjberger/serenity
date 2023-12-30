@@ -83,10 +83,10 @@ fn main() {
     let mut gui_renderer =
         egui_wgpu::Renderer::new(&device, surface_config.format, Some(DEPTH_FORMAT), 1);
 
-    let gltf_bytes = std::fs::read(&default_gltf_path).expect("Failed to load default gltf file!");
+    let gltf_bytes = std::fs::read(default_gltf_path).expect("Failed to load default gltf file!");
     let _gltf = gltf::Gltf::from_slice(&gltf_bytes).expect("Failed to load GLTF!");
-    let (gltf_document, _buffers, images) =
-        gltf::import(&default_gltf_path).expect("Failed to load GLTF!");
+    let (gltf_document, _buffers, _images) =
+        gltf::import(default_gltf_path).expect("Failed to load GLTF!");
 
     let (vertices, indices) = geometry();
 
@@ -323,7 +323,7 @@ fn main() {
         let gui_captured_event = match &event {
             winit::event::Event::WindowEvent { event, window_id } => {
                 if *window_id == window.id() {
-                    gui_state.on_event(&gui_context, &event).consumed
+                    gui_state.on_event(&gui_context, event).consumed
                 } else {
                     false
                 }
@@ -417,7 +417,7 @@ fn main() {
 
                         let id = ui.make_persistent_id(ui.next_auto_id());
                         egui::ScrollArea::both().id_source(id).show(ui, |ui| {
-                            let image = egui::Image::from_bytes("bytes://texture", &*texture_bytes);
+                            let image = egui::Image::from_bytes("bytes://texture", texture_bytes);
                             ui.add(image);
                         });
                     });
@@ -596,14 +596,14 @@ fn draw_gltf_node_ui(ui: &mut egui::Ui, node: gltf::Node<'_>) {
 
     let is_leaf = node.children().len() == 0;
     if is_leaf {
-        node_ui(ui, &name, true);
+        node_ui(ui, name, true);
     }
 
     node.children().for_each(|child| {
         let id = ui.make_persistent_id(ui.next_auto_id());
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
             .show_header(ui, |ui| {
-                node_ui(ui, &name, false);
+                node_ui(ui, name, false);
             })
             .body(|ui| {
                 draw_gltf_node_ui(ui, child);
