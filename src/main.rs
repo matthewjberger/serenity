@@ -1,10 +1,8 @@
+use nalgebra_glm as glm;
+
 fn main() {
-    let (title, width, height, default_gltf_path) = (
-        "Standalone Winit/Wgpu Example",
-        800,
-        600,
-        "./assets/DamagedHelmet.glb",
-    );
+    let (title, width, height, default_gltf_path) =
+        ("Looking Glass", 1920, 1080, "./assets/DamagedHelmet.glb");
 
     let event_loop = winit::event_loop::EventLoop::new();
 
@@ -105,7 +103,96 @@ fn main() {
         },
     );
 
-    let pipeline = create_pipeline(&device, surface_format);
+    let uniform_buffer = wgpu::util::DeviceExt::create_buffer_init(
+        &device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[Uniform::default()]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        },
+    );
+
+    let uniform_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("uniform_bind_group_layout"),
+        });
+
+    let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &uniform_bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: uniform_buffer.as_entire_binding(),
+        }],
+        label: Some("uniform_bind_group"),
+    });
+
+    let pipeline = {
+        let device = &device;
+
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(SHADER_SOURCE)),
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[&uniform_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: "vertex_main",
+                buffers: &[{
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<Vertex>() as _,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &Vertex::attributes(),
+                    }
+                }],
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                strip_index_format: Some(wgpu::IndexFormat::Uint16),
+                front_face: wgpu::FrontFace::Cw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+                unclipped_depth: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: "fragment_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
+        })
+    };
+
+    let mut model_matrix = glm::Mat4::identity();
 
     event_loop.run(move |event, _, control_flow| {
         let gui_captured_event = match &event {
@@ -163,22 +250,24 @@ fn main() {
                     .show(&gui_context, |ui| {
                         ui.collapsing("Scenes", |ui| {
                             gltf.scenes().for_each(|gltf_scene| {
-                                {
-                                    let name = gltf_scene.name().unwrap_or("Unnamed Scene");
-                                    let id = ui.make_persistent_id(ui.next_auto_id());
-                                    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
-                                        .show_header(ui, |ui| {
-                                            let response = ui.selectable_label(false, format!("🎬 {name}"));
-                                            if response.clicked() {
-                                                println!("Scene selected: {name}");
-                                            }
-                                        })
-                                        .body(|ui| {
-                                            gltf_scene.nodes().for_each(|node| {
-                                                draw_gltf_node_ui(ui, node);
-                                            });
-                                        });
-                                };
+                                let name = gltf_scene.name().unwrap_or("Unnamed Scene");
+                                let id = ui.make_persistent_id(ui.next_auto_id());
+                                egui::collapsing_header::CollapsingState::load_with_default_open(
+                                    ui.ctx(),
+                                    id,
+                                    true,
+                                )
+                                .show_header(ui, |ui| {
+                                    let response = ui.selectable_label(false, format!("🎬 {name}"));
+                                    if response.clicked() {
+                                        println!("Scene selected: {name}");
+                                    }
+                                })
+                                .body(|ui| {
+                                    gltf_scene.nodes().for_each(|node| {
+                                        draw_gltf_node_ui(ui, node);
+                                    });
+                                });
                             });
                         });
 
@@ -186,22 +275,20 @@ fn main() {
 
                         ui.collapsing("Meshes", |ui| {
                             gltf.meshes().for_each(|gltf_mesh| {
-                                {
-                                    let name = gltf_mesh.name().unwrap_or("Unnamed Mesh");
-                                    let response = ui.selectable_label(false, format!("🔶{name}"));
-                                    if response.clicked() {
-                                        println!("Mesh selected: {name}");
-                                    }
-                                };
+                                let name = gltf_mesh.name().unwrap_or("Unnamed Mesh");
+                                let response = ui.selectable_label(false, format!("🔶{name}"));
+                                if response.clicked() {
+                                    println!("Mesh selected: {name}");
+                                }
                             });
                         });
                     });
 
-                egui::SidePanel::right("right_panel")
-                    .resizable(true)
-                    .show(&gui_context, |ui| {
-                        ui.heading("Inspector");
-                    });
+                // egui::SidePanel::right("right_panel")
+                //     .resizable(true)
+                //     .show(&gui_context, |ui| {
+                //         ui.heading("Inspector");
+                //     });
 
                 let egui::FullOutput {
                     textures_delta,
@@ -219,7 +306,24 @@ fn main() {
                     }
                 };
 
-                // TODO: Update the game here
+                let aspect_ratio = width as f32 / std::cmp::max(height, 1) as f32;
+                let projection =
+                    glm::perspective_lh_zo(aspect_ratio, 80_f32.to_radians(), 0.1, 1000.0);
+                let view = glm::look_at_lh(
+                    &glm::vec3(0.0, 0.0, 3.0),
+                    &glm::vec3(0.0, 0.0, 0.0),
+                    &glm::Vec3::y(),
+                );
+
+                model_matrix = glm::rotate(&model_matrix, 1_f32.to_radians(), &glm::Vec3::y());
+
+                queue.write_buffer(
+                    &uniform_buffer,
+                    0,
+                    bytemuck::cast_slice(&[Uniform {
+                        mvp: projection * view * model_matrix,
+                    }]),
+                );
 
                 let surface_texture = surface
                     .get_current_texture()
@@ -274,8 +378,8 @@ fn main() {
                         depth_stencil_attachment: None,
                     });
 
-
                     render_pass.set_pipeline(&pipeline);
+                    render_pass.set_bind_group(0, &uniform_bind_group, &[]);
                     render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                     render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                     render_pass.draw_indexed(0..(indices.len() as _), 0, 0..1);
@@ -320,12 +424,10 @@ fn main() {
                         width,
                         height,
                     }) => {
-                        if width != 0 && height != 0 {
-                            println!("Resizing renderer surface to: ({width}, {height})");
-                            surface_config.width = width;
-                            surface_config.height = height;
-                            surface.configure(&device, &surface_config);
-                        }
+                        println!("Resizing renderer surface to: ({width}, {height})");
+                        surface_config.width = width;
+                        surface_config.height = height;
+                        surface.configure(&device, &surface_config);
                     }
                     _ => {}
                 }
@@ -369,87 +471,6 @@ fn node_ui(ui: &mut egui::Ui, name: &str, is_leaf: bool) {
     });
 }
 
-fn create_pipeline(
-    device: &wgpu::Device,
-    surface_format: wgpu::TextureFormat,
-) -> wgpu::RenderPipeline {
-    const SHADER_SOURCE: &str = "
-struct VertexInput {
-    @location(0) position: vec4<f32>,
-    @location(1) color: vec4<f32>,
-};
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-};
-
-@vertex
-fn vertex_main(vert: VertexInput) -> VertexOutput {
-    var out: VertexOutput;
-    out.color = vert.color;
-    out.position = vert.position;
-    return out;
-};
-
-@fragment
-fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.color);
-}
-";
-
-    let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: None,
-        source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(SHADER_SOURCE)),
-    });
-
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[],
-        push_constant_ranges: &[],
-    });
-
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: None,
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader_module,
-            entry_point: "vertex_main",
-            buffers: &[{
-                wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Vertex>() as _,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &Vertex::attributes(),
-                }
-            }],
-        },
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleStrip,
-            strip_index_format: Some(wgpu::IndexFormat::Uint16),
-            front_face: wgpu::FrontFace::Cw,
-            cull_mode: None,
-            polygon_mode: wgpu::PolygonMode::Fill,
-            conservative: false,
-            unclipped_depth: false,
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState {
-            count: 1,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader_module,
-            entry_point: "fragment_main",
-            targets: &[Some(wgpu::ColorTargetState {
-                format: surface_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        multiview: None,
-    })
-}
-
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
@@ -484,3 +505,40 @@ fn triangle_geometry() -> (Vec<Vertex>, Vec<u16>) {
         vec![0, 1, 2],
     )
 }
+
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct Uniform {
+    mvp: glm::Mat4,
+}
+
+const SHADER_SOURCE: &str = "
+struct Uniform {
+    mvp: mat4x4<f32>,
+};
+
+@group(0) @binding(0)
+var<uniform> ubo: Uniform;
+
+struct VertexInput {
+    @location(0) position: vec4<f32>,
+    @location(1) color: vec4<f32>,
+};
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
+
+@vertex
+fn vertex_main(vert: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.color = vert.color;
+    out.position = ubo.mvp * vert.position;
+    return out;
+};
+
+@fragment
+fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(in.color);
+}
+";
