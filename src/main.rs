@@ -78,11 +78,15 @@ fn main() {
     let gui_context = egui::Context::default();
     gui_context.set_pixels_per_point(window.scale_factor() as f32);
 
+    egui_extras::install_image_loaders(&gui_context);
+
     let mut gui_renderer =
         egui_wgpu::Renderer::new(&device, surface_config.format, Some(DEPTH_FORMAT), 1);
 
     let gltf_bytes = std::fs::read(&default_gltf_path).expect("Failed to load default gltf file!");
-    let mut gltf = gltf::Gltf::from_slice(&gltf_bytes).expect("Failed to load GLTF!");
+    let _gltf = gltf::Gltf::from_slice(&gltf_bytes).expect("Failed to load GLTF!");
+    let (gltf_document, _buffers, images) =
+        gltf::import(&default_gltf_path).expect("Failed to load GLTF!");
 
     let (vertices, indices) = geometry();
 
@@ -352,8 +356,7 @@ fn main() {
                                         match std::fs::read(&path) {
                                             Ok(bytes) => {
                                                 println!("Loaded gltf ({} bytes)", bytes.len());
-                                                gltf = gltf::Gltf::from_slice(&bytes)
-                                                    .expect("Failed to load GLTF!");
+                                                // TODO: load in the new gltf data
                                             }
                                             Err(error) => {
                                                 eprintln!("{error}");
@@ -369,8 +372,10 @@ fn main() {
                 egui::SidePanel::left("left_panel")
                     .resizable(true)
                     .show(&gui_context, |ui| {
+                        ui.heading("Gltf Explorer");
+
                         ui.collapsing("Scenes", |ui| {
-                            gltf.scenes().for_each(|gltf_scene| {
+                            gltf_document.scenes().for_each(|gltf_scene| {
                                 let name = gltf_scene.name().unwrap_or("Unnamed Scene");
                                 let id = ui.make_persistent_id(ui.next_auto_id());
                                 egui::collapsing_header::CollapsingState::load_with_default_open(
@@ -395,7 +400,7 @@ fn main() {
                         ui.separator();
 
                         ui.collapsing("Meshes", |ui| {
-                            gltf.meshes().for_each(|gltf_mesh| {
+                            gltf_document.meshes().for_each(|gltf_mesh| {
                                 let name = gltf_mesh.name().unwrap_or("Unnamed Mesh");
                                 let response = ui.selectable_label(false, format!("🔶{name}"));
                                 if response.clicked() {
@@ -405,11 +410,17 @@ fn main() {
                         });
                     });
 
-                // egui::SidePanel::right("right_panel")
-                //     .resizable(true)
-                //     .show(&gui_context, |ui| {
-                //         ui.heading("Inspector");
-                //     });
+                egui::SidePanel::right("right_panel")
+                    .resizable(true)
+                    .show(&gui_context, |ui| {
+                        ui.heading("Inspector");
+
+                        let id = ui.make_persistent_id(ui.next_auto_id());
+                        egui::ScrollArea::both().id_source(id).show(ui, |ui| {
+                            let image = egui::Image::from_bytes("bytes://texture", &*texture_bytes);
+                            ui.add(image);
+                        });
+                    });
 
                 let egui::FullOutput {
                     textures_delta,
