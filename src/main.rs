@@ -3,12 +3,12 @@ fn main() {
         "Standalone Winit/Wgpu Example",
         800,
         600,
-        "./assets/Cube.gltf",
+        "./assets/DamagedHelmet.glb",
     );
 
     let gltf_bytes = std::fs::read(&default_gltf_path).expect("Failed to load default gltf file!");
     println!("Loaded gltf ({} bytes)", gltf_bytes.len());
-    let gltf = gltf::Gltf::from_slice(&gltf_bytes).expect("Failed to load GLTF!");
+    let mut gltf = gltf::Gltf::from_slice(&gltf_bytes).expect("Failed to load GLTF!");
     // TODO: do something with this loaded gltf
 
     let event_loop = winit::event_loop::EventLoop::new();
@@ -129,9 +129,8 @@ fn main() {
                                         match std::fs::read(&path) {
                                             Ok(bytes) => {
                                                 println!("Loaded gltf ({} bytes)", bytes.len());
-                                                let _gltf = gltf::Gltf::from_slice(&bytes)
+                                                gltf = gltf::Gltf::from_slice(&bytes)
                                                     .expect("Failed to load GLTF!");
-                                                // TODO: do something with this loaded gltf
                                             }
                                             Err(error) => {
                                                 eprintln!("{error}");
