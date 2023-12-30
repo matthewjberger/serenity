@@ -143,7 +143,22 @@ fn main() {
                     .show(&gui_context, |ui| {
                         ui.collapsing("Scenes", |ui| {
                             gltf.scenes().for_each(|gltf_scene| {
-                                draw_scene_tree_ui(ui, gltf_scene);
+                                {
+                                    let name = gltf_scene.name().unwrap_or("Unnamed Scene");
+                                    let id = ui.make_persistent_id(ui.next_auto_id());
+                                    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+                                        .show_header(ui, |ui| {
+                                            let response = ui.selectable_label(false, format!("🎬 {name}"));
+                                            if response.clicked() {
+                                                println!("Scene selected: {name}");
+                                            }
+                                        })
+                                        .body(|ui| {
+                                            gltf_scene.nodes().for_each(|node| {
+                                                draw_gltf_node_ui(ui, node);
+                                            });
+                                        });
+                                };
                             });
                         });
 
@@ -151,7 +166,13 @@ fn main() {
 
                         ui.collapsing("Meshes", |ui| {
                             gltf.meshes().for_each(|gltf_mesh| {
-                                draw_mesh_ui(ui, gltf_mesh);
+                                {
+                                    let name = gltf_mesh.name().unwrap_or("Unnamed Mesh");
+                                    let response = ui.selectable_label(false, format!("🔶{name}"));
+                                    if response.clicked() {
+                                        println!("Mesh selected: {name}");
+                                    }
+                                };
                             });
                         });
                     });
@@ -291,27 +312,6 @@ fn main() {
     });
 }
 
-fn draw_scene_tree_ui<'a>(ui: &mut egui::Ui, scene: gltf::Scene<'a>) {
-    let name = scene.name().unwrap_or("Unnamed Scene");
-    let id = ui.make_persistent_id(ui.next_auto_id());
-    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
-        .show_header(ui, |ui| {
-            let response = ui.selectable_label(false, format!("🎬 {name}"));
-            if response.clicked() {
-                println!("Scene selected: {name}");
-            }
-        })
-        .body(|ui| {
-            draw_scene_ui(ui, scene);
-        });
-}
-
-fn draw_scene_ui(ui: &mut egui::Ui, gltf_scene: gltf::Scene<'_>) {
-    gltf_scene.nodes().for_each(|node| {
-        draw_gltf_node_ui(ui, node);
-    });
-}
-
 fn draw_gltf_node_ui(ui: &mut egui::Ui, node: gltf::Node<'_>) {
     let name = node.name().unwrap_or("Unnamed Node");
 
@@ -341,12 +341,4 @@ fn node_ui(ui: &mut egui::Ui, name: &str, is_leaf: bool) {
     response.context_menu(|ui| {
         ui.label("Shown on right-clicks");
     });
-}
-
-fn draw_mesh_ui<'a>(ui: &mut egui::Ui, mesh: gltf::Mesh<'a>) {
-    let name = mesh.name().unwrap_or("Unnamed Mesh");
-    let response = ui.selectable_label(false, format!("🔶{name}"));
-    if response.clicked() {
-        println!("Mesh selected: {name}");
-    }
 }
