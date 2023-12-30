@@ -216,6 +216,42 @@ fn main() {
         label: Some("texture_bind_group"),
     });
 
+    // Instancing
+    let num_instances_per_row: u32 = 10;
+    let instance_displacement: glm::Vec3 = glm::vec3(
+        num_instances_per_row as f32,
+        0.0,
+        num_instances_per_row as f32,
+    );
+    let instances = (0..num_instances_per_row)
+        .flat_map(|z| {
+            (0..num_instances_per_row).map(move |x| {
+                let position = glm::vec3(x as f32, 0.0, z as f32) - instance_displacement;
+
+                let rotation = if position.is_empty() {
+                    // this is needed so an object at (0, 0, 0) won't get scaled to zero
+                    // as Quaternions can effect scale if they're not created correctly
+                    glm::quat_angle_axis(0.0, &glm::Vec3::z())
+                } else {
+                    glm::quat_angle_axis(45_f32.to_degrees(), &position.normalize())
+                };
+                Instance { position, rotation }
+            })
+        })
+        .collect::<Vec<_>>();
+    let instance_data = instances
+        .iter()
+        .map(Instance::model_matrix)
+        .collect::<Vec<_>>();
+    let instance_buffer = wgpu::util::DeviceExt::create_buffer_init(
+        &device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&instance_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        },
+    );
+
     let pipeline = {
         let device = &device;
 
@@ -236,13 +272,10 @@ fn main() {
             vertex: wgpu::VertexState {
                 module: &shader_module,
                 entry_point: "vertex_main",
-                buffers: &[{
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<Vertex>() as _,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &Vertex::attributes(),
-                    }
-                }],
+                buffers: &[
+                    Vertex::description(&Vertex::attributes()),
+                    Instance::description(&Instance::attributes()),
+                ],
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
@@ -459,11 +492,16 @@ fn main() {
                     });
 
                     render_pass.set_pipeline(&pipeline);
+
                     render_pass.set_bind_group(0, &uniform_bind_group, &[]);
                     render_pass.set_bind_group(1, &texture_bind_group, &[]);
+
                     render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                    render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
+
                     render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                    render_pass.draw_indexed(0..(indices.len() as _), 0, 0..1);
+
+                    render_pass.draw_indexed(0..(indices.len() as _), 0, 0..(instances.len() as _));
 
                     gui_renderer.render(&mut render_pass, &paint_jobs, &screen_descriptor);
                 }
@@ -564,6 +602,14 @@ impl Vertex {
     pub fn attributes() -> Vec<wgpu::VertexAttribute> {
         wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x2].to_vec()
     }
+
+    pub fn description(attributes: &[wgpu::VertexAttribute]) -> wgpu::VertexBufferLayout<'_> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes,
+        }
+    }
 }
 
 fn geometry() -> (Vec<Vertex>, Vec<u16>) {
@@ -603,6 +649,13 @@ struct Uniform {
 }
 
 const SHADER_SOURCE: &str = "
+struct InstanceInput {
+    @location(5) model_matrix_0: vec4<f32>,
+    @location(6) model_matrix_1: vec4<f32>,
+    @location(7) model_matrix_2: vec4<f32>,
+    @location(8) model_matrix_3: vec4<f32>,
+};
+
 struct Uniform {
     mvp: mat4x4<f32>,
 };
@@ -622,11 +675,18 @@ struct VertexOutput {
 };
 
 @vertex
-fn vertex_main(vert: VertexInput) -> VertexOutput {
+fn vertex_main(vert: VertexInput, instance: InstanceInput) -> VertexOutput {
+    let model_matrix = mat4x4<f32>(
+        instance.model_matrix_0,
+        instance.model_matrix_1,
+        instance.model_matrix_2,
+        instance.model_matrix_3,
+    );
+
     var out: VertexOutput;
     out.color = vert.color;
     out.tex_coords = vert.tex_coords;
-    out.position = ubo.mvp * vert.position;
+    out.position = ubo.mvp * model_matrix * vert.position;
     return out;
 };
 
@@ -641,3 +701,36 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return mix(textureSample(t_diffuse, s_diffuse, in.tex_coords), in.color, 0.3);
 }
 ";
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Instance {
+    position: glm::Vec3,
+    rotation: glm::Quat,
+}
+
+impl Instance {
+    fn model_matrix(&self) -> glm::Mat4 {
+        glm::translation(&self.position) * glm::quat_to_mat4(&self.rotation)
+    }
+}
+
+impl Instance {
+    pub fn attributes() -> Vec<wgpu::VertexAttribute> {
+        wgpu::vertex_attr_array![
+            5 => Float32x4,
+            6 => Float32x4,
+            7 => Float32x4,
+            8 => Float32x4
+        ]
+        .to_vec()
+    }
+
+    pub fn description(attributes: &[wgpu::VertexAttribute]) -> wgpu::VertexBufferLayout<'_> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<glm::Mat4>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes,
+        }
+    }
+}
