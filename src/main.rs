@@ -78,9 +78,8 @@ fn main() {
     let gui_context = egui::Context::default();
     gui_context.set_pixels_per_point(window.scale_factor() as f32);
 
-    let depth_format = None;
     let mut gui_renderer =
-        egui_wgpu::Renderer::new(&device, surface_config.format, depth_format, 1);
+        egui_wgpu::Renderer::new(&device, surface_config.format, Some(DEPTH_FORMAT), 1);
 
     let gltf_bytes = std::fs::read(&default_gltf_path).expect("Failed to load default gltf file!");
     let mut gltf = gltf::Gltf::from_slice(&gltf_bytes).expect("Failed to load GLTF!");
@@ -252,6 +251,9 @@ fn main() {
         },
     );
 
+    let mut depth_texture_view =
+        create_depth_texture(&device, surface_config.width, surface_config.height);
+
     let pipeline = {
         let device = &device;
 
@@ -286,7 +288,13 @@ fn main() {
                 conservative: false,
                 unclipped_depth: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -488,7 +496,14 @@ fn main() {
                                 store: true,
                             },
                         })],
-                        depth_stencil_attachment: None,
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &depth_texture_view,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(1.0),
+                                store: true,
+                            }),
+                            stencil_ops: None,
+                        }),
                     });
 
                     render_pass.set_pipeline(&pipeline);
@@ -547,6 +562,12 @@ fn main() {
                         surface_config.width = width;
                         surface_config.height = height;
                         surface.configure(&device, &surface_config);
+
+                        depth_texture_view = create_depth_texture(
+                            &device,
+                            surface_config.width,
+                            surface_config.height,
+                        );
                     }
                     _ => {}
                 }
@@ -734,3 +755,25 @@ impl Instance {
         }
     }
 }
+
+pub fn create_depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
+    let texture = device.create_texture(
+        &(wgpu::TextureDescriptor {
+            label: Some("Depth Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        }),
+    );
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
