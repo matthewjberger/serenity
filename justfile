@@ -1,6 +1,6 @@
 set windows-shell := ["powershell.exe"]
 
-export RUST_LOG := "debug"
+export RUST_LOG := "info"
 export RUST_BACKTRACE := "1"
 
 @just:

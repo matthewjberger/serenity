@@ -1,6 +1,8 @@
 use nalgebra_glm as glm;
 
 fn main() {
+    env_logger::init();
+
     let (title, width, height, default_gltf_path) =
         ("Looking Glass", 1920, 1080, "./assets/DamagedHelmet.glb");
 
@@ -83,7 +85,7 @@ fn main() {
     let gltf_bytes = std::fs::read(&default_gltf_path).expect("Failed to load default gltf file!");
     let mut gltf = gltf::Gltf::from_slice(&gltf_bytes).expect("Failed to load GLTF!");
 
-    let (vertices, indices) = triangle_geometry();
+    let (vertices, indices) = geometry();
 
     let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
         &device,
@@ -93,7 +95,6 @@ fn main() {
             usage: wgpu::BufferUsages::VERTEX,
         },
     );
-
     let index_buffer = wgpu::util::DeviceExt::create_buffer_init(
         &device,
         &wgpu::util::BufferInitDescriptor {
@@ -102,7 +103,6 @@ fn main() {
             usage: wgpu::BufferUsages::INDEX,
         },
     );
-
     let uniform_buffer = wgpu::util::DeviceExt::create_buffer_init(
         &device,
         &wgpu::util::BufferInitDescriptor {
@@ -111,7 +111,6 @@ fn main() {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         },
     );
-
     let uniform_bind_group_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -126,7 +125,6 @@ fn main() {
             }],
             label: Some("uniform_bind_group_layout"),
         });
-
     let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &uniform_bind_group_layout,
         entries: &[wgpu::BindGroupEntry {
@@ -134,6 +132,88 @@ fn main() {
             resource: uniform_buffer.as_entire_binding(),
         }],
         label: Some("uniform_bind_group"),
+    });
+
+    use image::GenericImageView;
+    let texture_bytes = include_bytes!("../assets/textures/planks.jpg");
+    let image = image::load_from_memory(texture_bytes).expect("Failed to load texture!");
+    let rgba = image.to_rgba8();
+    let dimensions = image.dimensions();
+    let size = wgpu::Extent3d {
+        width: dimensions.0,
+        height: dimensions.1,
+        depth_or_array_layers: 1,
+    };
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::ImageCopyTexture {
+            aspect: wgpu::TextureAspect::All,
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+        },
+        &rgba,
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * dimensions.0),
+            rows_per_image: Some(dimensions.1),
+        },
+        size,
+    );
+    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::FilterMode::Nearest,
+        ..Default::default()
+    });
+    let texture_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("texture_bind_group_layout"),
+        });
+    let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &texture_bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(&texture_sampler),
+            },
+        ],
+        label: Some("texture_bind_group"),
     });
 
     let pipeline = {
@@ -146,7 +226,7 @@ fn main() {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&uniform_bind_group_layout],
+            bind_group_layouts: &[&uniform_bind_group_layout, &texture_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -380,6 +460,7 @@ fn main() {
 
                     render_pass.set_pipeline(&pipeline);
                     render_pass.set_bind_group(0, &uniform_bind_group, &[]);
+                    render_pass.set_bind_group(1, &texture_bind_group, &[]);
                     render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                     render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                     render_pass.draw_indexed(0..(indices.len() as _), 0, 0..1);
@@ -475,34 +556,44 @@ fn node_ui(ui: &mut egui::Ui, name: &str, is_leaf: bool) {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 4],
-    color: [f32; 4],
+    // color: [f32; 4],
+    tex_coords: [f32; 2],
 }
 
 impl Vertex {
     pub fn attributes() -> Vec<wgpu::VertexAttribute> {
-        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4].to_vec()
+        // wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x2].to_vec()
+        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x2].to_vec()
     }
 }
 
-fn triangle_geometry() -> (Vec<Vertex>, Vec<u16>) {
+fn geometry() -> (Vec<Vertex>, Vec<u16>) {
     (
         // Vertices
         vec![
             Vertex {
                 position: [1.0, -1.0, 0.0, 1.0],
-                color: [1.0, 0.0, 0.0, 1.0],
+                // color: [1.0, 0.0, 0.0, 1.0],
+                tex_coords: [1.0, 0.0],
             },
             Vertex {
                 position: [-1.0, -1.0, 0.0, 1.0],
-                color: [0.0, 1.0, 0.0, 1.0],
+                // color: [1.0, 0.0, 0.0, 1.0],
+                tex_coords: [0.0, 0.0],
             },
             Vertex {
-                position: [0.0, 1.0, 0.0, 1.0],
-                color: [0.0, 0.0, 1.0, 1.0],
+                position: [1.0, 1.0, 0.0, 1.0],
+                // color: [1.0, 0.0, 0.0, 1.0],
+                tex_coords: [1.0, 1.0],
+            },
+            Vertex {
+                position: [-1.0, 1.0, 0.0, 1.0],
+                // color: [1.0, 0.0, 0.0, 1.0],
+                tex_coords: [0.0, 1.0],
             },
         ],
-        // Indices, Clockwise winding order
-        vec![0, 1, 2],
+        // Indices, clockwise winding order
+        vec![0, 1, 2, 1, 2, 3],
     )
 }
 
@@ -522,23 +613,28 @@ var<uniform> ubo: Uniform;
 
 struct VertexInput {
     @location(0) position: vec4<f32>,
-    @location(1) color: vec4<f32>,
+    @location(1) tex_coords: vec2<f32>,
 };
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
+    @location(0) tex_coords: vec2<f32>,
 };
 
 @vertex
 fn vertex_main(vert: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    out.color = vert.color;
+    out.tex_coords = vert.tex_coords;
     out.position = ubo.mvp * vert.position;
     return out;
 };
 
+@group(1) @binding(0)
+var t_diffuse: texture_2d<f32>;
+@group(1) @binding(1)
+var s_diffuse: sampler;
+
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.color);
+    return textureSample(t_diffuse, s_diffuse, in.tex_coords);
 }
 ";
