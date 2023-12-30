@@ -556,14 +556,13 @@ fn node_ui(ui: &mut egui::Ui, name: &str, is_leaf: bool) {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 4],
-    // color: [f32; 4],
+    color: [f32; 4],
     tex_coords: [f32; 2],
 }
 
 impl Vertex {
     pub fn attributes() -> Vec<wgpu::VertexAttribute> {
-        // wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x2].to_vec()
-        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x2].to_vec()
+        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x2].to_vec()
     }
 }
 
@@ -573,22 +572,22 @@ fn geometry() -> (Vec<Vertex>, Vec<u16>) {
         vec![
             Vertex {
                 position: [1.0, -1.0, 0.0, 1.0],
-                // color: [1.0, 0.0, 0.0, 1.0],
+                color: [1.0, 0.0, 0.0, 1.0],
                 tex_coords: [1.0, 0.0],
             },
             Vertex {
                 position: [-1.0, -1.0, 0.0, 1.0],
-                // color: [1.0, 0.0, 0.0, 1.0],
+                color: [0.0, 1.0, 0.0, 1.0],
                 tex_coords: [0.0, 0.0],
             },
             Vertex {
                 position: [1.0, 1.0, 0.0, 1.0],
-                // color: [1.0, 0.0, 0.0, 1.0],
+                color: [0.0, 0.0, 1.0, 1.0],
                 tex_coords: [1.0, 1.0],
             },
             Vertex {
                 position: [-1.0, 1.0, 0.0, 1.0],
-                // color: [1.0, 0.0, 0.0, 1.0],
+                color: [0.7, 0.2, 0.4, 1.0],
                 tex_coords: [0.0, 1.0],
             },
         ],
@@ -613,16 +612,19 @@ var<uniform> ubo: Uniform;
 
 struct VertexInput {
     @location(0) position: vec4<f32>,
-    @location(1) tex_coords: vec2<f32>,
+    @location(1) color: vec4<f32>,
+    @location(2) tex_coords: vec2<f32>,
 };
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
-    @location(0) tex_coords: vec2<f32>,
+    @location(0) color: vec4<f32>,
+    @location(1) tex_coords: vec2<f32>,
 };
 
 @vertex
 fn vertex_main(vert: VertexInput) -> VertexOutput {
     var out: VertexOutput;
+    out.color = vert.color;
     out.tex_coords = vert.tex_coords;
     out.position = ubo.mvp * vert.position;
     return out;
@@ -630,11 +632,12 @@ fn vertex_main(vert: VertexInput) -> VertexOutput {
 
 @group(1) @binding(0)
 var t_diffuse: texture_2d<f32>;
+
 @group(1) @binding(1)
 var s_diffuse: sampler;
 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    return mix(textureSample(t_diffuse, s_diffuse, in.tex_coords), in.color, 0.3);
 }
 ";
