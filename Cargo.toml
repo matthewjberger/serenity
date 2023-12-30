@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bytemuck = "1.14.0"
 egui = "0.23.0"
 egui-wgpu = { version = "0.23.0", features = ["winit"] }
 egui-winit = "0.23.0"
