@@ -6,11 +6,6 @@ fn main() {
         "./assets/DamagedHelmet.glb",
     );
 
-    let gltf_bytes = std::fs::read(&default_gltf_path).expect("Failed to load default gltf file!");
-    println!("Loaded gltf ({} bytes)", gltf_bytes.len());
-    let mut gltf = gltf::Gltf::from_slice(&gltf_bytes).expect("Failed to load GLTF!");
-    // TODO: do something with this loaded gltf
-
     let event_loop = winit::event_loop::EventLoop::new();
 
     let window = winit::window::WindowBuilder::new()
@@ -20,7 +15,7 @@ fn main() {
         .build(&event_loop)
         .expect("Failed to create winit window!");
 
-    let (surface, device, queue, mut surface_config) = pollster::block_on(async {
+    let (surface, device, queue, mut surface_config, surface_format) = pollster::block_on(async {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all),
             ..Default::default()
@@ -58,7 +53,7 @@ fn main() {
         let surface_capabilities = surface.get_capabilities(&adapter);
 
         // This assumes an sRGB surface texture
-        let format = surface_capabilities
+        let surface_format = surface_capabilities
             .formats
             .iter()
             .copied()
@@ -67,7 +62,7 @@ fn main() {
 
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
+            format: surface_format,
             width,
             height,
             present_mode: surface_capabilities.present_modes[0],
@@ -76,7 +71,7 @@ fn main() {
         };
         surface.configure(&device, &surface_config);
 
-        (surface, device, queue, surface_config)
+        (surface, device, queue, surface_config, surface_format)
     });
 
     let mut gui_state = egui_winit::State::new(&event_loop);
@@ -86,6 +81,31 @@ fn main() {
     let depth_format = None;
     let mut gui_renderer =
         egui_wgpu::Renderer::new(&device, surface_config.format, depth_format, 1);
+
+    let gltf_bytes = std::fs::read(&default_gltf_path).expect("Failed to load default gltf file!");
+    let mut gltf = gltf::Gltf::from_slice(&gltf_bytes).expect("Failed to load GLTF!");
+
+    let (vertices, indices) = triangle_geometry();
+
+    let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
+        &device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        },
+    );
+
+    let index_buffer = wgpu::util::DeviceExt::create_buffer_init(
+        &device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        },
+    );
+
+    let pipeline = create_pipeline(&device, surface_format);
 
     event_loop.run(move |event, _, control_flow| {
         let gui_captured_event = match &event {
@@ -254,6 +274,12 @@ fn main() {
                         depth_stencil_attachment: None,
                     });
 
+
+                    render_pass.set_pipeline(&pipeline);
+                    render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                    render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                    render_pass.draw_indexed(0..(indices.len() as _), 0, 0..1);
+
                     gui_renderer.render(&mut render_pass, &paint_jobs, &screen_descriptor);
                 }
 
@@ -341,4 +367,120 @@ fn node_ui(ui: &mut egui::Ui, name: &str, is_leaf: bool) {
     response.context_menu(|ui| {
         ui.label("Shown on right-clicks");
     });
+}
+
+fn create_pipeline(
+    device: &wgpu::Device,
+    surface_format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    const SHADER_SOURCE: &str = "
+struct VertexInput {
+    @location(0) position: vec4<f32>,
+    @location(1) color: vec4<f32>,
+};
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
+
+@vertex
+fn vertex_main(vert: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.color = vert.color;
+    out.position = vert.position;
+    return out;
+};
+
+@fragment
+fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(in.color);
+}
+";
+
+    let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(SHADER_SOURCE)),
+    });
+
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[],
+        push_constant_ranges: &[],
+    });
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: None,
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader_module,
+            entry_point: "vertex_main",
+            buffers: &[{
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as _,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &Vertex::attributes(),
+                }
+            }],
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            strip_index_format: Some(wgpu::IndexFormat::Uint16),
+            front_face: wgpu::FrontFace::Cw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+            unclipped_depth: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader_module,
+            entry_point: "fragment_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: surface_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        multiview: None,
+    })
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 4],
+    color: [f32; 4],
+}
+
+impl Vertex {
+    pub fn attributes() -> Vec<wgpu::VertexAttribute> {
+        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4].to_vec()
+    }
+}
+
+fn triangle_geometry() -> (Vec<Vertex>, Vec<u16>) {
+    (
+        // Vertices
+        vec![
+            Vertex {
+                position: [1.0, -1.0, 0.0, 1.0],
+                color: [1.0, 0.0, 0.0, 1.0],
+            },
+            Vertex {
+                position: [-1.0, -1.0, 0.0, 1.0],
+                color: [0.0, 1.0, 0.0, 1.0],
+            },
+            Vertex {
+                position: [0.0, 1.0, 0.0, 1.0],
+                color: [0.0, 0.0, 1.0, 1.0],
+            },
+        ],
+        // Indices, Clockwise winding order
+        vec![0, 1, 2],
+    )
 }
