@@ -1,10 +1,7 @@
-mod graph;
-mod transform;
+mod scene;
 
-use image::error;
 use nalgebra_glm as glm;
-
-use crate::graph::SceneGraph;
+use scene::Scene;
 
 fn main() {
     env_logger::init();
@@ -363,8 +360,8 @@ fn main() {
                                             Ok(bytes) => {
                                                 log::info!("Loaded gltf ({} bytes)", bytes.len());
                                                 // TODO: load in the new gltf data
-                                                let mut graph = SceneGraph::default();
-                                                graph.load_gltf(&path).unwrap_or_else(|error| {
+                                                let mut scene = Scene::default();
+                                                scene.import_gltf(&path).unwrap_or_else(|error| {
                                                     log::error!("{error}");
                                                 });
                                             }
