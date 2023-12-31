@@ -1,0 +1,1 @@
+- [ ] Refactor startup code to support wasm builds with trunk

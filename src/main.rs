@@ -1,4 +1,10 @@
+mod graph;
+mod transform;
+
+use image::error;
 use nalgebra_glm as glm;
+
+use crate::graph::SceneGraph;
 
 fn main() {
     env_logger::init();
@@ -35,7 +41,7 @@ fn main() {
         let required_features = wgpu::Features::empty();
         let optional_features = wgpu::Features::all();
         let (device, queue) = {
-            println!("WGPU Adapter Features: {:#?}", adapter.features());
+            log::info!("WGPU Adapter Features: {:#?}", adapter.features());
             adapter
                 .request_device(
                     &wgpu::DeviceDescriptor {
@@ -352,14 +358,18 @@ fn main() {
                                         .add_filter("GLTF / GLB", &["gltf", "glb"])
                                         .pick_file()
                                     {
-                                        println!("File picked: {path:#?}");
+                                        log::info!("File picked: {path:#?}");
                                         match std::fs::read(&path) {
                                             Ok(bytes) => {
-                                                println!("Loaded gltf ({} bytes)", bytes.len());
+                                                log::info!("Loaded gltf ({} bytes)", bytes.len());
                                                 // TODO: load in the new gltf data
+                                                let mut graph = SceneGraph::default();
+                                                graph.load_gltf(&path).unwrap_or_else(|error| {
+                                                    log::error!("{error}");
+                                                });
                                             }
                                             Err(error) => {
-                                                eprintln!("{error}");
+                                                log::error!("{error}");
                                             }
                                         };
                                     }
@@ -386,7 +396,7 @@ fn main() {
                                 .show_header(ui, |ui| {
                                     let response = ui.selectable_label(false, format!("🎬 {name}"));
                                     if response.clicked() {
-                                        println!("Scene selected: {name}");
+                                        log::info!("Scene selected: {name}");
                                     }
                                 })
                                 .body(|ui| {
@@ -404,7 +414,7 @@ fn main() {
                                 let name = gltf_mesh.name().unwrap_or("Unnamed Mesh");
                                 let response = ui.selectable_label(false, format!("🔶{name}"));
                                 if response.clicked() {
-                                    println!("Mesh selected: {name}");
+                                    log::info!("Mesh selected: {name}");
                                 }
                             });
                         });
@@ -569,7 +579,7 @@ fn main() {
                         width,
                         height,
                     }) => {
-                        println!("Resizing renderer surface to: ({width}, {height})");
+                        log::info!("Resizing renderer surface to: ({width}, {height})");
                         surface_config.width = width;
                         surface_config.height = height;
                         surface.configure(&device, &surface_config);
@@ -615,7 +625,7 @@ fn node_ui(ui: &mut egui::Ui, name: &str, is_leaf: bool) {
     let prefix = if is_leaf { "\t⭕" } else { "🔴" };
     let response = ui.selectable_label(false, format!("{prefix} {name}"));
     if response.clicked() {
-        println!("Node selected: {name}");
+        log::info!("Node selected: {name}");
     }
     response.context_menu(|ui| {
         ui.label("Shown on right-clicks");
