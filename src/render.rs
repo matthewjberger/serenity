@@ -323,7 +323,7 @@ impl SceneRender {
         let (paint_jobs, screen_descriptor) = gui.end_frame(gpu, window, &mut encoder);
 
         let window_size = window.inner_size();
-        let aspect_ratio = window_size.width as f32 / std::cmp::max(window_size.height, 1) as f32;
+        let aspect_ratio = window_size.width.max(1) as f32 / window_size.height.max(1) as f32;
         let projection = glm::perspective_lh_zo(aspect_ratio, 80_f32.to_radians(), 0.1, 1000.0);
         let view = glm::look_at_lh(
             &glm::vec3(0.0, 0.0, 3.0),
@@ -418,9 +418,12 @@ fn scene_ui(context: &egui::Context) {
                             match std::fs::read(&path) {
                                 Ok(bytes) => {
                                     log::info!("Loaded gltf ({} bytes)", bytes.len());
-                                    let asset = crate::gltf::import_gltf(path)
-                                        .expect("Failed to load asset!");
-                                    log::info!("{}", asset.graph.as_dotviz());
+                                    let scenes = crate::gltf::import_gltf(path)
+                                        .expect("Failed to import gltf!");
+                                    scenes.iter().for_each(|scene| {
+                                        log::info!("{scene:#?}");
+                                        log::info!("{}", scene.graph.as_dotviz());
+                                    });
                                 }
                                 Err(error) => {
                                     log::error!("{error}");
