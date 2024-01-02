@@ -71,7 +71,7 @@ impl Gui {
         let paint_jobs = self.context.tessellate(shapes);
         let window_size = window.inner_size();
         let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
-            size_in_pixels: [window_size.width, window_size.height],
+            size_in_pixels: [window_size.width.max(1), window_size.height.max(1)],
             pixels_per_point: window.scale_factor() as f32,
         };
         self.renderer

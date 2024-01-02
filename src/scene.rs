@@ -2,8 +2,9 @@ use nalgebra_glm as glm;
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Scene {
+    pub name: String,
     pub graph: SceneGraph,
-    pub meshes: std::collections::HashMap<String, Mesh>,
+    pub chidren: Vec<Scene>,
 }
 
 #[repr(C)]
@@ -68,16 +69,23 @@ pub struct Mesh {
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Primitive {
+    pub mode: PrimitiveMode,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
 }
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Node {
     pub id: String,
     pub transform: Transform,
     pub camera: Option<Camera>,
-    pub mesh: Option<String>,
+    pub mesh: Option<Mesh>,
+}
+
+impl std::fmt::Debug for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.id)
+    }
 }
 
 #[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -201,4 +209,16 @@ impl OrthographicCamera {
             1.0,
         )
     }
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum PrimitiveMode {
+    Points,
+    Lines,
+    LineLoop,
+    LineStrip,
+    #[default]
+    Triangles,
+    TriangleStrip,
+    TriangleFan,
 }
