@@ -3,7 +3,10 @@ pub(crate) struct App {
     window: winit::window::Window,
     gpu: crate::gpu::Gpu,
     gui: crate::gui::Gui,
-    scene: crate::render::SceneRender,
+    view: crate::view::View,
+
+    // multi-scene support can be added later
+    scene: crate::scene::Scene,
 }
 
 impl App {
@@ -18,14 +21,15 @@ impl App {
 
         let gpu = crate::gpu::Gpu::new(&window, width, height);
         let gui = crate::gui::Gui::new(&window, &gpu);
-        let scene = crate::render::SceneRender::new(&gpu);
+        let view = crate::view::View::new(&gpu);
 
         Self {
             event_loop,
             window,
             gpu,
             gui,
-            scene,
+            scene: crate::scene::Scene::default(),
+            view,
         }
     }
 
@@ -34,8 +38,9 @@ impl App {
             event_loop,
             window,
             mut gui,
-            mut scene,
+            mut view,
             mut gpu,
+            mut scene,
         } = self;
 
         event_loop.run(move |event, _, control_flow| {
@@ -45,13 +50,13 @@ impl App {
 
             match event {
                 winit::event::Event::MainEventsCleared => {
-                    scene.render(&window, &gpu, &mut gui);
+                    view.render(&window, &gpu, &mut gui, &mut scene);
                 }
 
                 winit::event::Event::WindowEvent { event, window_id }
                     if window_id == window.id() =>
                 {
-                    Self::route_window_event(event, control_flow, &mut gpu, &mut scene);
+                    Self::route_window_event(event, control_flow, &mut gpu, &mut view);
                 }
 
                 _ => {}
@@ -63,7 +68,7 @@ impl App {
         event: winit::event::WindowEvent,
         control_flow: &mut winit::event_loop::ControlFlow,
         gpu: &mut crate::gpu::Gpu,
-        scene: &mut crate::render::SceneRender,
+        scene: &mut crate::view::View,
     ) {
         match event {
             winit::event::WindowEvent::CloseRequested => {

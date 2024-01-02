@@ -30,7 +30,7 @@ impl Gui {
     #[allow(dead_code)]
     pub fn consumed_event(
         &mut self,
-        event: &winit::event::Event<'_, ()>,
+        event: &winit::event::Event<()>,
         window: &winit::window::Window,
     ) -> bool {
         match event {

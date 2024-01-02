@@ -20,13 +20,7 @@ impl Gpu {
         self.surface.configure(&self.device, &self.surface_config);
     }
 
-    #[allow(dead_code)]
-    pub fn create_depth_texture(
-        &self,
-        width: u32,
-        height: u32,
-        format: wgpu::TextureFormat,
-    ) -> wgpu::TextureView {
+    pub fn create_depth_texture(&self, width: u32, height: u32) -> wgpu::TextureView {
         let texture = self.device.create_texture(
             &(wgpu::TextureDescriptor {
                 label: Some("Depth Texture"),
@@ -38,7 +32,7 @@ impl Gpu {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format,
+                format: wgpu::TextureFormat::Depth32Float,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],

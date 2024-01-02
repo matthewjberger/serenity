@@ -1,5 +1,3 @@
-use nalgebra_glm as glm;
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Failed to import gltf scene!")]
@@ -11,6 +9,11 @@ pub enum Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GltfImportSettings {
+    pub add_default_camera: bool,
+}
+
 pub fn import_gltf(path: impl AsRef<std::path::Path>) -> Result<Vec<crate::scene::Scene>> {
     let mut scenes = Vec::new();
     let (gltf, buffers, _images) = gltf::import(path.as_ref()).map_err(Error::ImportGltfScene)?;
@@ -20,10 +23,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> Result<Vec<crate::scene
     Ok(scenes)
 }
 
-fn import_scene(
-    gltf_scene: gltf::Scene<'_>,
-    buffers: &[gltf::buffer::Data],
-) -> crate::scene::Scene {
+fn import_scene(gltf_scene: gltf::Scene, buffers: &[gltf::buffer::Data]) -> crate::scene::Scene {
     let mut scene = crate::scene::Scene {
         name: gltf_scene.name().unwrap_or("Unnamed scene").to_string(),
         ..Default::default()
@@ -98,20 +98,6 @@ fn import_primitive(
     })
 }
 
-impl From<gltf::mesh::Mode> for crate::scene::PrimitiveMode {
-    fn from(mode: gltf::mesh::Mode) -> Self {
-        match mode {
-            gltf::mesh::Mode::Points => crate::scene::PrimitiveMode::Points,
-            gltf::mesh::Mode::Lines => crate::scene::PrimitiveMode::Lines,
-            gltf::mesh::Mode::LineLoop => crate::scene::PrimitiveMode::LineLoop,
-            gltf::mesh::Mode::LineStrip => crate::scene::PrimitiveMode::LineStrip,
-            gltf::mesh::Mode::Triangles => crate::scene::PrimitiveMode::Triangles,
-            gltf::mesh::Mode::TriangleStrip => crate::scene::PrimitiveMode::TriangleStrip,
-            gltf::mesh::Mode::TriangleFan => crate::scene::PrimitiveMode::TriangleFan,
-        }
-    }
-}
-
 fn import_primitive_indices(
     gltf_primitive: &gltf::Primitive,
     buffers: &[gltf::buffer::Data],
@@ -133,47 +119,57 @@ fn import_primitive_vertices(
     let mut positions = Vec::new();
     let read_positions = reader.read_positions().ok_or(Error::ReadVertexPositions)?;
     read_positions.for_each(|position| {
-        positions.push(glm::Vec3::from(position));
+        positions.push(nalgebra_glm::Vec3::from(position));
     });
     let number_of_vertices = positions.len();
     let normals = reader.read_normals().map_or(
-        vec![glm::vec3(0.0, 0.0, 0.0); number_of_vertices],
-        |normals| normals.map(glm::Vec3::from).collect::<Vec<_>>(),
+        vec![nalgebra_glm::vec3(0.0, 0.0, 0.0); number_of_vertices],
+        |normals| normals.map(nalgebra_glm::Vec3::from).collect::<Vec<_>>(),
     );
-    let map_to_vec2 = |coords: gltf::mesh::util::ReadTexCoords| -> Vec<glm::Vec2> {
-        coords.into_f32().map(glm::Vec2::from).collect::<Vec<_>>()
+    let map_to_vec2 = |coords: gltf::mesh::util::ReadTexCoords| -> Vec<nalgebra_glm::Vec2> {
+        coords
+            .into_f32()
+            .map(nalgebra_glm::Vec2::from)
+            .collect::<Vec<_>>()
     };
-    let uv_0 = reader
-        .read_tex_coords(0)
-        .map_or(vec![glm::vec2(0.0, 0.0); number_of_vertices], map_to_vec2);
-    let uv_1 = reader
-        .read_tex_coords(1)
-        .map_or(vec![glm::vec2(0.0, 0.0); number_of_vertices], map_to_vec2);
-    let convert_joints = |joints: gltf::mesh::util::ReadJoints| -> Vec<glm::Vec4> {
+    let uv_0 = reader.read_tex_coords(0).map_or(
+        vec![nalgebra_glm::vec2(0.0, 0.0); number_of_vertices],
+        map_to_vec2,
+    );
+    let uv_1 = reader.read_tex_coords(1).map_or(
+        vec![nalgebra_glm::vec2(0.0, 0.0); number_of_vertices],
+        map_to_vec2,
+    );
+    let convert_joints = |joints: gltf::mesh::util::ReadJoints| -> Vec<nalgebra_glm::Vec4> {
         joints
             .into_u16()
-            .map(|joint| glm::vec4(joint[0] as _, joint[1] as _, joint[2] as _, joint[3] as _))
+            .map(|joint| {
+                nalgebra_glm::vec4(joint[0] as _, joint[1] as _, joint[2] as _, joint[3] as _)
+            })
             .collect::<Vec<_>>()
     };
     let joints_0 = reader.read_joints(0).map_or(
-        vec![glm::vec4(0.0, 0.0, 0.0, 0.0); number_of_vertices],
+        vec![nalgebra_glm::vec4(0.0, 0.0, 0.0, 0.0); number_of_vertices],
         convert_joints,
     );
-    let convert_weights = |weights: gltf::mesh::util::ReadWeights| -> Vec<glm::Vec4> {
-        weights.into_f32().map(glm::Vec4::from).collect::<Vec<_>>()
+    let convert_weights = |weights: gltf::mesh::util::ReadWeights| -> Vec<nalgebra_glm::Vec4> {
+        weights
+            .into_f32()
+            .map(nalgebra_glm::Vec4::from)
+            .collect::<Vec<_>>()
     };
     let weights_0 = reader.read_weights(0).map_or(
-        vec![glm::vec4(1.0, 0.0, 0.0, 0.0); number_of_vertices],
+        vec![nalgebra_glm::vec4(1.0, 0.0, 0.0, 0.0); number_of_vertices],
         convert_weights,
     );
-    let convert_colors = |colors: gltf::mesh::util::ReadColors| -> Vec<glm::Vec3> {
+    let convert_colors = |colors: gltf::mesh::util::ReadColors| -> Vec<nalgebra_glm::Vec3> {
         colors
             .into_rgb_f32()
-            .map(glm::Vec3::from)
+            .map(nalgebra_glm::Vec3::from)
             .collect::<Vec<_>>()
     };
     let colors_0 = reader.read_colors(0).map_or(
-        vec![glm::vec3(1.0, 1.0, 1.0); number_of_vertices],
+        vec![nalgebra_glm::vec3(1.0, 1.0, 1.0); number_of_vertices],
         convert_colors,
     );
 
@@ -218,5 +214,19 @@ fn import_camera(camera: gltf::Camera) -> crate::scene::Camera {
             }
         },
         enabled: false,
+    }
+}
+
+impl From<gltf::mesh::Mode> for crate::scene::PrimitiveMode {
+    fn from(mode: gltf::mesh::Mode) -> Self {
+        match mode {
+            gltf::mesh::Mode::Points => crate::scene::PrimitiveMode::Points,
+            gltf::mesh::Mode::Lines => crate::scene::PrimitiveMode::Lines,
+            gltf::mesh::Mode::LineLoop => crate::scene::PrimitiveMode::LineLoop,
+            gltf::mesh::Mode::LineStrip => crate::scene::PrimitiveMode::LineStrip,
+            gltf::mesh::Mode::Triangles => crate::scene::PrimitiveMode::Triangles,
+            gltf::mesh::Mode::TriangleStrip => crate::scene::PrimitiveMode::TriangleStrip,
+            gltf::mesh::Mode::TriangleFan => crate::scene::PrimitiveMode::TriangleFan,
+        }
     }
 }

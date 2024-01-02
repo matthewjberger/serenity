@@ -1,10 +1,64 @@
-use nalgebra_glm as glm;
-
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Scene {
     pub name: String,
     pub graph: SceneGraph,
-    pub chidren: Vec<Scene>,
+    pub children: Vec<Scene>,
+}
+
+impl Scene {
+    pub fn walk_dfs(&self, mut visit_node: impl FnMut(&Node)) {
+        if self.graph.0.node_count() == 0 {
+            return;
+        }
+        let mut dfs = petgraph::visit::Dfs::new(&self.graph.0, petgraph::graph::NodeIndex::new(0));
+        while let Some(node_index) = dfs.next(&self.graph.0) {
+            visit_node(&self.graph.0[node_index]);
+        }
+    }
+
+    pub fn flatten(
+        &self,
+    ) -> (
+        Vec<crate::scene::Vertex>,
+        Vec<u16>,
+        std::collections::HashMap<String, Vec<PrimitiveDrawCommand>>,
+    ) {
+        let (mut vertices, mut indices, mut meshes) =
+            (Vec::new(), Vec::new(), std::collections::HashMap::new());
+
+        self.walk_dfs(|node| {
+            if let Some(mesh) = node.mesh.as_ref() {
+                let (vertex_offset, index_offset) = (vertices.len(), indices.len());
+                meshes.insert(mesh.id.to_string(), {
+                    mesh.primitives
+                        .iter()
+                        .map(|primitive| {
+                            let primitive_vertices = primitive.vertices.to_vec();
+                            let number_of_vertices = primitive_vertices.len();
+                            vertices.extend_from_slice(&primitive_vertices);
+
+                            let primitive_indices = primitive
+                                .indices
+                                .iter()
+                                .map(|x| *x as u16)
+                                .collect::<Vec<_>>();
+                            let number_of_indices = primitive_indices.len();
+                            indices.extend_from_slice(&primitive_indices);
+
+                            PrimitiveDrawCommand {
+                                vertex_offset,
+                                index_offset,
+                                vertices: number_of_vertices,
+                                indices: number_of_indices,
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                });
+            }
+        });
+
+        (vertices, indices, meshes)
+    }
 }
 
 #[repr(C)]
@@ -12,25 +66,25 @@ pub struct Scene {
     Debug, Copy, Clone, serde::Serialize, serde::Deserialize, bytemuck::Pod, bytemuck::Zeroable,
 )]
 pub struct Vertex {
-    pub position: glm::Vec3,
-    pub normal: glm::Vec3,
-    pub uv_0: glm::Vec2,
-    pub uv_1: glm::Vec2,
-    pub joint_0: glm::Vec4,
-    pub weight_0: glm::Vec4,
-    pub color_0: glm::Vec3,
+    pub position: nalgebra_glm::Vec3,
+    pub normal: nalgebra_glm::Vec3,
+    pub uv_0: nalgebra_glm::Vec2,
+    pub uv_1: nalgebra_glm::Vec2,
+    pub joint_0: nalgebra_glm::Vec4,
+    pub weight_0: nalgebra_glm::Vec4,
+    pub color_0: nalgebra_glm::Vec3,
 }
 
 impl Default for Vertex {
     fn default() -> Self {
         Self {
-            position: glm::Vec3::default(),
-            normal: glm::Vec3::default(),
-            uv_0: glm::Vec2::default(),
-            uv_1: glm::Vec2::default(),
-            joint_0: glm::Vec4::default(),
-            weight_0: glm::Vec4::default(),
-            color_0: glm::vec3(1.0, 1.0, 1.0),
+            position: nalgebra_glm::Vec3::default(),
+            normal: nalgebra_glm::Vec3::default(),
+            uv_0: nalgebra_glm::Vec2::default(),
+            uv_1: nalgebra_glm::Vec2::default(),
+            joint_0: nalgebra_glm::Vec4::default(),
+            weight_0: nalgebra_glm::Vec4::default(),
+            color_0: nalgebra_glm::vec3(1.0, 1.0, 1.0),
         }
     }
 }
@@ -83,24 +137,24 @@ pub struct Node {
 }
 
 impl std::fmt::Debug for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.id)
     }
 }
 
 #[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Transform {
-    pub translation: glm::Vec3,
-    pub rotation: glm::Quat,
-    pub scale: glm::Vec3,
+    pub translation: nalgebra_glm::Vec3,
+    pub rotation: nalgebra_glm::Quat,
+    pub scale: nalgebra_glm::Vec3,
 }
 
 impl Default for Transform {
     fn default() -> Self {
         Self {
-            translation: glm::Vec3::new(0.0, 0.0, 0.0),
-            rotation: glm::Quat::identity(),
-            scale: glm::Vec3::new(1.0, 1.0, 1.0),
+            translation: nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
+            rotation: nalgebra_glm::Quat::identity(),
+            scale: nalgebra_glm::Vec3::new(1.0, 1.0, 1.0),
         }
     }
 }
@@ -108,18 +162,18 @@ impl Default for Transform {
 impl From<([f32; 3], [f32; 4], [f32; 3])> for Transform {
     fn from((translation, rotation, scale): ([f32; 3], [f32; 4], [f32; 3])) -> Self {
         Self {
-            translation: glm::vec3(translation[0], translation[1], translation[2]),
-            rotation: glm::quat(rotation[0], rotation[1], rotation[2], rotation[3]),
-            scale: glm::vec3(scale[0], scale[1], scale[2]),
+            translation: nalgebra_glm::vec3(translation[0], translation[1], translation[2]),
+            rotation: nalgebra_glm::quat(rotation[0], rotation[1], rotation[2], rotation[3]),
+            scale: nalgebra_glm::vec3(scale[0], scale[1], scale[2]),
         }
     }
 }
 
-impl From<Transform> for glm::Mat4 {
+impl From<Transform> for nalgebra_glm::Mat4 {
     fn from(transform: Transform) -> Self {
-        glm::translation(&transform.translation)
-            * glm::quat_to_mat4(&transform.rotation)
-            * glm::scaling(&transform.scale)
+        nalgebra_glm::translation(&transform.translation)
+            * nalgebra_glm::quat_to_mat4(&transform.rotation)
+            * nalgebra_glm::scaling(&transform.scale)
     }
 }
 
@@ -132,7 +186,7 @@ pub struct Camera {
 
 impl Camera {
     #[allow(dead_code)]
-    pub fn projection_matrix(&self, viewport_aspect_ratio: f32) -> glm::Mat4 {
+    pub fn projection_matrix(&self, viewport_aspect_ratio: f32) -> nalgebra_glm::Mat4 {
         match &self.projection {
             Projection::Perspective(camera) => camera.matrix(viewport_aspect_ratio),
             Projection::Orthographic(camera) => camera.matrix(),
@@ -163,7 +217,7 @@ pub struct PerspectiveCamera {
 }
 
 impl PerspectiveCamera {
-    pub fn matrix(&self, viewport_aspect_ratio: f32) -> glm::Mat4 {
+    pub fn matrix(&self, viewport_aspect_ratio: f32) -> nalgebra_glm::Mat4 {
         let aspect_ratio = if let Some(aspect_ratio) = self.aspect_ratio {
             aspect_ratio
         } else {
@@ -171,9 +225,9 @@ impl PerspectiveCamera {
         };
 
         if let Some(z_far) = self.z_far {
-            glm::perspective_zo(aspect_ratio, self.y_fov_rad, self.z_near, z_far)
+            nalgebra_glm::perspective_zo(aspect_ratio, self.y_fov_rad, self.z_near, z_far)
         } else {
-            glm::infinite_perspective_rh_zo(aspect_ratio, self.y_fov_rad, self.z_near)
+            nalgebra_glm::infinite_perspective_rh_zo(aspect_ratio, self.y_fov_rad, self.z_near)
         }
     }
 }
@@ -187,10 +241,10 @@ pub struct OrthographicCamera {
 }
 
 impl OrthographicCamera {
-    pub fn matrix(&self) -> glm::Mat4 {
+    pub fn matrix(&self) -> nalgebra_glm::Mat4 {
         let z_sum = self.z_near + self.z_far;
         let z_diff = self.z_near - self.z_far;
-        glm::Mat4::new(
+        nalgebra_glm::Mat4::new(
             1.0 / self.x_mag,
             0.0,
             0.0,
@@ -221,4 +275,12 @@ pub enum PrimitiveMode {
     Triangles,
     TriangleStrip,
     TriangleFan,
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PrimitiveDrawCommand {
+    pub vertex_offset: usize,
+    pub index_offset: usize,
+    pub vertices: usize,
+    pub indices: usize,
 }
