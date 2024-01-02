@@ -2,8 +2,8 @@ mod app;
 mod gltf;
 mod gpu;
 mod gui;
-mod render;
 mod scene;
+mod view;
 
 fn main() {
     env_logger::init();
