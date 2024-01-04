@@ -177,6 +177,27 @@ impl From<Transform> for nalgebra_glm::Mat4 {
     }
 }
 
+impl Transform {
+    pub fn as_view_matrix(&self) -> nalgebra_glm::Mat4 {
+        let eye = self.translation;
+        let target = self.translation + self.forward();
+        let up = self.up();
+        nalgebra_glm::look_at(&eye, &target, &up)
+    }
+
+    pub fn right(&self) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::quat_rotate_vec3(&self.rotation.normalize(), &nalgebra_glm::Vec3::x())
+    }
+
+    pub fn up(&self) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::quat_rotate_vec3(&self.rotation.normalize(), &nalgebra_glm::Vec3::y())
+    }
+
+    pub fn forward(&self) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::quat_rotate_vec3(&self.rotation.normalize(), &(nalgebra_glm::Vec3::z()))
+    }
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
     pub id: String,
@@ -185,10 +206,9 @@ pub struct Camera {
 }
 
 impl Camera {
-    #[allow(dead_code)]
-    pub fn projection_matrix(&self, viewport_aspect_ratio: f32) -> nalgebra_glm::Mat4 {
+    pub fn projection_matrix(&self, aspect_ratio: f32) -> nalgebra_glm::Mat4 {
         match &self.projection {
-            Projection::Perspective(camera) => camera.matrix(viewport_aspect_ratio),
+            Projection::Perspective(camera) => camera.matrix(aspect_ratio),
             Projection::Orthographic(camera) => camera.matrix(),
         }
     }

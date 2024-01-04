@@ -4,7 +4,7 @@ pub struct View {
     depth_texture_view: wgpu::TextureView,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
-    uniform_bind_group_layout: wgpu::BindGroupLayout,
+    _uniform_bind_group_layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
     meshes: std::collections::HashMap<String, Vec<crate::scene::PrimitiveDrawCommand>>,
 }
@@ -59,7 +59,7 @@ impl View {
             meshes: std::collections::HashMap::new(),
             uniform_buffer,
             uniform_bind_group,
-            uniform_bind_group_layout,
+            _uniform_bind_group_layout: uniform_bind_group_layout,
             pipeline,
         }
     }
@@ -84,6 +84,7 @@ impl View {
                                 let scenes =
                                     crate::gltf::import_gltf(path).expect("Failed to import gltf!");
                                 *scene = scenes[0].clone();
+
                                 let (vertices, indices, meshes) = scenes[0].flatten();
                                 let (vertex_buffer, index_buffer) =
                                     create_geometry_buffers(&gpu.device, vertices, indices);
@@ -93,6 +94,7 @@ impl View {
                                     log::info!("{scene:#?}");
                                     log::info!("{}", scene.graph.as_dotviz());
                                 });
+
                                 self.meshes = meshes;
                             }
                         };
@@ -208,21 +210,14 @@ impl View {
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
+            let window_size = window.inner_size();
+            let aspect_ratio = window_size.width as f32 / window_size.height.max(1) as f32;
+
+            let (projection_matrix, view_matrix) = create_camera_matrices(scene, aspect_ratio)
+                .expect("Failed to get camera matrices!");
+
             scene.walk_dfs(|node| {
                 if let Some(mesh) = node.mesh.as_ref() {
-                    let window_size = window.inner_size();
-                    let projection_matrix = nalgebra_glm::perspective_lh_zo(
-                        window_size.width as f32 / window_size.height.max(1) as f32,
-                        80_f32.to_radians(),
-                        0.1,
-                        1000.0,
-                    );
-                    let view_matrix = nalgebra_glm::look_at_lh(
-                        &nalgebra_glm::vec3(0.0, 0.0, 10.0),
-                        &nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                        &nalgebra_glm::Vec3::y(),
-                    );
-
                     let uniform_buffer = UniformBuffer {
                         mvp: projection_matrix * view_matrix,
                     };
@@ -257,6 +252,36 @@ impl View {
 
         surface_texture.present();
     }
+}
+
+fn create_camera_matrices(
+    scene: &mut crate::scene::Scene,
+    aspect_ratio: f32,
+) -> Option<(nalgebra_glm::Mat4, nalgebra_glm::Mat4)> {
+    let mut result = None;
+    scene.walk_dfs(|node| {
+        if let Some(camera) = node.camera.as_ref() {
+            result = Some((
+                camera.projection_matrix(aspect_ratio),
+                node.transform.as_view_matrix(),
+            ));
+            return;
+        }
+    });
+
+    log::warn!("No camera found, using default camera!");
+    if result.is_none() {
+        result = Some((
+            nalgebra_glm::perspective(aspect_ratio, 3.14 / 4.0, 0.1, 100.0),
+            nalgebra_glm::look_at(
+                &nalgebra_glm::vec3(0.0, 0.0, 2.0),
+                &nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                &nalgebra_glm::vec3(0.0, 1.0, 0.0),
+            ),
+        ));
+    }
+
+    result
 }
 
 fn create_geometry_buffers(
