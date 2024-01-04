@@ -5,7 +5,53 @@ pub struct Scene {
     pub children: Vec<Scene>,
 }
 
+pub fn create_camera_node(aspect_ratio: f32) -> Node {
+    crate::scene::Node {
+        id: "Camera".to_string(),
+        transform: crate::scene::Transform {
+            translation: nalgebra_glm::vec3(0.0, 0.0, 4.0),
+            ..Default::default()
+        },
+        components: vec![crate::scene::NodeComponent::Camera(crate::scene::Camera {
+            id: "Camera".to_string(),
+            projection: crate::scene::Projection::Perspective(crate::scene::PerspectiveCamera {
+                aspect_ratio: Some(aspect_ratio),
+                y_fov_rad: 90_f32.to_radians(),
+                z_far: None,
+                z_near: 0.01,
+            }),
+            orientation: crate::scene::Orientation {
+                min_radius: 1.0,
+                max_radius: 100.0,
+                radius: 5.0,
+                offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                sensitivity: nalgebra_glm::vec2(1.0, 1.0),
+                direction: nalgebra_glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
+            },
+        })],
+    }
+}
+
 impl Scene {
+    pub fn has_camera(&self) -> bool {
+        let mut has_camera = false;
+        self.walk_dfs(|node| {
+            for component in node.components.iter() {
+                if let crate::scene::NodeComponent::Camera(_) = component {
+                    has_camera = true;
+                    return;
+                }
+            }
+        });
+        has_camera
+    }
+
+    pub fn add_root_node(&mut self, node: crate::scene::Node) {
+        let child = self.graph.add_node(node);
+        self.graph
+            .add_edge(petgraph::graph::NodeIndex::new(0), child, ());
+    }
+
     pub fn walk_dfs(&self, mut visit_node: impl FnMut(&Node)) {
         if self.graph.0.node_count() == 0 {
             return;
@@ -13,6 +59,19 @@ impl Scene {
         let mut dfs = petgraph::visit::Dfs::new(&self.graph.0, petgraph::graph::NodeIndex::new(0));
         while let Some(node_index) = dfs.next(&self.graph.0) {
             visit_node(&self.graph.0[node_index]);
+        }
+    }
+
+    pub fn walk_dfs_mut(
+        &mut self,
+        mut visit_node: impl FnMut(&mut Node, petgraph::graph::NodeIndex),
+    ) {
+        if self.graph.0.node_count() == 0 {
+            return;
+        }
+        let mut dfs = petgraph::visit::Dfs::new(&self.graph.0, petgraph::graph::NodeIndex::new(0));
+        while let Some(node_index) = dfs.next(&self.graph.0) {
+            visit_node(&mut self.graph.0[node_index], node_index);
         }
     }
 
@@ -27,33 +86,35 @@ impl Scene {
             (Vec::new(), Vec::new(), std::collections::HashMap::new());
 
         self.walk_dfs(|node| {
-            if let Some(mesh) = node.mesh.as_ref() {
-                let (vertex_offset, index_offset) = (vertices.len(), indices.len());
-                meshes.insert(mesh.id.to_string(), {
-                    mesh.primitives
-                        .iter()
-                        .map(|primitive| {
-                            let primitive_vertices = primitive.vertices.to_vec();
-                            let number_of_vertices = primitive_vertices.len();
-                            vertices.extend_from_slice(&primitive_vertices);
+            for component in node.components.iter() {
+                if let crate::scene::NodeComponent::Mesh(mesh) = component {
+                    let (vertex_offset, index_offset) = (vertices.len(), indices.len());
+                    meshes.insert(mesh.id.to_string(), {
+                        mesh.primitives
+                            .iter()
+                            .map(|primitive| {
+                                let primitive_vertices = primitive.vertices.to_vec();
+                                let number_of_vertices = primitive_vertices.len();
+                                vertices.extend_from_slice(&primitive_vertices);
 
-                            let primitive_indices = primitive
-                                .indices
-                                .iter()
-                                .map(|x| *x as u16)
-                                .collect::<Vec<_>>();
-                            let number_of_indices = primitive_indices.len();
-                            indices.extend_from_slice(&primitive_indices);
+                                let primitive_indices = primitive
+                                    .indices
+                                    .iter()
+                                    .map(|x| *x as u16)
+                                    .collect::<Vec<_>>();
+                                let number_of_indices = primitive_indices.len();
+                                indices.extend_from_slice(&primitive_indices);
 
-                            PrimitiveDrawCommand {
-                                vertex_offset,
-                                index_offset,
-                                vertices: number_of_vertices,
-                                indices: number_of_indices,
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                });
+                                PrimitiveDrawCommand {
+                                    vertex_offset,
+                                    index_offset,
+                                    vertices: number_of_vertices,
+                                    indices: number_of_indices,
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                }
             }
         });
 
@@ -92,9 +153,10 @@ impl Default for Vertex {
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SceneGraph(pub petgraph::Graph<Node, ()>);
 
-impl SceneGraph {
-    pub fn as_dotviz(&self) -> String {
-        format!(
+impl std::fmt::Display for SceneGraph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
             "{:?}",
             petgraph::dot::Dot::with_config(&self.0, &[petgraph::dot::Config::EdgeNoLabel])
         )
@@ -132,14 +194,19 @@ pub struct Primitive {
 pub struct Node {
     pub id: String,
     pub transform: Transform,
-    pub camera: Option<Camera>,
-    pub mesh: Option<Mesh>,
+    pub components: Vec<NodeComponent>,
 }
 
 impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.id)
     }
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub enum NodeComponent {
+    Camera(Camera),
+    Mesh(Mesh),
 }
 
 #[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -178,13 +245,6 @@ impl From<Transform> for nalgebra_glm::Mat4 {
 }
 
 impl Transform {
-    pub fn as_view_matrix(&self) -> nalgebra_glm::Mat4 {
-        let eye = self.translation;
-        let target = self.translation + self.forward();
-        let up = self.up();
-        nalgebra_glm::look_at(&eye, &target, &up)
-    }
-
     pub fn right(&self) -> nalgebra_glm::Vec3 {
         nalgebra_glm::quat_rotate_vec3(&self.rotation.normalize(), &nalgebra_glm::Vec3::x())
     }
@@ -196,13 +256,18 @@ impl Transform {
     pub fn forward(&self) -> nalgebra_glm::Vec3 {
         nalgebra_glm::quat_rotate_vec3(&self.rotation.normalize(), &(nalgebra_glm::Vec3::z()))
     }
+
+    pub fn apply_orientation(&mut self, orientation: &Orientation) {
+        self.translation = orientation.position();
+        self.rotation = orientation.look_at_offset();
+    }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
     pub id: String,
     pub projection: Projection,
-    pub enabled: bool,
+    pub orientation: Orientation,
 }
 
 impl Camera {
@@ -210,14 +275,6 @@ impl Camera {
         match &self.projection {
             Projection::Perspective(camera) => camera.matrix(aspect_ratio),
             Projection::Orthographic(camera) => camera.matrix(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn is_orthographic(&self) -> bool {
-        match self.projection {
-            Projection::Perspective(_) => false,
-            Projection::Orthographic(_) => true,
         }
     }
 }
@@ -303,4 +360,76 @@ pub struct PrimitiveDrawCommand {
     pub index_offset: usize,
     pub vertices: usize,
     pub indices: usize,
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Orientation {
+    pub min_radius: f32,
+    pub max_radius: f32,
+    pub radius: f32,
+    pub offset: nalgebra_glm::Vec3,
+    pub sensitivity: nalgebra_glm::Vec2,
+    pub direction: nalgebra_glm::Vec2,
+}
+
+impl Orientation {
+    pub fn direction(&self) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::vec3(
+            self.direction.y.sin() * self.direction.x.sin(),
+            self.direction.y.cos(),
+            self.direction.y.sin() * self.direction.x.cos(),
+        )
+    }
+
+    pub fn rotate(&mut self, position_delta: &nalgebra_glm::Vec2) {
+        let delta = position_delta.component_mul(&self.sensitivity);
+        self.direction.x += delta.x;
+        self.direction.y = nalgebra_glm::clamp_scalar(
+            self.direction.y + delta.y,
+            10.0_f32.to_radians(),
+            170.0_f32.to_radians(),
+        );
+    }
+
+    pub fn up(&self) -> nalgebra_glm::Vec3 {
+        self.right().cross(&self.direction())
+    }
+
+    pub fn right(&self) -> nalgebra_glm::Vec3 {
+        self.direction().cross(&nalgebra_glm::Vec3::y()).normalize()
+    }
+
+    pub fn pan(&mut self, offset: &nalgebra_glm::Vec2) {
+        self.offset += self.right() * offset.x;
+        self.offset += self.up() * offset.y;
+    }
+
+    pub fn position(&self) -> nalgebra_glm::Vec3 {
+        (self.direction() * self.radius) + self.offset
+    }
+
+    pub fn zoom(&mut self, distance: f32) {
+        self.radius -= distance;
+        if self.radius < self.min_radius {
+            self.radius = self.min_radius;
+        }
+        if self.radius > self.max_radius {
+            self.radius = self.max_radius;
+        }
+    }
+
+    pub fn look_at_offset(&self) -> nalgebra_glm::Quat {
+        self.look_at(self.offset - self.position())
+    }
+
+    pub fn look_forward(&self) -> nalgebra_glm::Quat {
+        self.look_at(-self.direction())
+    }
+
+    pub fn look_at(&self, point: nalgebra_glm::Vec3) -> nalgebra_glm::Quat {
+        nalgebra_glm::quat_conjugate(&nalgebra_glm::quat_look_at(
+            &point,
+            &nalgebra_glm::Vec3::y(),
+        ))
+    }
 }

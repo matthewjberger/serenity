@@ -13,6 +13,10 @@ impl Gpu {
         pollster::block_on(Self::new_async(window, width, height))
     }
 
+    pub fn aspect_ratio(&self) -> f32 {
+        self.surface_config.width as f32 / self.surface_config.height.max(1) as f32
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         log::info!("Resizing renderer surface to: ({width}, {height})");
         self.surface_config.width = width;

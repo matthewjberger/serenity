@@ -85,16 +85,17 @@ impl View {
                                     crate::gltf::import_gltf(path).expect("Failed to import gltf!");
                                 *scene = scenes[0].clone();
 
+                                if !scene.has_camera() {
+                                    scene.add_root_node(crate::scene::create_camera_node(
+                                        gpu.aspect_ratio(),
+                                    ));
+                                }
+
                                 let (vertices, indices, meshes) = scenes[0].flatten();
                                 let (vertex_buffer, index_buffer) =
                                     create_geometry_buffers(&gpu.device, vertices, indices);
                                 self.vertex_buffer = vertex_buffer;
                                 self.index_buffer = index_buffer;
-                                scenes.iter().for_each(|scene| {
-                                    log::info!("{scene:#?}");
-                                    log::info!("{}", scene.graph.as_dotviz());
-                                });
-
                                 self.meshes = meshes;
                             }
                         };
@@ -121,29 +122,8 @@ impl View {
             });
     }
 
-    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
-        self.depth_texture_view = Self::create_depth_texture(device, width, height);
-    }
-
-    fn create_depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
-        let texture = device.create_texture(
-            &(wgpu::TextureDescriptor {
-                label: Some("Depth Texture"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: crate::gpu::Gpu::DEPTH_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            }),
-        );
-        texture.create_view(&wgpu::TextureViewDescriptor::default())
+    pub fn resize(&mut self, gpu: &crate::gpu::Gpu, width: u32, height: u32) {
+        self.depth_texture_view = gpu.create_depth_texture(width, height);
     }
 
     pub fn render(
@@ -213,36 +193,48 @@ impl View {
             let window_size = window.inner_size();
             let aspect_ratio = window_size.width as f32 / window_size.height.max(1) as f32;
 
-            let (projection_matrix, view_matrix) = create_camera_matrices(scene, aspect_ratio)
-                .expect("Failed to get camera matrices!");
+            let (projection_matrix, view_matrix) =
+                create_camera_matrices(scene, aspect_ratio).expect("No camera is available!");
 
-            scene.walk_dfs(|node| {
-                if let Some(mesh) = node.mesh.as_ref() {
-                    let uniform_buffer = UniformBuffer {
-                        mvp: projection_matrix * view_matrix,
-                    };
+            let mut dfs =
+                petgraph::visit::Dfs::new(&scene.graph.0, petgraph::graph::NodeIndex::new(0));
 
-                    gpu.queue.write_buffer(
-                        &self.uniform_buffer,
-                        0,
-                        bytemuck::cast_slice(&[uniform_buffer]),
-                    );
+            while let Some(node_index) = dfs.next(&scene.graph.0) {
+                let _parent = scene
+                    .graph
+                    .neighbors_directed(node_index, petgraph::Direction::Incoming)
+                    .next();
+                let node = &mut scene.graph.0[node_index];
 
-                    render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                for component in node.components.iter() {
+                    if let crate::scene::NodeComponent::Mesh(mesh) = component {
+                        let render_pass: &mut wgpu::RenderPass<'_> = &mut render_pass;
+                        let uniform_buffer = UniformBuffer {
+                            mvp: projection_matrix * view_matrix,
+                        };
 
-                    if let Some(commands) = self.meshes.get(&mesh.id) {
-                        commands.iter().for_each(|command| {
-                            let index_offset = command.index_offset as u32;
-                            let number_of_indices = index_offset + command.indices as u32;
-                            render_pass.draw_indexed(
-                                index_offset..number_of_indices,
-                                command.vertex_offset as i32,
-                                0..1, // TODO: support multiple instances per primitive
-                            );
-                        });
+                        gpu.queue.write_buffer(
+                            &self.uniform_buffer,
+                            0,
+                            bytemuck::cast_slice(&[uniform_buffer]),
+                        );
+
+                        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+
+                        if let Some(commands) = self.meshes.get(&mesh.id) {
+                            commands.iter().for_each(|command| {
+                                let index_offset = command.index_offset as u32;
+                                let number_of_indices = index_offset + command.indices as u32;
+                                render_pass.draw_indexed(
+                                    index_offset..number_of_indices,
+                                    command.vertex_offset as i32,
+                                    0..1, // TODO: support multiple instances per primitive
+                                );
+                            });
+                        }
                     }
                 }
-            });
+            }
 
             gui.renderer
                 .render(&mut render_pass, &paint_jobs, &screen_descriptor);
@@ -259,28 +251,19 @@ fn create_camera_matrices(
     aspect_ratio: f32,
 ) -> Option<(nalgebra_glm::Mat4, nalgebra_glm::Mat4)> {
     let mut result = None;
-    scene.walk_dfs(|node| {
-        if let Some(camera) = node.camera.as_ref() {
-            result = Some((
-                camera.projection_matrix(aspect_ratio),
-                node.transform.as_view_matrix(),
-            ));
-            return;
+    scene.walk_dfs_mut(|node, _| {
+        for component in node.components.iter() {
+            if let crate::scene::NodeComponent::Camera(camera) = component {
+                result = Some((camera.projection_matrix(aspect_ratio), {
+                    let eye = node.transform.translation;
+                    // let target = node.transform.translation + node.transform.forward();
+                    let target = nalgebra_glm::Vec3::new(0.0, 0.0, 0.0);
+                    let up = node.transform.up();
+                    nalgebra_glm::look_at(&eye, &target, &up)
+                }));
+            }
         }
     });
-
-    log::warn!("No camera found, using default camera!");
-    if result.is_none() {
-        result = Some((
-            nalgebra_glm::perspective(aspect_ratio, 3.14 / 4.0, 0.1, 100.0),
-            nalgebra_glm::look_at(
-                &nalgebra_glm::vec3(0.0, 0.0, 2.0),
-                &nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                &nalgebra_glm::vec3(0.0, 1.0, 0.0),
-            ),
-        ));
-    }
-
     result
 }
 
