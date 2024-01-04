@@ -3,9 +3,8 @@ pub(crate) struct App {
     window: winit::window::Window,
     gpu: crate::gpu::Gpu,
     gui: crate::gui::Gui,
+    io: crate::io::Io,
     view: crate::view::View,
-
-    // multi-scene support can be added later
     scene: crate::scene::Scene,
 }
 
@@ -23,12 +22,16 @@ impl App {
         let gui = crate::gui::Gui::new(&window, &gpu);
         let view = crate::view::View::new(&gpu);
 
+        let mut scene = crate::scene::Scene::default();
+        scene.add_root_node(crate::scene::create_camera_node(gpu.aspect_ratio()));
+
         Self {
             event_loop,
             window,
             gpu,
             gui,
-            scene: crate::scene::Scene::default(),
+            io: crate::io::Io::default(),
+            scene,
             view,
         }
     }
@@ -40,6 +43,7 @@ impl App {
             mut gui,
             mut view,
             mut gpu,
+            mut io,
             mut scene,
         } = self;
 
@@ -48,60 +52,101 @@ impl App {
                 return;
             }
 
-            match event {
-                winit::event::Event::MainEventsCleared => {
-                    view.render(&window, &gpu, &mut gui, &mut scene);
-                }
+            io.receive_event(
+                &event,
+                nalgebra_glm::vec2(
+                    window.inner_size().width as f32 / 2.0,
+                    window.inner_size().height as f32 / 2.0,
+                ),
+            );
 
-                winit::event::Event::WindowEvent { event, window_id }
-                    if window_id == window.id() =>
-                {
-                    Self::route_window_event(event, control_flow, &mut gpu, &mut view);
-                }
+            update_scene(&mut scene, &io);
 
-                _ => {}
+            if let winit::event::Event::WindowEvent {
+                event:
+                    winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }),
+                ..
+            } = event
+            {
+                gpu.resize(width, height);
+                view.resize(&gpu, width, height);
             }
-        });
-    }
 
-    fn route_window_event(
-        event: winit::event::WindowEvent,
-        control_flow: &mut winit::event_loop::ControlFlow,
-        gpu: &mut crate::gpu::Gpu,
-        scene: &mut crate::view::View,
-    ) {
-        match event {
-            winit::event::WindowEvent::CloseRequested => {
+            if let winit::event::Event::WindowEvent {
+                event: winit::event::WindowEvent::CloseRequested,
+                ..
+            } = event
+            {
                 *control_flow = winit::event_loop::ControlFlow::Exit
             }
 
-            winit::event::WindowEvent::KeyboardInput { input, .. } => {
-                if let (
-                    Some(winit::event::VirtualKeyCode::Escape),
-                    winit::event::ElementState::Pressed,
-                ) = (input.virtual_keycode, input.state)
+            if let winit::event::Event::MainEventsCleared = event {
+                view.render(&window, &gpu, &mut gui, &mut scene);
+            }
+        });
+    }
+}
+
+fn update_scene(scene: &mut crate::scene::Scene, io: &crate::io::Io) {
+    scene.walk_dfs_mut(|node, _| {
+        update_cameras(node, io);
+    });
+
+    // MouseOrbit
+    //   orientation.zoom(mouse.wheel_delta.y * 0.3);
+    //   let mouse_delta = mouse_position_delta * delta_time as f32;
+    //   if right_mouse_clicked && !Lshift
+    //     mouse_delta.x = -1.0 * mouse_delta.x;
+    //     orientation.rotate(&mouse_delta);
+    //   if middle_mouse_clicked || (right_mouse_clicked && Lshift)
+    // 		orientation.pan(&mouse_delta)
+    // 	 transform.translation = self.orientation.position();
+    // 			transform.rotation = self.orientation.look_at_offset();
+    //   Ungrab cursor (cursor grab mode none)
+    //   Hide cursor
+
+    // MouseLook {
+    //   let mouse_delta = offset_from_center * delta_time;
+    //   orientation.rotate(&mouse_delta);
+    //   transform.rotation = orientation.look_forward();
+    //   Grab cursor (cursor grab mode confied)
+    //   Hide cursor
+    //   center cursor
+}
+
+fn update_cameras(node: &mut crate::scene::Node, io: &crate::io::Io) {
+    let has_camera = node
+        .components
+        .iter()
+        .any(|component| matches!(component, crate::scene::NodeComponent::Camera(_)));
+    if has_camera {
+        for component in node.components.iter_mut() {
+            if let crate::scene::NodeComponent::Camera(camera) = component {
+                camera.orientation.zoom(io.mouse.wheel_delta.y * 0.3);
+
+                if io.mouse.is_right_clicked
+                    && io.is_key_pressed(winit::event::VirtualKeyCode::LShift)
                 {
-                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                    let mut delta = io.mouse.position_delta;
+                    delta.x *= -1.0;
+                    camera.orientation.rotate(&delta);
                 }
 
-                if let Some(_keycode) = input.virtual_keycode.as_ref() {
-                    // Handle a key press
+                if io.mouse.is_middle_clicked
+                    && io.is_key_pressed(winit::event::VirtualKeyCode::LShift)
+                {
+                    camera.orientation.pan(&io.mouse.position_delta);
                 }
-            }
 
-            winit::event::WindowEvent::MouseInput {
-                button: _button,
-                state: _state,
-                ..
-            } => {
-                // Handle a mouse button press
-            }
+                // add wasd movement
+                if io.is_key_pressed(winit::event::VirtualKeyCode::W) {
+                    node.transform.translation.x += 2.0;
+                }
 
-            winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }) => {
-                gpu.resize(width, height);
-                scene.resize(&gpu.device, width, height);
+                node.transform.apply_orientation(&camera.orientation);
+
+                break;
             }
-            _ => {}
         }
     }
 }

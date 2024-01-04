@@ -2,6 +2,7 @@ mod app;
 mod gltf;
 mod gpu;
 mod gui;
+mod io;
 mod scene;
 mod view;
 

@@ -52,12 +52,16 @@ fn import_node(
         .map(|gltf_mesh| import_mesh(gltf_mesh, buffers))
         .map(|mesh| {
             mesh.map(|mesh| {
-                scene_node.mesh = Some(mesh);
+                scene_node
+                    .components
+                    .push(crate::scene::NodeComponent::Mesh(mesh));
             })
         });
 
     if let Some(camera) = gltf_node.camera() {
-        scene_node.camera = Some(import_camera(camera));
+        scene_node
+            .components
+            .push(crate::scene::NodeComponent::Camera(import_camera(camera)));
     }
 
     let node_index = scene.graph.add_node(scene_node.clone());
@@ -208,7 +212,7 @@ fn import_camera(camera: gltf::Camera) -> crate::scene::Camera {
                 })
             }
         },
-        enabled: false,
+        orientation: crate::scene::Orientation::default(),
     }
 }
 
