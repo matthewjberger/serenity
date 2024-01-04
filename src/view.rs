@@ -81,22 +81,7 @@ impl View {
                                 .add_filter("GLTF / GLB", &["gltf", "glb"])
                                 .pick_file()
                             {
-                                let scenes =
-                                    crate::gltf::import_gltf(path).expect("Failed to import gltf!");
-                                *scene = scenes[0].clone();
-
-                                if !scene.has_camera() {
-                                    scene.add_root_node(crate::scene::create_camera_node(
-                                        gpu.aspect_ratio(),
-                                    ));
-                                }
-
-                                let (vertices, indices, meshes) = scenes[0].flatten();
-                                let (vertex_buffer, index_buffer) =
-                                    create_geometry_buffers(&gpu.device, vertices, indices);
-                                self.vertex_buffer = vertex_buffer;
-                                self.index_buffer = index_buffer;
-                                self.meshes = meshes;
+                                self.import_gltf_file(path, scene, gpu);
                             }
                         };
                     });
@@ -107,6 +92,30 @@ impl View {
             .resizable(true)
             .show(&gui.context, |ui| {
                 ui.heading("Scene Explorer");
+
+                let camera_node = scene
+                    .graph
+                    .0
+                    .node_weight_mut(scene.graph.0.node_indices().next().unwrap())
+                    .unwrap();
+                ui.label("Camera");
+                ui.indent("Camera", |ui| {
+                    ui.label("Position");
+                    ui.add(egui::DragValue::new(
+                        &mut camera_node.transform.translation.x,
+                    ));
+                    ui.add(egui::DragValue::new(
+                        &mut camera_node.transform.translation.y,
+                    ));
+                    ui.add(egui::DragValue::new(
+                        &mut camera_node.transform.translation.z,
+                    ));
+
+                    ui.label("Scale");
+                    ui.add(egui::DragValue::new(&mut camera_node.transform.scale.x));
+                    ui.add(egui::DragValue::new(&mut camera_node.transform.scale.y));
+                    ui.add(egui::DragValue::new(&mut camera_node.transform.scale.z));
+                });
             });
 
         egui::SidePanel::right("right_panel")
@@ -120,6 +129,26 @@ impl View {
             .show(&gui.context, |ui| {
                 ui.heading("Console");
             });
+    }
+
+    fn import_gltf_file(
+        &mut self,
+        path: std::path::PathBuf,
+        scene: &mut crate::scene::Scene,
+        gpu: &crate::gpu::Gpu,
+    ) {
+        let scenes = crate::gltf::import_gltf(path).expect("Failed to import gltf!");
+        *scene = scenes[0].clone();
+
+        if !scene.has_camera() {
+            scene.add_root_node(crate::scene::create_camera_node(gpu.aspect_ratio()));
+        }
+
+        let (vertices, indices, meshes) = scenes[0].flatten();
+        let (vertex_buffer, index_buffer) = create_geometry_buffers(&gpu.device, vertices, indices);
+        self.vertex_buffer = vertex_buffer;
+        self.index_buffer = index_buffer;
+        self.meshes = meshes;
     }
 
     pub fn resize(&mut self, gpu: &crate::gpu::Gpu, width: u32, height: u32) {
@@ -200,17 +229,14 @@ impl View {
                 petgraph::visit::Dfs::new(&scene.graph.0, petgraph::graph::NodeIndex::new(0));
 
             while let Some(node_index) = dfs.next(&scene.graph.0) {
-                let _parent = scene
-                    .graph
-                    .neighbors_directed(node_index, petgraph::Direction::Incoming)
-                    .next();
+                let model_matrix = scene.graph.global_transform(node_index);
                 let node = &mut scene.graph.0[node_index];
 
                 for component in node.components.iter() {
                     if let crate::scene::NodeComponent::Mesh(mesh) = component {
                         let render_pass: &mut wgpu::RenderPass<'_> = &mut render_pass;
                         let uniform_buffer = UniformBuffer {
-                            mvp: projection_matrix * view_matrix,
+                            mvp: projection_matrix * view_matrix * model_matrix,
                         };
 
                         gpu.queue.write_buffer(

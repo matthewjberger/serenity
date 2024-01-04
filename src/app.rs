@@ -47,11 +47,9 @@ impl App {
             mut scene,
         } = self;
 
-        event_loop.run(move |event, _, control_flow| {
-            if gui.consumed_event(&event, &window) {
-                return;
-            }
+        env_logger::init();
 
+        event_loop.run(move |event, _, control_flow| {
             io.receive_event(
                 &event,
                 nalgebra_glm::vec2(
@@ -60,7 +58,11 @@ impl App {
                 ),
             );
 
-            update_scene(&mut scene, &io);
+            if gui.consumed_event(&event, &window) {
+                return;
+            }
+
+            camera_system(&mut scene, &io);
 
             if let winit::event::Event::WindowEvent {
                 event:
@@ -87,66 +89,45 @@ impl App {
     }
 }
 
-fn update_scene(scene: &mut crate::scene::Scene, io: &crate::io::Io) {
+fn camera_system(scene: &mut crate::scene::Scene, io: &crate::io::Io) {
     scene.walk_dfs_mut(|node, _| {
-        update_cameras(node, io);
+        node.components.iter_mut().for_each(|component| {
+            if let crate::scene::NodeComponent::Camera(camera) = component {
+                update_camera_orientation(camera, &io);
+                node.transform.rotation = camera.orientation.look_at();
+                node.transform.translation = camera.orientation.translation();
+            }
+        });
     });
-
-    // MouseOrbit
-    //   orientation.zoom(mouse.wheel_delta.y * 0.3);
-    //   let mouse_delta = mouse_position_delta * delta_time as f32;
-    //   if right_mouse_clicked && !Lshift
-    //     mouse_delta.x = -1.0 * mouse_delta.x;
-    //     orientation.rotate(&mouse_delta);
-    //   if middle_mouse_clicked || (right_mouse_clicked && Lshift)
-    // 		orientation.pan(&mouse_delta)
-    // 	 transform.translation = self.orientation.position();
-    // 			transform.rotation = self.orientation.look_at_offset();
-    //   Ungrab cursor (cursor grab mode none)
-    //   Hide cursor
-
-    // MouseLook {
-    //   let mouse_delta = offset_from_center * delta_time;
-    //   orientation.rotate(&mouse_delta);
-    //   transform.rotation = orientation.look_forward();
-    //   Grab cursor (cursor grab mode confied)
-    //   Hide cursor
-    //   center cursor
 }
 
-fn update_cameras(node: &mut crate::scene::Node, io: &crate::io::Io) {
-    let has_camera = node
-        .components
-        .iter()
-        .any(|component| matches!(component, crate::scene::NodeComponent::Camera(_)));
-    if has_camera {
-        for component in node.components.iter_mut() {
-            if let crate::scene::NodeComponent::Camera(camera) = component {
-                camera.orientation.zoom(io.mouse.wheel_delta.y * 0.3);
+fn update_camera_orientation(camera: &mut crate::scene::Camera, io: &crate::io::Io) {
+    camera.orientation.zoom(io.mouse.wheel_delta.y * 0.03);
 
-                if io.mouse.is_right_clicked
-                    && io.is_key_pressed(winit::event::VirtualKeyCode::LShift)
-                {
-                    let mut delta = io.mouse.position_delta;
-                    delta.x *= -1.0;
-                    camera.orientation.rotate(&delta);
-                }
+    if io.mouse.is_right_clicked && io.is_key_pressed(winit::event::VirtualKeyCode::LShift) {
+        let mut delta = io.mouse.position_delta;
+        delta.x *= -1.0;
+        delta *= 0.03;
+        camera.orientation.rotate(&delta);
+    }
 
-                if io.mouse.is_middle_clicked
-                    && io.is_key_pressed(winit::event::VirtualKeyCode::LShift)
-                {
-                    camera.orientation.pan(&io.mouse.position_delta);
-                }
+    if io.mouse.is_middle_clicked && io.is_key_pressed(winit::event::VirtualKeyCode::LShift) {
+        camera.orientation.pan(&(io.mouse.position_delta * 0.03));
+    }
 
-                // add wasd movement
-                if io.is_key_pressed(winit::event::VirtualKeyCode::W) {
-                    node.transform.translation.x += 2.0;
-                }
+    if io.is_key_pressed(winit::event::VirtualKeyCode::W) {
+        camera.orientation.pan(&nalgebra_glm::Vec2::new(0.0, 0.5));
+    }
 
-                node.transform.apply_orientation(&camera.orientation);
+    if io.is_key_pressed(winit::event::VirtualKeyCode::S) {
+        camera.orientation.pan(&nalgebra_glm::Vec2::new(0.0, -0.5));
+    }
 
-                break;
-            }
-        }
+    if io.is_key_pressed(winit::event::VirtualKeyCode::A) {
+        camera.orientation.pan(&nalgebra_glm::Vec2::new(-0.5, 0.0));
+    }
+
+    if io.is_key_pressed(winit::event::VirtualKeyCode::D) {
+        camera.orientation.pan(&nalgebra_glm::Vec2::new(0.5, 0.0));
     }
 }

@@ -25,7 +25,7 @@ pub fn create_camera_node(aspect_ratio: f32) -> Node {
                 max_radius: 100.0,
                 radius: 5.0,
                 offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                sensitivity: nalgebra_glm::vec2(1.0, 1.0),
+                sensitivity: nalgebra_glm::vec2(0.2, 0.2),
                 direction: nalgebra_glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
             },
         })],
@@ -177,6 +177,41 @@ impl std::ops::DerefMut for SceneGraph {
     }
 }
 
+impl SceneGraph {
+    /// The heirarchical transform of
+    /// the requested node in the scenegraph
+    pub fn global_transform(
+        &mut self,
+        node_index: petgraph::graph::NodeIndex,
+    ) -> nalgebra_glm::Mat4 {
+        let mut transform = nalgebra_glm::Mat4::identity();
+        self.parent_chain(node_index).iter().for_each(|node_idx| {
+            if let Some(node) = self.0.node_weight(*node_idx) {
+                transform = node.transform.matrix() * transform;
+            }
+        });
+        transform
+    }
+
+    /// Walks the graph from the requested node to the root node,
+    /// returning the parent chain in order starting from the root.
+    pub fn parent_chain(
+        &self,
+        node_index: petgraph::graph::NodeIndex,
+    ) -> Vec<petgraph::graph::NodeIndex> {
+        let mut parent_chain = Vec::new();
+        let mut parent_walker = self
+            .0
+            .neighbors_directed(node_index, petgraph::Direction::Incoming)
+            .detach();
+        while let Some((_, parent_node_index)) = parent_walker.next(&self.0) {
+            parent_chain.push(parent_node_index);
+        }
+        parent_chain.reverse(); // root -> child
+        parent_chain
+    }
+}
+
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Mesh {
     pub id: String,
@@ -245,6 +280,10 @@ impl From<Transform> for nalgebra_glm::Mat4 {
 }
 
 impl Transform {
+    pub fn matrix(&self) -> nalgebra_glm::Mat4 {
+        nalgebra_glm::Mat4::from(*self)
+    }
+
     pub fn right(&self) -> nalgebra_glm::Vec3 {
         nalgebra_glm::quat_rotate_vec3(&self.rotation.normalize(), &nalgebra_glm::Vec3::x())
     }
@@ -258,8 +297,8 @@ impl Transform {
     }
 
     pub fn apply_orientation(&mut self, orientation: &Orientation) {
-        self.translation = orientation.position();
-        self.rotation = orientation.look_at_offset();
+        self.translation = orientation.translation();
+        self.rotation = orientation.look_at();
     }
 }
 
@@ -404,7 +443,7 @@ impl Orientation {
         self.offset += self.up() * offset.y;
     }
 
-    pub fn position(&self) -> nalgebra_glm::Vec3 {
+    pub fn translation(&self) -> nalgebra_glm::Vec3 {
         (self.direction() * self.radius) + self.offset
     }
 
@@ -418,15 +457,15 @@ impl Orientation {
         }
     }
 
-    pub fn look_at_offset(&self) -> nalgebra_glm::Quat {
-        self.look_at(self.offset - self.position())
+    pub fn look_at(&self) -> nalgebra_glm::Quat {
+        self.look_at_point(self.offset - self.translation())
     }
 
     pub fn look_forward(&self) -> nalgebra_glm::Quat {
-        self.look_at(-self.direction())
+        self.look_at_point(-self.direction())
     }
 
-    pub fn look_at(&self, point: nalgebra_glm::Vec3) -> nalgebra_glm::Quat {
+    pub fn look_at_point(&self, point: nalgebra_glm::Vec3) -> nalgebra_glm::Quat {
         nalgebra_glm::quat_conjugate(&nalgebra_glm::quat_look_at(
             &point,
             &nalgebra_glm::Vec3::y(),

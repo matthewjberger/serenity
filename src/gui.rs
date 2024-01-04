@@ -1,5 +1,3 @@
-use crate::gpu::Gpu;
-
 pub struct Gui {
     pub renderer: egui_wgpu::Renderer,
     pub context: egui::Context,
@@ -27,7 +25,6 @@ impl Gui {
         }
     }
 
-    #[allow(dead_code)]
     pub fn consumed_event(
         &mut self,
         event: &winit::event::Event<()>,
@@ -54,8 +51,6 @@ impl Gui {
         Vec<egui::ClippedPrimitive>,
         egui_wgpu::renderer::ScreenDescriptor,
     ) {
-        let Gpu { device, queue, .. } = gpu;
-
         let egui::FullOutput {
             textures_delta,
             shapes,
@@ -63,7 +58,7 @@ impl Gui {
         } = self.context.end_frame();
         for (id, image_delta) in &textures_delta.set {
             self.renderer
-                .update_texture(device, queue, *id, image_delta);
+                .update_texture(&gpu.device, &gpu.queue, *id, image_delta);
         }
         for id in &textures_delta.free {
             self.renderer.free_texture(id);
@@ -74,64 +69,17 @@ impl Gui {
             size_in_pixels: [window_size.width.max(1), window_size.height.max(1)],
             pixels_per_point: window.scale_factor() as f32,
         };
-        self.renderer
-            .update_buffers(device, queue, encoder, &paint_jobs, &screen_descriptor);
+        self.renderer.update_buffers(
+            &gpu.device,
+            &gpu.queue,
+            encoder,
+            &paint_jobs,
+            &screen_descriptor,
+        );
         (paint_jobs, screen_descriptor)
     }
 
     pub fn begin_frame(&mut self, window: &winit::window::Window) {
         self.context.begin_frame(self.state.take_egui_input(window))
     }
-
-    //     #[allow(dead_code)]
-    //     fn scene_explorer_ui(gltf_document: gltf::Document, ui: &mut egui::Ui) {
-    //         ui.heading("Scene Explorer");
-    //         gltf_document.scenes().for_each(|gltf_scene| {
-    //             let name = gltf_scene.name().unwrap_or("Unnamed Scene");
-    //             let id = ui.make_persistent_id(ui.next_auto_id());
-    //             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
-    //                 .show_header(ui, |ui| {
-    //                     let response = ui.selectable_label(false, format!("🎬 {name}"));
-    //                     if response.clicked() {
-    //                         log::info!("Scene selected: {name}");
-    //                     }
-    //                 })
-    //                 .body(|ui| {
-    //                     gltf_scene.nodes().for_each(|node| {
-    //                         Self::draw_gltf_node_ui(ui, node);
-    //                     });
-    //                 });
-    //         })
-    //     }
-
-    //     fn draw_gltf_node_ui(ui: &mut egui::Ui, node: gltf::Node) {
-    //         let name = node.name().unwrap_or("Unnamed Node");
-
-    //         let is_leaf = node.children().len() == 0;
-    //         if is_leaf {
-    //             Self::node_ui(ui, name, true);
-    //         }
-
-    //         node.children().for_each(|child| {
-    //             let id = ui.make_persistent_id(ui.next_auto_id());
-    //             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
-    //                 .show_header(ui, |ui| {
-    //                     Self::node_ui(ui, name, false);
-    //                 })
-    //                 .body(|ui| {
-    //                     Self::draw_gltf_node_ui(ui, child);
-    //                 });
-    //         });
-    //     }
-
-    //     fn node_ui(ui: &mut egui::Ui, name: &str, is_leaf: bool) {
-    //         let prefix = if is_leaf { "\t⭕" } else { "🔴" };
-    //         let response = ui.selectable_label(false, format!("{prefix} {name}"));
-    //         if response.clicked() {
-    //             log::info!("Node selected: {name}");
-    //         }
-    //         response.context_menu(|ui| {
-    //             ui.label("Shown on right-clicks");
-    //         });
-    //     }
 }
