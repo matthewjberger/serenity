@@ -9,11 +9,6 @@ pub enum Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct GltfImportSettings {
-    pub add_default_camera: bool,
-}
-
 pub fn import_gltf(path: impl AsRef<std::path::Path>) -> Result<Vec<crate::scene::Scene>> {
     let mut scenes = Vec::new();
     let (gltf, buffers, _images) = gltf::import(path.as_ref()).map_err(Error::ImportGltfScene)?;
