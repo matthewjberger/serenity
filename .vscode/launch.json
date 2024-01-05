@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'looking_glass'",
+            "name": "Debug executable 'dragonglass'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=looking_glass",
-                    "--package=looking_glass"
+                    "--bin=dragonglass",
+                    "--package=dragonglass"
                 ],
                 "filter": {
-                    "name": "looking_glass",
+                    "name": "dragonglass",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'looking_glass'",
+            "name": "Debug unit tests in executable 'dragonglass'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=looking_glass",
-                    "--package=looking_glass"
+                    "--bin=dragonglass",
+                    "--package=dragonglass"
                 ],
                 "filter": {
-                    "name": "looking_glass",
+                    "name": "dragonglass",
                     "kind": "bin"
                 }
             },

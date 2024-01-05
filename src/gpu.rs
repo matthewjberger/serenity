@@ -49,7 +49,16 @@ impl Gpu {
                 view_formats: &[],
             }),
         );
-        texture.create_view(&wgpu::TextureViewDescriptor::default())
+        texture.create_view(&wgpu::TextureViewDescriptor {
+            label: None,
+            format: Some(wgpu::TextureFormat::Depth32Float),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            base_array_layer: 0,
+            array_layer_count: None,
+            mip_level_count: None,
+        })
     }
 
     async fn new_async(window: &winit::window::Window, width: u32, height: u32) -> Self {

@@ -6,6 +6,9 @@ export RUST_BACKTRACE := "1"
 @just:
     just run
 
+build:
+    cargo build -r
+
 check:
     cargo check --all --tests
     cargo fmt --all --check
