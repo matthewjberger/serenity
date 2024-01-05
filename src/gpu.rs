@@ -13,6 +13,10 @@ impl Gpu {
         pollster::block_on(Self::new_async(window, width, height))
     }
 
+    pub fn alignment(&self) -> u64 {
+        self.device.limits().min_uniform_buffer_offset_alignment as wgpu::BufferAddress
+    }
+
     pub fn aspect_ratio(&self) -> f32 {
         self.surface_config.width as f32 / self.surface_config.height.max(1) as f32
     }

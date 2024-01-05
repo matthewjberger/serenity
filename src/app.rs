@@ -7,6 +7,7 @@ pub struct Context {
     pub delta_time: f64,
     pub last_frame: std::time::Instant,
     pub scene: crate::scene::Scene,
+    pub depth_texture_view: wgpu::TextureView,
 }
 
 pub struct App {
@@ -25,6 +26,9 @@ impl App {
             .expect("Failed to create winit window!");
 
         let gpu = crate::gpu::Gpu::new(&window, width, height);
+        let depth_texture_view =
+            gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
+
         let gui = crate::gui::Gui::new(&window, &gpu);
         let view = crate::view::View::new(&gpu);
 
@@ -44,6 +48,7 @@ impl App {
                 delta_time: 0.01,
                 last_frame: std::time::Instant::now(),
                 scene,
+                depth_texture_view,
             },
         }
     }
@@ -65,44 +70,30 @@ impl App {
             state.update(&mut context);
 
             if let winit::event::Event::MainEventsCleared = event {
-                let mut encoder =
-                    context
-                        .gpu
-                        .device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("Render Encoder"),
-                        });
-                let (paint_jobs, screen_descriptor) =
-                    render_ui(&mut context, &mut state, &mut encoder);
-                render(encoder, &mut context, paint_jobs, screen_descriptor);
+                render_frame(&mut context, &mut state);
             }
         });
     }
 }
 
-fn render_ui(
-    context: &mut Context,
-    state: &mut impl State,
-    encoder: &mut wgpu::CommandEncoder,
-) -> (
-    Vec<egui::ClippedPrimitive>,
-    egui_wgpu::renderer::ScreenDescriptor,
-) {
-    context.gui.begin_frame(&context.window);
-    state.ui(context);
-    let (paint_jobs, screen_descriptor) =
-        context
-            .gui
-            .end_frame(&context.gpu, &context.window, encoder);
-    (paint_jobs, screen_descriptor)
-}
+fn render_frame(context: &mut Context, state: &mut impl State) {
+    let mut encoder = context
+        .gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
+    let (paint_jobs, screen_descriptor) = {
+        let encoder: &mut wgpu::CommandEncoder = &mut encoder;
+        context.gui.begin_frame(&context.window);
+        state.ui(context);
+        let (paint_jobs, screen_descriptor) =
+            context
+                .gui
+                .end_frame(&context.gpu, &context.window, encoder);
+        (paint_jobs, screen_descriptor)
+    };
 
-fn render(
-    mut encoder: wgpu::CommandEncoder,
-    context: &mut Context,
-    paint_jobs: Vec<egui::ClippedPrimitive>,
-    screen_descriptor: egui_wgpu::renderer::ScreenDescriptor,
-) {
     let surface_texture = context
         .gpu
         .surface
@@ -111,7 +102,16 @@ fn render(
 
     let surface_texture_view = surface_texture
         .texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
+        .create_view(&wgpu::TextureViewDescriptor {
+            label: wgpu::Label::default(),
+            aspect: wgpu::TextureAspect::default(),
+            format: None,
+            dimension: None,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        });
 
     encoder.insert_debug_marker("Render scene");
 
@@ -136,7 +136,7 @@ fn render(
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &context.view.depth_texture_view,
+                view: &context.depth_texture_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: true,
@@ -145,51 +145,9 @@ fn render(
             }),
         });
 
-        render_pass.set_pipeline(&context.view.pipeline);
-        render_pass.set_bind_group(0, &context.view.uniform_bind_group, &[]);
-
-        render_pass.set_vertex_buffer(0, context.view.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(
-            context.view.index_buffer.slice(..),
-            wgpu::IndexFormat::Uint16,
-        );
-
-        let (projection_matrix, view_matrix) =
-            crate::view::create_camera_matrices(&context.scene, context.gpu.aspect_ratio())
-                .expect("No camera is available!");
-
-        context.scene.walk_dfs(|node| {
-            let model_matrix = node.transform.matrix();
-
-            for component in node.components.iter() {
-                if let crate::scene::NodeComponent::Mesh(mesh) = component {
-                    let uniform_buffer = crate::view::UniformBuffer {
-                        mvp: projection_matrix * view_matrix * model_matrix,
-                    };
-
-                    context.gpu.queue.write_buffer(
-                        &context.view.uniform_buffer,
-                        0,
-                        bytemuck::cast_slice(&[uniform_buffer]),
-                    );
-
-                    render_pass.set_bind_group(0, &context.view.uniform_bind_group, &[]);
-
-                    if let Some(commands) = context.view.meshes.get(&mesh.name) {
-                        commands.iter().for_each(|command| {
-                            let index_offset = command.index_offset as u32;
-                            let number_of_indices = index_offset + command.indices as u32;
-                            render_pass.draw_indexed(
-                                index_offset..number_of_indices,
-                                command.vertex_offset as i32,
-                                0..1, // TODO: support multiple instances per primitive
-                            );
-                        });
-                    }
-                }
-            }
-        });
-
+        context
+            .view
+            .render(&mut render_pass, &context.gpu, &context.scene);
         context
             .gui
             .renderer
@@ -205,7 +163,7 @@ pub trait State {
     fn receive_events(
         &mut self,
         context: &mut Context,
-        event: &winit::event::Event<'_, ()>,
+        event: &winit::event::Event<()>,
         control_flow: &mut winit::event_loop::ControlFlow,
     );
     fn update(&mut self, context: &mut Context);
@@ -213,7 +171,7 @@ pub trait State {
 }
 
 fn receive_events(
-    event: &winit::event::Event<'_, ()>,
+    event: &winit::event::Event<()>,
     context: &mut Context,
     control_flow: &mut winit::event_loop::ControlFlow,
 ) {
@@ -231,7 +189,7 @@ fn receive_events(
     } = *event
     {
         context.gpu.resize(width, height);
-        context.view.resize(&context.gpu, width, height);
+        context.depth_texture_view = context.gpu.create_depth_texture(width, height);
     }
 
     if let winit::event::Event::WindowEvent {

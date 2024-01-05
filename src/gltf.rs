@@ -223,7 +223,7 @@ impl From<gltf::Camera<'_>> for crate::scene::Camera {
 }
 
 impl From<gltf::khr_lights_punctual::Light<'_>> for crate::scene::Light {
-    fn from(light: gltf::khr_lights_punctual::Light<'_>) -> Self {
+    fn from(light: gltf::khr_lights_punctual::Light) -> Self {
         Self {
             name: light.name().unwrap_or("Unnamed light").to_string(),
             color: light.color().into(),

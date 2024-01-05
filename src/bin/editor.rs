@@ -9,7 +9,7 @@ impl dragonglass::app::State for Editor {
     fn receive_events(
         &mut self,
         context: &mut dragonglass::app::Context,
-        _event: &winit::event::Event<'_, ()>,
+        _event: &winit::event::Event<()>,
         control_flow: &mut winit::event_loop::ControlFlow,
     ) {
         if context
@@ -24,29 +24,30 @@ impl dragonglass::app::State for Editor {
         context.scene.walk_dfs_mut(|node, _| {
             node.components.iter_mut().for_each(|component| {
                 if let dragonglass::scene::NodeComponent::Camera(_camera) = component {
+                    let speed = (1.0_f64 * context.delta_time) as f32;
                     if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
-                        node.transform.translation.z -= (0.05_f64 * context.delta_time) as f32;
+                        node.transform.translation.z -= speed;
                     }
                     if context.io.is_key_pressed(winit::event::VirtualKeyCode::A) {
-                        node.transform.translation.x -= (0.05_f64 * context.delta_time) as f32;
+                        node.transform.translation.x -= speed;
                     }
                     if context.io.is_key_pressed(winit::event::VirtualKeyCode::S) {
-                        node.transform.translation.z += (0.05_f64 * context.delta_time) as f32;
+                        node.transform.translation.z += speed;
                     }
                     if context.io.is_key_pressed(winit::event::VirtualKeyCode::D) {
-                        node.transform.translation.x += (0.05_f64 * context.delta_time) as f32;
+                        node.transform.translation.x += speed;
                     }
                     if context
                         .io
                         .is_key_pressed(winit::event::VirtualKeyCode::Space)
                     {
-                        node.transform.translation.y += (0.05_f64 * context.delta_time) as f32;
+                        node.transform.translation.y += speed;
                     }
                     if context
                         .io
                         .is_key_pressed(winit::event::VirtualKeyCode::LShift)
                     {
-                        node.transform.translation.y -= (0.05_f64 * context.delta_time) as f32;
+                        node.transform.translation.y -= speed;
                     }
                 }
             });
