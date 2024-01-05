@@ -10,12 +10,11 @@ pub enum Error {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub fn import_gltf(path: impl AsRef<std::path::Path>) -> Result<Vec<crate::scene::Scene>> {
-    let mut scenes = Vec::new();
     let (gltf, buffers, _images) = gltf::import(path.as_ref()).map_err(Error::ImportGltfScene)?;
-    gltf.scenes().for_each(|gltf_scene| {
-        scenes.push(import_scene(gltf_scene, &buffers));
-    });
-    Ok(scenes)
+    Ok(gltf
+        .scenes()
+        .map(|gltf_scene| import_scene(gltf_scene, &buffers))
+        .collect())
 }
 
 fn import_scene(gltf_scene: gltf::Scene, buffers: &[gltf::buffer::Data]) -> crate::scene::Scene {
@@ -24,7 +23,7 @@ fn import_scene(gltf_scene: gltf::Scene, buffers: &[gltf::buffer::Data]) -> crat
         ..Default::default()
     };
     let root_node = scene.graph.add_node(crate::scene::Node {
-        id: "Root".to_string(),
+        name: "Root".to_string(),
         ..Default::default()
     });
     gltf_scene.nodes().for_each(|node| {
@@ -42,7 +41,7 @@ fn import_node(
     let name = gltf_node.name().unwrap_or("Unnamed node");
 
     let mut scene_node = crate::scene::Node {
-        id: name.to_string(),
+        name: name.to_string(),
         transform: crate::scene::Transform::from(gltf_node.transform().decomposed()),
         ..Default::default()
     };
@@ -61,7 +60,13 @@ fn import_node(
     if let Some(camera) = gltf_node.camera() {
         scene_node
             .components
-            .push(crate::scene::NodeComponent::Camera(import_camera(camera)));
+            .push(crate::scene::NodeComponent::Camera(camera.into()));
+    }
+
+    if let Some(light) = gltf_node.light() {
+        scene_node
+            .components
+            .push(crate::scene::NodeComponent::Light(light.into()));
     }
 
     let node_index = scene.graph.add_node(scene_node.clone());
@@ -78,7 +83,7 @@ fn import_node(
 fn import_mesh(mesh: gltf::Mesh, buffers: &[gltf::buffer::Data]) -> Result<crate::scene::Mesh> {
     let id = mesh.name().unwrap_or("Unnamed mesh");
     Ok(crate::scene::Mesh {
-        id: id.to_string(),
+        name: id.to_string(),
         primitives: mesh
             .primitives()
             .map(|primitive| import_primitive(primitive, buffers))
@@ -191,27 +196,57 @@ fn import_primitive_vertices(
     Ok(vertices)
 }
 
-fn import_camera(camera: gltf::Camera) -> crate::scene::Camera {
-    crate::scene::Camera {
-        id: camera.name().unwrap_or("Unnamed camera").to_string(),
-        projection: match camera.projection() {
-            gltf::camera::Projection::Perspective(camera) => {
-                crate::scene::Projection::Perspective(crate::scene::PerspectiveCamera {
-                    aspect_ratio: camera.aspect_ratio(),
-                    y_fov_rad: camera.yfov(),
-                    z_far: camera.zfar(),
-                    z_near: camera.znear(),
-                })
-            }
-            gltf::camera::Projection::Orthographic(camera) => {
-                crate::scene::Projection::Orthographic(crate::scene::OrthographicCamera {
-                    x_mag: camera.xmag(),
-                    y_mag: camera.ymag(),
-                    z_far: camera.zfar(),
-                    z_near: camera.znear(),
-                })
-            }
-        },
+impl From<gltf::Camera<'_>> for crate::scene::Camera {
+    fn from(camera: gltf::Camera) -> Self {
+        Self {
+            name: camera.name().unwrap_or("Unnamed camera").to_string(),
+            projection: match camera.projection() {
+                gltf::camera::Projection::Perspective(camera) => {
+                    crate::scene::Projection::Perspective(crate::scene::PerspectiveCamera {
+                        aspect_ratio: camera.aspect_ratio(),
+                        y_fov_rad: camera.yfov(),
+                        z_far: camera.zfar(),
+                        z_near: camera.znear(),
+                    })
+                }
+                gltf::camera::Projection::Orthographic(camera) => {
+                    crate::scene::Projection::Orthographic(crate::scene::OrthographicCamera {
+                        x_mag: camera.xmag(),
+                        y_mag: camera.ymag(),
+                        z_far: camera.zfar(),
+                        z_near: camera.znear(),
+                    })
+                }
+            },
+        }
+    }
+}
+
+impl From<gltf::khr_lights_punctual::Light<'_>> for crate::scene::Light {
+    fn from(light: gltf::khr_lights_punctual::Light<'_>) -> Self {
+        Self {
+            name: light.name().unwrap_or("Unnamed light").to_string(),
+            color: light.color().into(),
+            intensity: light.intensity(),
+            range: light.range().unwrap_or(0.0),
+            kind: light.kind().into(),
+        }
+    }
+}
+
+impl From<gltf::khr_lights_punctual::Kind> for crate::scene::LightKind {
+    fn from(kind: gltf::khr_lights_punctual::Kind) -> Self {
+        match kind {
+            gltf::khr_lights_punctual::Kind::Directional => crate::scene::LightKind::Directional,
+            gltf::khr_lights_punctual::Kind::Point => crate::scene::LightKind::Point,
+            gltf::khr_lights_punctual::Kind::Spot {
+                inner_cone_angle,
+                outer_cone_angle,
+            } => crate::scene::LightKind::Spot {
+                inner_cone_angle,
+                outer_cone_angle,
+            },
+        }
     }
 }
 
