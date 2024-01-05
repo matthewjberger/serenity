@@ -7,13 +7,13 @@ pub struct Scene {
 
 pub fn create_camera_node(aspect_ratio: f32) -> Node {
     crate::scene::Node {
-        id: "Camera".to_string(),
+        name: "Camera".to_string(),
         transform: crate::scene::Transform {
             translation: nalgebra_glm::vec3(0.0, 0.0, 4.0),
             ..Default::default()
         },
         components: vec![crate::scene::NodeComponent::Camera(crate::scene::Camera {
-            id: "Camera".to_string(),
+            name: "Camera".to_string(),
             projection: crate::scene::Projection::Perspective(crate::scene::PerspectiveCamera {
                 aspect_ratio: Some(aspect_ratio),
                 y_fov_rad: 90_f32.to_radians(),
@@ -81,7 +81,7 @@ impl Scene {
             for component in node.components.iter() {
                 if let crate::scene::NodeComponent::Mesh(mesh) = component {
                     let (vertex_offset, index_offset) = (vertices.len(), indices.len());
-                    meshes.insert(mesh.id.to_string(), {
+                    meshes.insert(mesh.name.to_string(), {
                         mesh.primitives
                             .iter()
                             .map(|primitive| {
@@ -171,7 +171,7 @@ impl std::ops::DerefMut for SceneGraph {
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Mesh {
-    pub id: String,
+    pub name: String,
     pub primitives: Vec<Primitive>,
 }
 
@@ -184,14 +184,14 @@ pub struct Primitive {
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Node {
-    pub id: String,
+    pub name: String,
     pub transform: Transform,
     pub components: Vec<NodeComponent>,
 }
 
 impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.id)
+        write!(f, "{}", self.name)
     }
 }
 
@@ -199,6 +199,7 @@ impl std::fmt::Debug for Node {
 pub enum NodeComponent {
     Camera(Camera),
     Mesh(Mesh),
+    Light(Light),
 }
 
 #[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -244,7 +245,7 @@ impl Transform {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
-    pub id: String,
+    pub name: String,
     pub projection: Projection,
 }
 
@@ -338,4 +339,29 @@ pub struct PrimitiveDrawCommand {
     pub index_offset: usize,
     pub vertices: usize,
     pub indices: usize,
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Light {
+    pub name: String,
+    pub intensity: f32,
+    pub range: f32,
+    pub color: nalgebra_glm::Vec3,
+    pub kind: LightKind,
+}
+
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
+pub enum LightKind {
+    Directional,
+    Point,
+    Spot {
+        inner_cone_angle: f32,
+        outer_cone_angle: f32,
+    },
+}
+
+impl Default for LightKind {
+    fn default() -> Self {
+        Self::Directional
+    }
 }

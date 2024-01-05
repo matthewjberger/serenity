@@ -175,7 +175,7 @@ fn render(
 
                     render_pass.set_bind_group(0, &context.view.uniform_bind_group, &[]);
 
-                    if let Some(commands) = context.view.meshes.get(&mesh.id) {
+                    if let Some(commands) = context.view.meshes.get(&mesh.name) {
                         commands.iter().for_each(|command| {
                             let index_offset = command.index_offset as u32;
                             let number_of_indices = index_offset + command.indices as u32;
