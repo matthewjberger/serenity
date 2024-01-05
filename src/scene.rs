@@ -27,7 +27,7 @@ pub fn create_camera_node(aspect_ratio: f32) -> Node {
 impl Scene {
     pub fn has_camera(&self) -> bool {
         let mut has_camera = false;
-        self.walk_dfs(|node| {
+        self.walk_dfs(|node, _| {
             for component in node.components.iter() {
                 if let crate::scene::NodeComponent::Camera(_) = component {
                     has_camera = true;
@@ -44,13 +44,13 @@ impl Scene {
             .add_edge(petgraph::graph::NodeIndex::new(0), child, ());
     }
 
-    pub fn walk_dfs(&self, mut visit_node: impl FnMut(&Node)) {
+    pub fn walk_dfs(&self, mut visit_node: impl FnMut(&Node, petgraph::graph::NodeIndex)) {
         if self.graph.0.node_count() == 0 {
             return;
         }
         let mut dfs = petgraph::visit::Dfs::new(&self.graph.0, petgraph::graph::NodeIndex::new(0));
         while let Some(node_index) = dfs.next(&self.graph.0) {
-            visit_node(&self.graph.0[node_index]);
+            visit_node(&self.graph.0[node_index], node_index);
         }
     }
 
@@ -67,7 +67,7 @@ impl Scene {
         }
     }
 
-    pub fn flatten(
+    pub fn flatten_geometry(
         &self,
     ) -> (
         Vec<crate::scene::Vertex>,
@@ -77,16 +77,16 @@ impl Scene {
         let (mut vertices, mut indices, mut meshes) =
             (Vec::new(), Vec::new(), std::collections::HashMap::new());
 
-        self.walk_dfs(|node| {
+        self.walk_dfs(|node, _| {
             for component in node.components.iter() {
                 if let crate::scene::NodeComponent::Mesh(mesh) = component {
-                    let (vertex_offset, index_offset) = (vertices.len(), indices.len());
                     meshes.insert(mesh.name.to_string(), {
                         mesh.primitives
                             .iter()
                             .map(|primitive| {
                                 let primitive_vertices = primitive.vertices.to_vec();
-                                let number_of_vertices = primitive_vertices.len();
+                                let vertex_offset = vertices.len();
+                                let number_of_vertices = primitive.vertices.len();
                                 vertices.extend_from_slice(&primitive_vertices);
 
                                 let primitive_indices = primitive
@@ -94,7 +94,8 @@ impl Scene {
                                     .iter()
                                     .map(|x| *x as u16)
                                     .collect::<Vec<_>>();
-                                let number_of_indices = primitive_indices.len();
+                                let index_offset = indices.len();
+                                let number_of_indices = primitive.indices.len();
                                 indices.extend_from_slice(&primitive_indices);
 
                                 PrimitiveDrawCommand {
@@ -146,7 +147,7 @@ impl Default for Vertex {
 pub struct SceneGraph(pub petgraph::Graph<Node, ()>);
 
 impl std::fmt::Display for SceneGraph {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
             "{:?}",
@@ -166,6 +167,22 @@ impl std::ops::Deref for SceneGraph {
 impl std::ops::DerefMut for SceneGraph {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl SceneGraph {
+    pub fn global_transform(&self, node_index: petgraph::graph::NodeIndex) -> nalgebra_glm::Mat4 {
+        let mut transform = nalgebra_glm::Mat4::identity();
+        let mut current_node_index = node_index;
+        while let Some(parent_node_index) = self
+            .0
+            .neighbors_directed(current_node_index, petgraph::Direction::Incoming)
+            .next()
+        {
+            transform = self.0[current_node_index].transform.matrix() * transform;
+            current_node_index = parent_node_index;
+        }
+        transform
     }
 }
 
