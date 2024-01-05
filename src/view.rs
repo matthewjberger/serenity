@@ -1,12 +1,12 @@
 pub struct View {
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    depth_texture_view: wgpu::TextureView,
-    uniform_buffer: wgpu::Buffer,
-    uniform_bind_group: wgpu::BindGroup,
-    _uniform_bind_group_layout: wgpu::BindGroupLayout,
-    pipeline: wgpu::RenderPipeline,
-    meshes: std::collections::HashMap<String, Vec<crate::scene::PrimitiveDrawCommand>>,
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub depth_texture_view: wgpu::TextureView,
+    pub uniform_buffer: wgpu::Buffer,
+    pub uniform_bind_group: wgpu::BindGroup,
+    pub _uniform_bind_group_layout: wgpu::BindGroupLayout,
+    pub pipeline: wgpu::RenderPipeline,
+    pub meshes: std::collections::HashMap<String, Vec<crate::scene::PrimitiveDrawCommand>>,
 }
 
 impl View {
@@ -75,124 +75,14 @@ impl View {
     pub fn resize(&mut self, gpu: &crate::gpu::Gpu, width: u32, height: u32) {
         self.depth_texture_view = gpu.create_depth_texture(width, height);
     }
-
-    pub fn render(
-        &mut self,
-        window: &winit::window::Window,
-        gpu: &crate::gpu::Gpu,
-        gui: &mut crate::gui::Gui,
-        scene: &mut crate::scene::Scene,
-        ui: impl FnOnce(&crate::gpu::Gpu, &mut crate::gui::Gui, &mut crate::scene::Scene, &mut Self),
-    ) {
-        let mut encoder = gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
-
-        gui.begin_frame(window);
-        ui(gpu, gui, scene, self);
-        let (paint_jobs, screen_descriptor) = gui.end_frame(gpu, window, &mut encoder);
-
-        let surface_texture = gpu
-            .surface
-            .get_current_texture()
-            .expect("Failed to get surface texture!");
-
-        let surface_texture_view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        encoder.insert_debug_marker("Render scene");
-
-        // This scope around the render_pass prevents the
-        // render_pass from holding a borrow to the encoder,
-        // which would prevent calling `.finish()` in
-        // preparation for queue submission.
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &surface_texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.4,
-                            g: 0.2,
-                            b: 0.2,
-                            a: 1.0,
-                        }),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                }),
-            });
-
-            render_pass.set_pipeline(&self.pipeline);
-            render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-
-            let (projection_matrix, view_matrix) =
-                create_camera_matrices(scene, gpu.aspect_ratio()).expect("No camera is available!");
-
-            scene.walk_dfs_mut(|node, _| {
-                let model_matrix = node.transform.matrix();
-
-                for component in node.components.iter() {
-                    if let crate::scene::NodeComponent::Mesh(mesh) = component {
-                        let render_pass: &mut wgpu::RenderPass<'_> = &mut render_pass;
-                        let uniform_buffer = UniformBuffer {
-                            mvp: projection_matrix * view_matrix * model_matrix,
-                        };
-
-                        gpu.queue.write_buffer(
-                            &self.uniform_buffer,
-                            0,
-                            bytemuck::cast_slice(&[uniform_buffer]),
-                        );
-
-                        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-
-                        if let Some(commands) = self.meshes.get(&mesh.id) {
-                            commands.iter().for_each(|command| {
-                                let index_offset = command.index_offset as u32;
-                                let number_of_indices = index_offset + command.indices as u32;
-                                render_pass.draw_indexed(
-                                    index_offset..number_of_indices,
-                                    command.vertex_offset as i32,
-                                    0..1, // TODO: support multiple instances per primitive
-                                );
-                            });
-                        }
-                    }
-                }
-            });
-
-            gui.renderer
-                .render(&mut render_pass, &paint_jobs, &screen_descriptor);
-        }
-
-        gpu.queue.submit(std::iter::once(encoder.finish()));
-
-        surface_texture.present();
-    }
 }
 
-fn create_camera_matrices(
-    scene: &mut crate::scene::Scene,
+pub fn create_camera_matrices(
+    scene: &crate::scene::Scene,
     aspect_ratio: f32,
 ) -> Option<(nalgebra_glm::Mat4, nalgebra_glm::Mat4)> {
     let mut result = None;
-    scene.walk_dfs_mut(|node, _| {
+    scene.walk_dfs(|node| {
         for component in node.components.iter() {
             if let crate::scene::NodeComponent::Camera(camera) = component {
                 result = Some((camera.projection_matrix(aspect_ratio), {
@@ -240,8 +130,8 @@ fn create_geometry_buffers(
 
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct UniformBuffer {
-    mvp: nalgebra_glm::Mat4,
+pub struct UniformBuffer {
+    pub mvp: nalgebra_glm::Mat4,
 }
 
 fn create_pipeline(

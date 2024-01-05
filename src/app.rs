@@ -1,13 +1,17 @@
-pub(crate) struct App {
+pub struct Context {
+    pub window: winit::window::Window,
+    pub gpu: crate::gpu::Gpu,
+    pub gui: crate::gui::Gui,
+    pub io: crate::io::Io,
+    pub view: crate::view::View,
+    pub delta_time: f64,
+    pub last_frame: std::time::Instant,
+    pub scene: crate::scene::Scene,
+}
+
+pub struct App {
     event_loop: winit::event_loop::EventLoop<()>,
-    window: winit::window::Window,
-    gpu: crate::gpu::Gpu,
-    gui: crate::gui::Gui,
-    io: crate::io::Io,
-    view: crate::view::View,
-    scene: crate::scene::Scene,
-    delta_time: f64,
-    last_frame: std::time::Instant,
+    context: Context,
 }
 
 impl App {
@@ -25,162 +29,220 @@ impl App {
         let view = crate::view::View::new(&gpu);
 
         let mut scene = crate::scene::Scene::default();
-        scene.add_root_node(crate::scene::create_camera_node(gpu.aspect_ratio()));
+        scene
+            .graph
+            .add_node(crate::scene::create_camera_node(gpu.aspect_ratio()));
 
         Self {
             event_loop,
-            window,
-            gpu,
-            gui,
-            io: crate::io::Io::default(),
-            scene,
-            view,
-            delta_time: 0.01,
-            last_frame: std::time::Instant::now(),
+            context: Context {
+                window,
+                gpu,
+                gui,
+                io: crate::io::Io::default(),
+                view,
+                delta_time: 0.01,
+                last_frame: std::time::Instant::now(),
+                scene,
+            },
         }
     }
 
-    pub fn run(self) {
+    pub fn run(self, mut state: impl State + 'static) {
+        env_logger::init();
+
         let Self {
             event_loop,
-            window,
-            mut gui,
-            mut view,
-            mut gpu,
-            mut io,
-            mut scene,
-            mut delta_time,
-            mut last_frame,
+            mut context,
         } = self;
-
-        env_logger::init();
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = winit::event_loop::ControlFlow::Poll;
 
-            if let winit::event::Event::NewEvents(..) = event {
-                delta_time = (std::time::Instant::now()
-                    .duration_since(last_frame)
-                    .as_micros() as f64)
-                    / 1_000_000_f64;
-                last_frame = std::time::Instant::now();
-            }
+            receive_events(&event, &mut context, control_flow);
 
-            if io.is_key_pressed(winit::event::VirtualKeyCode::Escape) {
-                *control_flow = winit::event_loop::ControlFlow::Exit;
-            }
-
-            if let winit::event::Event::WindowEvent {
-                event:
-                    winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }),
-                ..
-            } = event
-            {
-                gpu.resize(width, height);
-                view.resize(&gpu, width, height);
-            }
-
-            if let winit::event::Event::WindowEvent {
-                event: winit::event::WindowEvent::CloseRequested,
-                ..
-            } = event
-            {
-                *control_flow = winit::event_loop::ControlFlow::Exit
-            }
-
-            if !gui.receive_event(&event, &window) {
-                io.receive_event(&event, gpu.window_center());
-            }
-
-            camera_system(&mut scene, &io, delta_time);
+            state.receive_events(&mut context, &event, control_flow);
+            state.update(&mut context);
 
             if let winit::event::Event::MainEventsCleared = event {
-                view.render(
-                    &window,
-                    &gpu,
-                    &mut gui,
-                    &mut scene,
-                    |gpu, gui, scene, view| ui(gpu, gui, scene, view),
-                );
+                let mut encoder =
+                    context
+                        .gpu
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("Render Encoder"),
+                        });
+                let (paint_jobs, screen_descriptor) =
+                    render_ui(&mut context, &mut state, &mut encoder);
+                render(encoder, &mut context, paint_jobs, screen_descriptor);
             }
         });
     }
 }
 
-fn camera_system(scene: &mut crate::scene::Scene, io: &crate::io::Io, delta_time: f64) {
-    scene.walk_dfs_mut(|node, _| {
-        node.components.iter_mut().for_each(|component| {
-            if let crate::scene::NodeComponent::Camera(_camera) = component {
-                if io.is_key_pressed(winit::event::VirtualKeyCode::W) {
-                    node.transform.translation.z -= (0.05_f64 * delta_time) as f32;
-                }
-                if io.is_key_pressed(winit::event::VirtualKeyCode::A) {
-                    node.transform.translation.x -= (0.05_f64 * delta_time) as f32;
-                }
-                if io.is_key_pressed(winit::event::VirtualKeyCode::S) {
-                    node.transform.translation.z += (0.05_f64 * delta_time) as f32;
-                }
-                if io.is_key_pressed(winit::event::VirtualKeyCode::D) {
-                    node.transform.translation.x += (0.05_f64 * delta_time) as f32;
-                }
-                if io.is_key_pressed(winit::event::VirtualKeyCode::Space) {
-                    node.transform.translation.y += (0.05_f64 * delta_time) as f32;
-                }
-                if io.is_key_pressed(winit::event::VirtualKeyCode::LShift) {
-                    node.transform.translation.y -= (0.05_f64 * delta_time) as f32;
+fn render_ui(
+    context: &mut Context,
+    state: &mut impl State,
+    encoder: &mut wgpu::CommandEncoder,
+) -> (
+    Vec<egui::ClippedPrimitive>,
+    egui_wgpu::renderer::ScreenDescriptor,
+) {
+    context.gui.begin_frame(&context.window);
+    state.ui(context);
+    let (paint_jobs, screen_descriptor) =
+        context
+            .gui
+            .end_frame(&context.gpu, &context.window, encoder);
+    (paint_jobs, screen_descriptor)
+}
+
+fn render(
+    mut encoder: wgpu::CommandEncoder,
+    context: &mut Context,
+    paint_jobs: Vec<egui::ClippedPrimitive>,
+    screen_descriptor: egui_wgpu::renderer::ScreenDescriptor,
+) {
+    let surface_texture = context
+        .gpu
+        .surface
+        .get_current_texture()
+        .expect("Failed to get surface texture!");
+
+    let surface_texture_view = surface_texture
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor::default());
+
+    encoder.insert_debug_marker("Render scene");
+
+    // This scope around the render_pass prevents the
+    // render_pass from holding a borrow to the encoder,
+    // which would prevent calling `.finish()` in
+    // preparation for queue submission.
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &surface_texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.4,
+                        g: 0.2,
+                        b: 0.2,
+                        a: 1.0,
+                    }),
+                    store: true,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &context.view.depth_texture_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: true,
+                }),
+                stencil_ops: None,
+            }),
+        });
+
+        render_pass.set_pipeline(&context.view.pipeline);
+        render_pass.set_bind_group(0, &context.view.uniform_bind_group, &[]);
+
+        render_pass.set_vertex_buffer(0, context.view.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(
+            context.view.index_buffer.slice(..),
+            wgpu::IndexFormat::Uint16,
+        );
+
+        let (projection_matrix, view_matrix) =
+            crate::view::create_camera_matrices(&context.scene, context.gpu.aspect_ratio())
+                .expect("No camera is available!");
+
+        context.scene.walk_dfs(|node| {
+            let model_matrix = node.transform.matrix();
+
+            for component in node.components.iter() {
+                if let crate::scene::NodeComponent::Mesh(mesh) = component {
+                    let uniform_buffer = crate::view::UniformBuffer {
+                        mvp: projection_matrix * view_matrix * model_matrix,
+                    };
+
+                    context.gpu.queue.write_buffer(
+                        &context.view.uniform_buffer,
+                        0,
+                        bytemuck::cast_slice(&[uniform_buffer]),
+                    );
+
+                    render_pass.set_bind_group(0, &context.view.uniform_bind_group, &[]);
+
+                    if let Some(commands) = context.view.meshes.get(&mesh.id) {
+                        commands.iter().for_each(|command| {
+                            let index_offset = command.index_offset as u32;
+                            let number_of_indices = index_offset + command.indices as u32;
+                            render_pass.draw_indexed(
+                                index_offset..number_of_indices,
+                                command.vertex_offset as i32,
+                                0..1, // TODO: support multiple instances per primitive
+                            );
+                        });
+                    }
                 }
             }
         });
-    });
+
+        context
+            .gui
+            .renderer
+            .render(&mut render_pass, &paint_jobs, &screen_descriptor);
+    }
+
+    context.gpu.queue.submit(std::iter::once(encoder.finish()));
+
+    surface_texture.present();
 }
 
-fn ui(
-    gpu: &crate::gpu::Gpu,
-    gui: &mut crate::gui::Gui,
-    scene: &mut crate::scene::Scene,
-    view: &mut crate::view::View,
+pub trait State {
+    fn receive_events(
+        &mut self,
+        context: &mut Context,
+        event: &winit::event::Event<'_, ()>,
+        control_flow: &mut winit::event_loop::ControlFlow,
+    );
+    fn update(&mut self, context: &mut Context);
+    fn ui(&mut self, context: &mut Context);
+}
+
+fn receive_events(
+    event: &winit::event::Event<'_, ()>,
+    context: &mut Context,
+    control_flow: &mut winit::event_loop::ControlFlow,
 ) {
-    egui::TopBottomPanel::top("top_panel")
-        .resizable(true)
-        .show(&gui.context, |ui| {
-            egui::menu::bar(ui, |ui| {
-                egui::global_dark_light_mode_switch(ui);
-                ui.menu_button("File", |ui| {
-                    if ui.button("Import asset (gltf/glb)...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("GLTF / GLB", &["gltf", "glb"])
-                            .pick_file()
-                        {
-                            let scenes =
-                                crate::gltf::import_gltf(path).expect("Failed to import gltf!");
-                            *scene = scenes[0].clone();
-                            if !scene.has_camera() {
-                                scene.add_root_node(crate::scene::create_camera_node(
-                                    gpu.aspect_ratio(),
-                                ));
-                            }
-                            view.import_scene(&scenes[0], gpu);
-                        }
-                    };
-                });
-            });
-        });
+    if let winit::event::Event::NewEvents(..) = *event {
+        context.delta_time = (std::time::Instant::now()
+            .duration_since(context.last_frame)
+            .as_micros() as f64)
+            / 1_000_000_f64;
+        context.last_frame = std::time::Instant::now();
+    }
 
-    egui::SidePanel::left("left_panel")
-        .resizable(true)
-        .show(&gui.context, |ui| {
-            ui.heading("Scene Explorer");
-        });
+    if let winit::event::Event::WindowEvent {
+        event: winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }),
+        ..
+    } = *event
+    {
+        context.gpu.resize(width, height);
+        context.view.resize(&context.gpu, width, height);
+    }
 
-    egui::SidePanel::right("right_panel")
-        .resizable(true)
-        .show(&gui.context, |ui| {
-            ui.heading("Inspector");
-        });
+    if let winit::event::Event::WindowEvent {
+        event: winit::event::WindowEvent::CloseRequested,
+        ..
+    } = *event
+    {
+        *control_flow = winit::event_loop::ControlFlow::Exit
+    }
 
-    egui::TopBottomPanel::bottom("bottom_panel")
-        .resizable(true)
-        .show(&gui.context, |ui| {
-            ui.heading("Console");
-        });
+    if !context.gui.receive_event(event, &context.window) {
+        context.io.receive_event(event, context.gpu.window_center());
+    }
 }
