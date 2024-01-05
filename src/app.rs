@@ -6,6 +6,8 @@ pub(crate) struct App {
     io: crate::io::Io,
     view: crate::view::View,
     scene: crate::scene::Scene,
+    delta_time: f64,
+    last_frame: std::time::Instant,
 }
 
 impl App {
@@ -33,6 +35,8 @@ impl App {
             io: crate::io::Io::default(),
             scene,
             view,
+            delta_time: 0.01,
+            last_frame: std::time::Instant::now(),
         }
     }
 
@@ -45,24 +49,26 @@ impl App {
             mut gpu,
             mut io,
             mut scene,
+            mut delta_time,
+            mut last_frame,
         } = self;
 
         env_logger::init();
 
         event_loop.run(move |event, _, control_flow| {
-            io.receive_event(
-                &event,
-                nalgebra_glm::vec2(
-                    window.inner_size().width as f32 / 2.0,
-                    window.inner_size().height as f32 / 2.0,
-                ),
-            );
+            *control_flow = winit::event_loop::ControlFlow::Poll;
 
-            if gui.consumed_event(&event, &window) {
-                return;
+            if let winit::event::Event::NewEvents(..) = event {
+                delta_time = (std::time::Instant::now()
+                    .duration_since(last_frame)
+                    .as_micros() as f64)
+                    / 1_000_000_f64;
+                last_frame = std::time::Instant::now();
             }
 
-            camera_system(&mut scene, &io);
+            if io.is_key_pressed(winit::event::VirtualKeyCode::Escape) {
+                *control_flow = winit::event_loop::ControlFlow::Exit;
+            }
 
             if let winit::event::Event::WindowEvent {
                 event:
@@ -82,52 +88,99 @@ impl App {
                 *control_flow = winit::event_loop::ControlFlow::Exit
             }
 
+            if !gui.receive_event(&event, &window) {
+                io.receive_event(&event, gpu.window_center());
+            }
+
+            camera_system(&mut scene, &io, delta_time);
+
             if let winit::event::Event::MainEventsCleared = event {
-                view.render(&window, &gpu, &mut gui, &mut scene);
+                view.render(
+                    &window,
+                    &gpu,
+                    &mut gui,
+                    &mut scene,
+                    |gpu, gui, scene, view| ui(gpu, gui, scene, view),
+                );
             }
         });
     }
 }
 
-fn camera_system(scene: &mut crate::scene::Scene, io: &crate::io::Io) {
+fn camera_system(scene: &mut crate::scene::Scene, io: &crate::io::Io, delta_time: f64) {
     scene.walk_dfs_mut(|node, _| {
         node.components.iter_mut().for_each(|component| {
-            if let crate::scene::NodeComponent::Camera(camera) = component {
-                update_camera_orientation(camera, &io);
-                node.transform.rotation = camera.orientation.look_at();
-                node.transform.translation = camera.orientation.translation();
+            if let crate::scene::NodeComponent::Camera(_camera) = component {
+                if io.is_key_pressed(winit::event::VirtualKeyCode::W) {
+                    node.transform.translation.z -= (0.05_f64 * delta_time) as f32;
+                }
+                if io.is_key_pressed(winit::event::VirtualKeyCode::A) {
+                    node.transform.translation.x -= (0.05_f64 * delta_time) as f32;
+                }
+                if io.is_key_pressed(winit::event::VirtualKeyCode::S) {
+                    node.transform.translation.z += (0.05_f64 * delta_time) as f32;
+                }
+                if io.is_key_pressed(winit::event::VirtualKeyCode::D) {
+                    node.transform.translation.x += (0.05_f64 * delta_time) as f32;
+                }
+                if io.is_key_pressed(winit::event::VirtualKeyCode::Space) {
+                    node.transform.translation.y += (0.05_f64 * delta_time) as f32;
+                }
+                if io.is_key_pressed(winit::event::VirtualKeyCode::LShift) {
+                    node.transform.translation.y -= (0.05_f64 * delta_time) as f32;
+                }
             }
         });
     });
 }
 
-fn update_camera_orientation(camera: &mut crate::scene::Camera, io: &crate::io::Io) {
-    camera.orientation.zoom(io.mouse.wheel_delta.y * 0.03);
+fn ui(
+    gpu: &crate::gpu::Gpu,
+    gui: &mut crate::gui::Gui,
+    scene: &mut crate::scene::Scene,
+    view: &mut crate::view::View,
+) {
+    egui::TopBottomPanel::top("top_panel")
+        .resizable(true)
+        .show(&gui.context, |ui| {
+            egui::menu::bar(ui, |ui| {
+                egui::global_dark_light_mode_switch(ui);
+                ui.menu_button("File", |ui| {
+                    if ui.button("Import asset (gltf/glb)...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("GLTF / GLB", &["gltf", "glb"])
+                            .pick_file()
+                        {
+                            let scenes =
+                                crate::gltf::import_gltf(path).expect("Failed to import gltf!");
+                            *scene = scenes[0].clone();
+                            if !scene.has_camera() {
+                                scene.add_root_node(crate::scene::create_camera_node(
+                                    gpu.aspect_ratio(),
+                                ));
+                            }
+                            view.import_scene(&scenes[0], gpu);
+                        }
+                    };
+                });
+            });
+        });
 
-    if io.mouse.is_right_clicked && io.is_key_pressed(winit::event::VirtualKeyCode::LShift) {
-        let mut delta = io.mouse.position_delta;
-        delta.x *= -1.0;
-        delta *= 0.03;
-        camera.orientation.rotate(&delta);
-    }
+    egui::SidePanel::left("left_panel")
+        .resizable(true)
+        .show(&gui.context, |ui| {
+            ui.heading("Scene Explorer");
+        });
 
-    if io.mouse.is_middle_clicked && io.is_key_pressed(winit::event::VirtualKeyCode::LShift) {
-        camera.orientation.pan(&(io.mouse.position_delta * 0.03));
-    }
+    egui::SidePanel::right("right_panel")
+        .resizable(true)
+        .show(&gui.context, |ui| {
+            ui.heading("Inspector");
+        });
 
-    if io.is_key_pressed(winit::event::VirtualKeyCode::W) {
-        camera.orientation.pan(&nalgebra_glm::Vec2::new(0.0, 0.5));
-    }
-
-    if io.is_key_pressed(winit::event::VirtualKeyCode::S) {
-        camera.orientation.pan(&nalgebra_glm::Vec2::new(0.0, -0.5));
-    }
-
-    if io.is_key_pressed(winit::event::VirtualKeyCode::A) {
-        camera.orientation.pan(&nalgebra_glm::Vec2::new(-0.5, 0.0));
-    }
-
-    if io.is_key_pressed(winit::event::VirtualKeyCode::D) {
-        camera.orientation.pan(&nalgebra_glm::Vec2::new(0.5, 0.0));
-    }
+    egui::TopBottomPanel::bottom("bottom_panel")
+        .resizable(true)
+        .show(&gui.context, |ui| {
+            ui.heading("Console");
+        });
 }

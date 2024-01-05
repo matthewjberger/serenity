@@ -212,7 +212,6 @@ fn import_camera(camera: gltf::Camera) -> crate::scene::Camera {
                 })
             }
         },
-        orientation: crate::scene::Orientation::default(),
     }
 }
 
