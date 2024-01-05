@@ -64,87 +64,8 @@ impl View {
         }
     }
 
-    fn ui(
-        &mut self,
-        gpu: &crate::gpu::Gpu,
-        gui: &mut crate::gui::Gui,
-        scene: &mut crate::scene::Scene,
-    ) {
-        egui::TopBottomPanel::top("top_panel")
-            .resizable(true)
-            .show(&gui.context, |ui| {
-                egui::menu::bar(ui, |ui| {
-                    egui::global_dark_light_mode_switch(ui);
-                    ui.menu_button("File", |ui| {
-                        if ui.button("Import asset (gltf/glb)...").clicked() {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("GLTF / GLB", &["gltf", "glb"])
-                                .pick_file()
-                            {
-                                self.import_gltf_file(path, scene, gpu);
-                            }
-                        };
-                    });
-                });
-            });
-
-        egui::SidePanel::left("left_panel")
-            .resizable(true)
-            .show(&gui.context, |ui| {
-                ui.heading("Scene Explorer");
-
-                let camera_node = scene
-                    .graph
-                    .0
-                    .node_weight_mut(scene.graph.0.node_indices().next().unwrap())
-                    .unwrap();
-                ui.label("Camera");
-                ui.indent("Camera", |ui| {
-                    ui.label("Position");
-                    ui.add(egui::DragValue::new(
-                        &mut camera_node.transform.translation.x,
-                    ));
-                    ui.add(egui::DragValue::new(
-                        &mut camera_node.transform.translation.y,
-                    ));
-                    ui.add(egui::DragValue::new(
-                        &mut camera_node.transform.translation.z,
-                    ));
-
-                    ui.label("Scale");
-                    ui.add(egui::DragValue::new(&mut camera_node.transform.scale.x));
-                    ui.add(egui::DragValue::new(&mut camera_node.transform.scale.y));
-                    ui.add(egui::DragValue::new(&mut camera_node.transform.scale.z));
-                });
-            });
-
-        egui::SidePanel::right("right_panel")
-            .resizable(true)
-            .show(&gui.context, |ui| {
-                ui.heading("Inspector");
-            });
-
-        egui::TopBottomPanel::bottom("bottom_panel")
-            .resizable(true)
-            .show(&gui.context, |ui| {
-                ui.heading("Console");
-            });
-    }
-
-    fn import_gltf_file(
-        &mut self,
-        path: std::path::PathBuf,
-        scene: &mut crate::scene::Scene,
-        gpu: &crate::gpu::Gpu,
-    ) {
-        let scenes = crate::gltf::import_gltf(path).expect("Failed to import gltf!");
-        *scene = scenes[0].clone();
-
-        if !scene.has_camera() {
-            scene.add_root_node(crate::scene::create_camera_node(gpu.aspect_ratio()));
-        }
-
-        let (vertices, indices, meshes) = scenes[0].flatten();
+    pub fn import_scene(&mut self, scene: &crate::scene::Scene, gpu: &crate::gpu::Gpu) {
+        let (vertices, indices, meshes) = scene.flatten();
         let (vertex_buffer, index_buffer) = create_geometry_buffers(&gpu.device, vertices, indices);
         self.vertex_buffer = vertex_buffer;
         self.index_buffer = index_buffer;
@@ -161,6 +82,7 @@ impl View {
         gpu: &crate::gpu::Gpu,
         gui: &mut crate::gui::Gui,
         scene: &mut crate::scene::Scene,
+        ui: impl FnOnce(&crate::gpu::Gpu, &mut crate::gui::Gui, &mut crate::scene::Scene, &mut Self),
     ) {
         let mut encoder = gpu
             .device
@@ -169,7 +91,7 @@ impl View {
             });
 
         gui.begin_frame(window);
-        self.ui(gpu, gui, scene);
+        ui(gpu, gui, scene, self);
         let (paint_jobs, screen_descriptor) = gui.end_frame(gpu, window, &mut encoder);
 
         let surface_texture = gpu
@@ -195,9 +117,9 @@ impl View {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
+                            r: 0.4,
                             g: 0.2,
-                            b: 0.3,
+                            b: 0.2,
                             a: 1.0,
                         }),
                         store: true,
@@ -219,18 +141,11 @@ impl View {
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            let window_size = window.inner_size();
-            let aspect_ratio = window_size.width as f32 / window_size.height.max(1) as f32;
-
             let (projection_matrix, view_matrix) =
-                create_camera_matrices(scene, aspect_ratio).expect("No camera is available!");
+                create_camera_matrices(scene, gpu.aspect_ratio()).expect("No camera is available!");
 
-            let mut dfs =
-                petgraph::visit::Dfs::new(&scene.graph.0, petgraph::graph::NodeIndex::new(0));
-
-            while let Some(node_index) = dfs.next(&scene.graph.0) {
-                let model_matrix = scene.graph.global_transform(node_index);
-                let node = &mut scene.graph.0[node_index];
+            scene.walk_dfs_mut(|node, _| {
+                let model_matrix = node.transform.matrix();
 
                 for component in node.components.iter() {
                     if let crate::scene::NodeComponent::Mesh(mesh) = component {
@@ -260,7 +175,7 @@ impl View {
                         }
                     }
                 }
-            }
+            });
 
             gui.renderer
                 .render(&mut render_pass, &paint_jobs, &screen_descriptor);
@@ -282,9 +197,15 @@ fn create_camera_matrices(
             if let crate::scene::NodeComponent::Camera(camera) = component {
                 result = Some((camera.projection_matrix(aspect_ratio), {
                     let eye = node.transform.translation;
-                    // let target = node.transform.translation + node.transform.forward();
-                    let target = nalgebra_glm::Vec3::new(0.0, 0.0, 0.0);
-                    let up = node.transform.up();
+                    let target = eye
+                        + nalgebra_glm::quat_rotate_vec3(
+                            &node.transform.rotation.normalize(),
+                            &(-nalgebra_glm::Vec3::z()),
+                        );
+                    let up = nalgebra_glm::quat_rotate_vec3(
+                        &node.transform.rotation.normalize(),
+                        &nalgebra_glm::Vec3::y(),
+                    );
                     nalgebra_glm::look_at(&eye, &target, &up)
                 }));
             }
@@ -358,7 +279,7 @@ fn create_pipeline(
                 strip_index_format: Some(wgpu::IndexFormat::Uint16),
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
+                polygon_mode: wgpu::PolygonMode::Line,
                 conservative: false,
                 unclipped_depth: false,
             },

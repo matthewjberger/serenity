@@ -17,6 +17,13 @@ impl Gpu {
         self.surface_config.width as f32 / self.surface_config.height.max(1) as f32
     }
 
+    pub fn window_center(&self) -> nalgebra_glm::Vec2 {
+        nalgebra_glm::vec2(
+            self.surface_config.width as f32 / 2.0,
+            self.surface_config.height.max(1) as f32 / 2.0,
+        )
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         log::info!("Resizing renderer surface to: ({width}, {height})");
         self.surface_config.width = width;

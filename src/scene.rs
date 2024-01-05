@@ -20,14 +20,6 @@ pub fn create_camera_node(aspect_ratio: f32) -> Node {
                 z_far: None,
                 z_near: 0.01,
             }),
-            orientation: crate::scene::Orientation {
-                min_radius: 1.0,
-                max_radius: 100.0,
-                radius: 5.0,
-                offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                sensitivity: nalgebra_glm::vec2(0.2, 0.2),
-                direction: nalgebra_glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
-            },
         })],
     }
 }
@@ -177,41 +169,6 @@ impl std::ops::DerefMut for SceneGraph {
     }
 }
 
-impl SceneGraph {
-    /// The heirarchical transform of
-    /// the requested node in the scenegraph
-    pub fn global_transform(
-        &mut self,
-        node_index: petgraph::graph::NodeIndex,
-    ) -> nalgebra_glm::Mat4 {
-        let mut transform = nalgebra_glm::Mat4::identity();
-        self.parent_chain(node_index).iter().for_each(|node_idx| {
-            if let Some(node) = self.0.node_weight(*node_idx) {
-                transform = node.transform.matrix() * transform;
-            }
-        });
-        transform
-    }
-
-    /// Walks the graph from the requested node to the root node,
-    /// returning the parent chain in order starting from the root.
-    pub fn parent_chain(
-        &self,
-        node_index: petgraph::graph::NodeIndex,
-    ) -> Vec<petgraph::graph::NodeIndex> {
-        let mut parent_chain = Vec::new();
-        let mut parent_walker = self
-            .0
-            .neighbors_directed(node_index, petgraph::Direction::Incoming)
-            .detach();
-        while let Some((_, parent_node_index)) = parent_walker.next(&self.0) {
-            parent_chain.push(parent_node_index);
-        }
-        parent_chain.reverse(); // root -> child
-        parent_chain
-    }
-}
-
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Mesh {
     pub id: String,
@@ -283,30 +240,12 @@ impl Transform {
     pub fn matrix(&self) -> nalgebra_glm::Mat4 {
         nalgebra_glm::Mat4::from(*self)
     }
-
-    pub fn right(&self) -> nalgebra_glm::Vec3 {
-        nalgebra_glm::quat_rotate_vec3(&self.rotation.normalize(), &nalgebra_glm::Vec3::x())
-    }
-
-    pub fn up(&self) -> nalgebra_glm::Vec3 {
-        nalgebra_glm::quat_rotate_vec3(&self.rotation.normalize(), &nalgebra_glm::Vec3::y())
-    }
-
-    pub fn forward(&self) -> nalgebra_glm::Vec3 {
-        nalgebra_glm::quat_rotate_vec3(&self.rotation.normalize(), &(nalgebra_glm::Vec3::z()))
-    }
-
-    pub fn apply_orientation(&mut self, orientation: &Orientation) {
-        self.translation = orientation.translation();
-        self.rotation = orientation.look_at();
-    }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
     pub id: String,
     pub projection: Projection,
-    pub orientation: Orientation,
 }
 
 impl Camera {
@@ -399,76 +338,4 @@ pub struct PrimitiveDrawCommand {
     pub index_offset: usize,
     pub vertices: usize,
     pub indices: usize,
-}
-
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Orientation {
-    pub min_radius: f32,
-    pub max_radius: f32,
-    pub radius: f32,
-    pub offset: nalgebra_glm::Vec3,
-    pub sensitivity: nalgebra_glm::Vec2,
-    pub direction: nalgebra_glm::Vec2,
-}
-
-impl Orientation {
-    pub fn direction(&self) -> nalgebra_glm::Vec3 {
-        nalgebra_glm::vec3(
-            self.direction.y.sin() * self.direction.x.sin(),
-            self.direction.y.cos(),
-            self.direction.y.sin() * self.direction.x.cos(),
-        )
-    }
-
-    pub fn rotate(&mut self, position_delta: &nalgebra_glm::Vec2) {
-        let delta = position_delta.component_mul(&self.sensitivity);
-        self.direction.x += delta.x;
-        self.direction.y = nalgebra_glm::clamp_scalar(
-            self.direction.y + delta.y,
-            10.0_f32.to_radians(),
-            170.0_f32.to_radians(),
-        );
-    }
-
-    pub fn up(&self) -> nalgebra_glm::Vec3 {
-        self.right().cross(&self.direction())
-    }
-
-    pub fn right(&self) -> nalgebra_glm::Vec3 {
-        self.direction().cross(&nalgebra_glm::Vec3::y()).normalize()
-    }
-
-    pub fn pan(&mut self, offset: &nalgebra_glm::Vec2) {
-        self.offset += self.right() * offset.x;
-        self.offset += self.up() * offset.y;
-    }
-
-    pub fn translation(&self) -> nalgebra_glm::Vec3 {
-        (self.direction() * self.radius) + self.offset
-    }
-
-    pub fn zoom(&mut self, distance: f32) {
-        self.radius -= distance;
-        if self.radius < self.min_radius {
-            self.radius = self.min_radius;
-        }
-        if self.radius > self.max_radius {
-            self.radius = self.max_radius;
-        }
-    }
-
-    pub fn look_at(&self) -> nalgebra_glm::Quat {
-        self.look_at_point(self.offset - self.translation())
-    }
-
-    pub fn look_forward(&self) -> nalgebra_glm::Quat {
-        self.look_at_point(-self.direction())
-    }
-
-    pub fn look_at_point(&self, point: nalgebra_glm::Vec3) -> nalgebra_glm::Quat {
-        nalgebra_glm::quat_conjugate(&nalgebra_glm::quat_look_at(
-            &point,
-            &nalgebra_glm::Vec3::y(),
-        ))
-    }
 }

@@ -25,7 +25,7 @@ impl Gui {
         }
     }
 
-    pub fn consumed_event(
+    pub fn receive_event(
         &mut self,
         event: &winit::event::Event<()>,
         window: &winit::window::Window,
