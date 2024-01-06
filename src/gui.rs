@@ -5,10 +5,13 @@ pub struct Gui {
 }
 
 impl Gui {
-    pub fn new(window: &winit::window::Window, gpu: &crate::gpu::Gpu) -> Self {
+    pub fn new<W>(window: &W, gpu: &crate::gpu::Gpu, scale_factor: f64) -> Self
+    where
+        W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
+    {
         let state = egui_winit::State::new(window);
         let context = egui::Context::default();
-        context.set_pixels_per_point(window.scale_factor() as f32);
+        context.set_pixels_per_point(scale_factor as _);
 
         // This is required for egui to load and display images in the UI
         egui_extras::install_image_loaders(&context);

@@ -4,7 +4,7 @@ export RUST_LOG := "info"
 export RUST_BACKTRACE := "1"
 
 @just:
-    just run
+    just --list
 
 build:
     cargo build -r
@@ -22,8 +22,8 @@ fix:
 lint:
     cargo clippy --all --tests -- -D warnings
 
-run:
-    cargo run -r
+run $project:
+    cargo run -r -p {{project}}
 
 test:
     cargo test --all -- --nocapture

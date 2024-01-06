@@ -1,7 +1,14 @@
+[workspace]
+members = ["apps/editor"]
+
 [package]
 name = "dragonglass"
-version = "0.1.0"
+authors = ["Matthew Berger <matthewjordanberger@gmail.com>"]
 edition = "2021"
+homepage = "https://github.com/matthewjberger/looking_glass"
+license = "MIT"
+repository = "https://github.com/matthewjberger/looking_glass"
+version = "0.1.0"
 
 [dependencies]
 bytemuck = "1.14.0"
@@ -21,7 +28,6 @@ nalgebra-glm = { version = "0.18.0", features = [
 petgraph = { version = "0.6.4", features = ["serde-1"] }
 pollster = "0.3.0"
 raw-window-handle = "0.5.2"
-rfd = "0.12.1"
 serde = { version = "1.0.193", features = ["derive"] }
 thiserror = "1.0.53"
 wgpu = "0.17.1"
