@@ -6,17 +6,16 @@ fn main() {
 pub struct Editor;
 
 impl dragonglass::app::State for Editor {
-    fn receive_events(
+    fn receive_event(
         &mut self,
         context: &mut dragonglass::app::Context,
         _event: &winit::event::Event<()>,
-        control_flow: &mut winit::event_loop::ControlFlow,
     ) {
         if context
             .io
             .is_key_pressed(winit::event::VirtualKeyCode::Escape)
         {
-            *control_flow = winit::event_loop::ControlFlow::Exit;
+            context.should_exit = true;
         }
     }
 
