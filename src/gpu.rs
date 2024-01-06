@@ -9,10 +9,6 @@ pub struct Gpu {
 impl Gpu {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-    pub fn new(window: &winit::window::Window, width: u32, height: u32) -> Self {
-        pollster::block_on(Self::new_async(window, width, height))
-    }
-
     pub fn alignment(&self) -> u64 {
         self.device.limits().min_uniform_buffer_offset_alignment as wgpu::BufferAddress
     }
@@ -65,7 +61,13 @@ impl Gpu {
         })
     }
 
-    async fn new_async(window: &winit::window::Window, width: u32, height: u32) -> Self {
+    pub async fn new_async<
+        W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
+    >(
+        window: &W,
+        width: u32,
+        height: u32,
+    ) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all),
             ..Default::default()
