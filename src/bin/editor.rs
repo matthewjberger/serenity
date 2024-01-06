@@ -21,37 +21,7 @@ impl dragonglass::app::State for Editor {
     }
 
     fn update(&mut self, context: &mut dragonglass::app::Context) {
-        context.scene.walk_dfs_mut(|node, _| {
-            node.components.iter_mut().for_each(|component| {
-                if let dragonglass::scene::NodeComponent::Camera(_camera) = component {
-                    let speed = (1.0_f64 * context.delta_time) as f32;
-                    if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
-                        node.transform.translation.z -= speed;
-                    }
-                    if context.io.is_key_pressed(winit::event::VirtualKeyCode::A) {
-                        node.transform.translation.x -= speed;
-                    }
-                    if context.io.is_key_pressed(winit::event::VirtualKeyCode::S) {
-                        node.transform.translation.z += speed;
-                    }
-                    if context.io.is_key_pressed(winit::event::VirtualKeyCode::D) {
-                        node.transform.translation.x += speed;
-                    }
-                    if context
-                        .io
-                        .is_key_pressed(winit::event::VirtualKeyCode::Space)
-                    {
-                        node.transform.translation.y += speed;
-                    }
-                    if context
-                        .io
-                        .is_key_pressed(winit::event::VirtualKeyCode::LShift)
-                    {
-                        node.transform.translation.y -= speed;
-                    }
-                }
-            });
-        });
+        camera_system(context);
     }
 
     fn ui(&mut self, context: &mut dragonglass::app::Context) {
@@ -89,4 +59,65 @@ impl dragonglass::app::State for Editor {
                 ui.heading("Scene Tree");
             });
     }
+}
+
+fn camera_system(context: &mut dragonglass::app::Context) {
+    context.scene.walk_dfs_mut(|node, _| {
+        node.components.iter_mut().for_each(|component| {
+            if let dragonglass::scene::NodeComponent::Camera(camera) = component {
+                let speed = (1.0_f64 * context.delta_time) as f32;
+
+                if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
+                    camera.orientation.offset -= camera.orientation.direction() * speed;
+                }
+                if context.io.is_key_pressed(winit::event::VirtualKeyCode::A) {
+                    camera.orientation.offset += camera.orientation.right() * speed;
+                }
+                if context.io.is_key_pressed(winit::event::VirtualKeyCode::S) {
+                    camera.orientation.offset += camera.orientation.direction() * speed;
+                }
+                if context.io.is_key_pressed(winit::event::VirtualKeyCode::D) {
+                    camera.orientation.offset -= camera.orientation.right() * speed;
+                }
+                if context
+                    .io
+                    .is_key_pressed(winit::event::VirtualKeyCode::Space)
+                {
+                    camera.orientation.offset += camera.orientation.up() * speed;
+                }
+                if context
+                    .io
+                    .is_key_pressed(winit::event::VirtualKeyCode::LShift)
+                {
+                    camera.orientation.offset -= camera.orientation.up() * speed;
+                }
+
+                camera
+                    .orientation
+                    .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
+
+                if context.io.mouse.is_middle_clicked {
+                    camera
+                        .orientation
+                        .pan(&(context.io.mouse.position_delta * context.delta_time as f32));
+                }
+                node.transform.translation = camera.orientation.position();
+
+                if context.io.mouse.is_right_clicked {
+                    if context
+                        .io
+                        .is_key_pressed(winit::event::VirtualKeyCode::LAlt)
+                    {
+                        camera.orientation.offset = nalgebra_glm::Vec3::new(0.0, 0.0, 0.0);
+                    }
+
+                    let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
+                    delta.x *= -1.0;
+                    camera.orientation.rotate(&delta);
+                }
+
+                node.transform.rotation = camera.orientation.look_at_offset();
+            }
+        });
+    });
 }

@@ -30,12 +30,14 @@ impl App {
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
 
         let gui = crate::gui::Gui::new(&window, &gpu);
-        let view = crate::view::View::new(&gpu);
+        let mut view = crate::view::View::new(&gpu);
 
-        let mut scene = crate::scene::Scene::default();
+        let mut scene =
+            crate::gltf::import_gltf("./resources/models/OrientationTest.glb").unwrap()[0].clone();
         scene
             .graph
             .add_node(crate::scene::create_camera_node(gpu.aspect_ratio()));
+        view.import_scene(&scene, &gpu);
 
         Self {
             event_loop,

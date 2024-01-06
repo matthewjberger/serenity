@@ -20,6 +20,14 @@ pub fn create_camera_node(aspect_ratio: f32) -> Node {
                 z_far: None,
                 z_near: 0.01,
             }),
+            orientation: Orientation {
+                min_radius: 1.0,
+                max_radius: 100.0,
+                radius: 5.0,
+                offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                sensitivity: nalgebra_glm::vec2(1.0, 1.0),
+                direction: nalgebra_glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
+            },
         })],
     }
 }
@@ -172,17 +180,15 @@ impl std::ops::DerefMut for SceneGraph {
 
 impl SceneGraph {
     pub fn global_transform(&self, node_index: petgraph::graph::NodeIndex) -> nalgebra_glm::Mat4 {
-        let mut transform = nalgebra_glm::Mat4::identity();
-        let mut current_node_index = node_index;
-        while let Some(parent_node_index) = self
+        let transform = self.0[node_index].transform.matrix();
+        match self
             .0
-            .neighbors_directed(current_node_index, petgraph::Direction::Incoming)
+            .neighbors_directed(node_index, petgraph::Direction::Incoming)
             .next()
         {
-            transform = self.0[current_node_index].transform.matrix() * transform;
-            current_node_index = parent_node_index;
+            Some(parent_node_index) => self.global_transform(parent_node_index) * transform,
+            None => transform,
         }
-        transform
     }
 }
 
@@ -264,6 +270,7 @@ impl Transform {
 pub struct Camera {
     pub name: String,
     pub projection: Projection,
+    pub orientation: Orientation,
 }
 
 impl Camera {
@@ -335,6 +342,78 @@ impl OrthographicCamera {
             z_sum / z_diff,
             1.0,
         )
+    }
+}
+
+#[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct Orientation {
+    pub min_radius: f32,
+    pub max_radius: f32,
+    pub radius: f32,
+    pub offset: nalgebra_glm::Vec3,
+    pub sensitivity: nalgebra_glm::Vec2,
+    pub direction: nalgebra_glm::Vec2,
+}
+
+impl Orientation {
+    pub fn direction(&self) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::vec3(
+            self.direction.y.sin() * self.direction.x.sin(),
+            self.direction.y.cos(),
+            self.direction.y.sin() * self.direction.x.cos(),
+        )
+    }
+
+    pub fn rotate(&mut self, position_delta: &nalgebra_glm::Vec2) {
+        let delta = position_delta.component_mul(&self.sensitivity);
+        self.direction.x += delta.x;
+        self.direction.y = nalgebra_glm::clamp_scalar(
+            self.direction.y + delta.y,
+            10.0_f32.to_radians(),
+            170.0_f32.to_radians(),
+        );
+    }
+
+    pub fn up(&self) -> nalgebra_glm::Vec3 {
+        self.right().cross(&self.direction())
+    }
+
+    pub fn right(&self) -> nalgebra_glm::Vec3 {
+        self.direction().cross(&nalgebra_glm::Vec3::y()).normalize()
+    }
+
+    pub fn pan(&mut self, offset: &nalgebra_glm::Vec2) {
+        self.offset += self.right() * offset.x;
+        self.offset += self.up() * offset.y;
+    }
+
+    pub fn position(&self) -> nalgebra_glm::Vec3 {
+        (self.direction() * self.radius) + self.offset
+    }
+
+    pub fn zoom(&mut self, distance: f32) {
+        self.radius -= distance;
+        if self.radius < self.min_radius {
+            self.radius = self.min_radius;
+        }
+        if self.radius > self.max_radius {
+            self.radius = self.max_radius;
+        }
+    }
+
+    pub fn look_at_offset(&self) -> nalgebra_glm::Quat {
+        self.look(self.offset - self.position())
+    }
+
+    pub fn look_forward(&self) -> nalgebra_glm::Quat {
+        self.look(-self.direction())
+    }
+
+    fn look(&self, point: nalgebra_glm::Vec3) -> nalgebra_glm::Quat {
+        nalgebra_glm::quat_conjugate(&nalgebra_glm::quat_look_at(
+            &point,
+            &nalgebra_glm::Vec3::y(),
+        ))
     }
 }
 
