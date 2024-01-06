@@ -218,6 +218,7 @@ impl From<gltf::Camera<'_>> for crate::scene::Camera {
                     })
                 }
             },
+            orientation: crate::scene::Orientation::default(),
         }
     }
 }
