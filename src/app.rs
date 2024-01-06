@@ -8,6 +8,7 @@ pub struct Context {
     pub last_frame: std::time::Instant,
     pub scene: crate::scene::Scene,
     pub depth_texture_view: wgpu::TextureView,
+    pub should_exit: bool,
 }
 
 pub struct App {
@@ -30,14 +31,7 @@ impl App {
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
 
         let gui = crate::gui::Gui::new(&window, &gpu);
-        let mut view = crate::view::View::new(&gpu);
-
-        let mut scene =
-            crate::gltf::import_gltf("./resources/models/OrientationTest.glb").unwrap()[0].clone();
-        scene
-            .graph
-            .add_node(crate::scene::create_camera_node(gpu.aspect_ratio()));
-        view.import_scene(&scene, &gpu);
+        let view = crate::view::View::new(&gpu);
 
         Self {
             event_loop,
@@ -49,8 +43,9 @@ impl App {
                 view,
                 delta_time: 0.01,
                 last_frame: std::time::Instant::now(),
-                scene,
+                scene: crate::scene::Scene::default(),
                 depth_texture_view,
+                should_exit: false,
             },
         }
     }
@@ -66,10 +61,14 @@ impl App {
         event_loop.run(move |event, _, control_flow| {
             *control_flow = winit::event_loop::ControlFlow::Poll;
 
-            receive_events(&event, &mut context, control_flow);
+            receive_event(&event, &mut context, control_flow);
 
-            state.receive_events(&mut context, &event, control_flow);
+            state.receive_event(&mut context, &event);
             state.update(&mut context);
+
+            if context.should_exit {
+                *control_flow = winit::event_loop::ControlFlow::Exit;
+            }
 
             if let winit::event::Event::MainEventsCleared = event {
                 render_frame(&mut context, &mut state);
@@ -162,17 +161,18 @@ fn render_frame(context: &mut Context, state: &mut impl State) {
 }
 
 pub trait State {
-    fn receive_events(
-        &mut self,
-        context: &mut Context,
-        event: &winit::event::Event<()>,
-        control_flow: &mut winit::event_loop::ControlFlow,
-    );
+    /// Called when a winit event is received
+    fn receive_event(&mut self, context: &mut Context, event: &winit::event::Event<()>);
+
+    /// Called every frame prior to rendering
     fn update(&mut self, context: &mut Context);
+
+    /// Called every frame after update()
+    /// to create UI paint jobs for rendering
     fn ui(&mut self, context: &mut Context);
 }
 
-fn receive_events(
+fn receive_event(
     event: &winit::event::Event<()>,
     context: &mut Context,
     control_flow: &mut winit::event_loop::ControlFlow,
