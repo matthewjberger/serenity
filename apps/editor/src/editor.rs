@@ -4,6 +4,8 @@ pub struct Editor {
     broker: Broker,
     client: ClientHandle,
     selected: Option<petgraph::graph::NodeIndex>,
+    console_history: Vec<String>,
+    console_command: String,
 }
 
 impl Editor {
@@ -13,8 +15,10 @@ impl Editor {
         broker.subscribe(&Topic::Command.to_string(), &client);
         Self {
             broker,
-            client: client.into(),
+            client,
             selected: None,
+            console_history: vec!["Welcome to the DragonGlass Editor!".to_string()],
+            console_command: "Type /help for more commands.".to_string(),
         }
     }
 
@@ -64,13 +68,24 @@ impl dragonglass::app::State for Editor {
         _context: &mut dragonglass::app::Context,
         event: &winit::event::Event<()>,
     ) {
-        if let winit::event::Event::WindowEvent { event, .. } = event {
-            if let winit::event::WindowEvent::KeyboardInput { input, .. } = event {
-                if let Some(keycode) = input.virtual_keycode {
-                    if let winit::event::VirtualKeyCode::Escape = keycode {
-                        self.publish_exit_command();
-                    }
-                }
+        if let winit::event::Event::WindowEvent {
+            event:
+                winit::event::WindowEvent::KeyboardInput {
+                    input:
+                        dragonglass::winit::event::KeyboardInput {
+                            virtual_keycode: Some(keycode),
+                            state,
+                            ..
+                        },
+                    ..
+                },
+            ..
+        } = *event
+        {
+            if let (winit::event::VirtualKeyCode::Escape, winit::event::ElementState::Pressed) =
+                (keycode, state)
+            {
+                self.publish_exit_command();
             }
         }
     }
@@ -105,6 +120,8 @@ impl dragonglass::app::State for Editor {
         egui::SidePanel::left("left_panel")
             .resizable(true)
             .show(ui_context, |ui| {
+                ui.set_width(ui.available_width());
+
                 ui.heading("Scene Tree");
                 if context.scene.graph.node_count() > 0 {
                     ui.group(|ui| {
@@ -119,22 +136,67 @@ impl dragonglass::app::State for Editor {
         egui::SidePanel::right("right_panel")
             .resizable(true)
             .show(ui_context, |ui| {
+                ui.set_width(ui.available_width());
+
                 ui.heading("Properties");
                 ui.group(|ui| {
                     egui::ScrollArea::vertical()
                         .id_source(ui.next_auto_id())
                         .show(ui, |ui| {
                             if let Some(selected) = self.selected {
-                                let node = &context.scene.graph[selected];
-                                ui.group(|ui| {
-                                    ui.heading("Transform");
-                                    ui.label(format!("Name: {}", node.name));
-                                    ui.label(format!("Position: {:?}", node.transform.translation));
-                                    ui.label(format!("Rotation: {:?}", node.transform.rotation));
-                                    ui.label(format!("Scale: {:?}", node.transform.scale));
-                                });
+                                if let Some(node) = context.scene.graph.node_weight(selected) {
+                                    ui.group(|ui| {
+                                        ui.heading("Transform");
+                                        ui.label(format!("Name: {}", node.name));
+                                        ui.label(format!(
+                                            "Position: {:?}",
+                                            node.transform.translation
+                                        ));
+                                        ui.label(format!(
+                                            "Rotation: {:?}",
+                                            node.transform.rotation
+                                        ));
+                                        ui.label(format!("Scale: {:?}", node.transform.scale));
+                                    });
+                                }
                             }
                         });
+                });
+            });
+
+        egui::TopBottomPanel::bottom("bottom_panel")
+            .resizable(true)
+            .show(ui_context, |ui| {
+                ui.set_height(ui.available_height());
+
+                ui.group(|ui| {
+                    ui.heading("Console");
+                    ui.horizontal(|ui| {
+                        let input = ui.text_edit_singleline(&mut self.console_command);
+                        if input.lost_focus()
+                            && ui.input(|input| input.key_pressed(egui::Key::Enter))
+                            || ui.button("Run").clicked()
+                        {
+                            self.console_history
+                                .push(format!(">> {}\n", self.console_command));
+                            self.console_history.push(self.console_command.to_string());
+                            self.console_command.clear();
+                            ui.memory_mut(|memory| memory.request_focus(input.id));
+                        }
+                    });
+
+                    ui.group(|ui| {
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, true])
+                            .max_height(ui.available_height() - 30.0)
+                            .stick_to_bottom(true)
+                            .show(ui, |ui| {
+                                for line in self.console_history.iter() {
+                                    ui.label(line);
+                                    ui.colored_label(egui::Color32::GREEN, "Achievement unlocked!");
+                                }
+                            });
+                    });
                 });
             });
     }
@@ -240,7 +302,7 @@ impl Broker {
     pub fn subscribe(&mut self, topic: &str, client: &ClientHandle) {
         self.subscribers
             .entry(topic.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(std::rc::Rc::downgrade(client));
     }
 
