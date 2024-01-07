@@ -22,7 +22,7 @@ fix:
 lint:
     cargo clippy --all --tests -- -D warnings
 
-run $project:
+run $project="editor":
     cargo run -r -p {{project}}
 
 test:

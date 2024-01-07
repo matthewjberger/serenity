@@ -7,6 +7,18 @@ pub struct Context {
     pub should_exit: bool,
 }
 
+pub trait State {
+    /// Called when a winit event is received
+    fn receive_event(&mut self, _context: &mut Context, _event: &winit::event::Event<()>) {}
+
+    /// Called every frame prior to rendering
+    fn update(&mut self, _context: &mut Context, _renderer: &mut crate::render::Renderer) {}
+
+    /// Called every frame after update()
+    /// to create UI paint jobs for rendering
+    fn ui(&mut self, _context: &mut Context, _ui: &mut egui::Context) {}
+}
+
 pub struct App {
     event_loop: winit::event_loop::EventLoop<()>,
     context: Context,
@@ -89,20 +101,10 @@ impl App {
             }
 
             if let winit::event::Event::MainEventsCleared = event {
-                renderer.render_frame(&mut context, |ui_context| state.ui(ui_context));
+                renderer.render_frame(&mut context, |context, ui| {
+                    state.ui(context, ui);
+                });
             }
         });
     }
-}
-
-pub trait State {
-    /// Called when a winit event is received
-    fn receive_event(&mut self, _context: &mut Context, _event: &winit::event::Event<()>) {}
-
-    /// Called every frame prior to rendering
-    fn update(&mut self, _context: &mut Context, _renderer: &mut crate::render::Renderer) {}
-
-    /// Called every frame after update()
-    /// to create UI paint jobs for rendering
-    fn ui(&mut self, _context: &mut egui::Context) {}
 }

@@ -10,4 +10,5 @@ pub mod view;
 pub use egui;
 pub use log;
 pub use nalgebra_glm;
+pub use petgraph;
 pub use winit;
