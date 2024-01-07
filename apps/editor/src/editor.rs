@@ -7,6 +7,7 @@ pub struct Editor {
     console_history: Vec<String>,
     console_command: String,
     toasts: egui_toast::Toasts,
+    gizmo_mode: egui_gizmo::GizmoMode,
 }
 
 impl Editor {
@@ -24,6 +25,7 @@ impl Editor {
             toasts: egui_toast::Toasts::new()
                 .anchor(egui::Align2::RIGHT_BOTTOM, (-10.0, -10.0))
                 .direction(egui::Direction::BottomUp),
+            gizmo_mode: egui_gizmo::GizmoMode::Translate,
         }
     }
 
@@ -128,7 +130,7 @@ impl serenity::app::State for Editor {
                         .view_matrix(view)
                         .projection_matrix(projection)
                         .model_matrix(model_matrix)
-                        .mode(egui_gizmo::GizmoMode::Translate);
+                        .mode(self.gizmo_mode);
                     if let Some(response) = gizmo.interact(ui) {
                         node.transform.translation = nalgebra_glm::Vec3::new(
                             response.translation.x,
@@ -140,6 +142,11 @@ impl serenity::app::State for Editor {
                             response.rotation.y,
                             response.rotation.z,
                             response.rotation.w,
+                        );
+                        node.transform.scale = nalgebra_glm::Vec3::new(
+                            response.scale.x,
+                            response.scale.y,
+                            response.scale.z,
                         );
                     }
                 }
@@ -160,6 +167,21 @@ impl serenity::app::State for Editor {
                                 self.publish_import_gltf_command(&path.display().to_string());
                             }
                         }
+                    });
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            if ui.button("Translate").clicked() {
+                                self.gizmo_mode = egui_gizmo::GizmoMode::Translate;
+                            }
+
+                            if ui.button("Rotate").clicked() {
+                                self.gizmo_mode = egui_gizmo::GizmoMode::Rotate;
+                            }
+
+                            if ui.button("Scale").clicked() {
+                                self.gizmo_mode = egui_gizmo::GizmoMode::Scale;
+                            }
+                        });
                     });
                 });
             });
@@ -284,8 +306,7 @@ fn camera_system(context: &mut serenity::app::Context) {
     context.scene.walk_dfs_mut(|node, _| {
         node.components.iter_mut().for_each(|component| {
             if let serenity::scene::NodeComponent::Camera(camera) = component {
-                let speed = (1.0_f64 * context.delta_time) as f32;
-
+                let speed = 10.0 * context.delta_time as f32;
                 if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
                     camera.orientation.offset -= camera.orientation.direction() * speed;
                 }
@@ -328,7 +349,9 @@ fn camera_system(context: &mut serenity::app::Context) {
                 }
 
                 if context.io.mouse.is_right_clicked {
-                    let delta = context.io.mouse.position_delta * context.delta_time as f32;
+                    let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
+                    delta.x *= -1.0;
+                    delta.y *= -1.0;
                     camera.orientation.rotate(&delta);
                 }
 

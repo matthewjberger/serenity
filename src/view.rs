@@ -326,7 +326,7 @@ fn create_pipeline(
             primitive: wgpu::PrimitiveState {
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
+                polygon_mode: wgpu::PolygonMode::Line,
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {

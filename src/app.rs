@@ -62,20 +62,21 @@ impl App {
         event_loop.run(move |event, _, control_flow| {
             *control_flow = winit::event_loop::ControlFlow::Poll;
 
-            if let winit::event::Event::WindowEvent {
-                event: winit::event::WindowEvent::CloseRequested,
-                ..
-            } = event
-            {
-                *control_flow = winit::event_loop::ControlFlow::Exit
-            }
-
             if let winit::event::Event::NewEvents(..) = event {
                 context.delta_time = (std::time::Instant::now()
                     .duration_since(context.last_frame)
                     .as_micros() as f64)
                     / 1_000_000_f64;
                 context.last_frame = std::time::Instant::now();
+                state.update(&mut context, &mut renderer);
+            }
+
+            if let winit::event::Event::WindowEvent {
+                event: winit::event::WindowEvent::CloseRequested,
+                ..
+            } = event
+            {
+                *control_flow = winit::event_loop::ControlFlow::Exit
             }
 
             if let winit::event::Event::WindowEvent {
@@ -87,14 +88,11 @@ impl App {
                 renderer.resize(width, height);
             }
 
-            if !renderer.gui.receive_event(&event, &context.window) {
-                context
-                    .io
-                    .receive_event(&event, renderer.gpu.window_center());
-            }
-
+            renderer.gui.receive_event(&event, &context.window);
+            context
+                .io
+                .receive_event(&event, renderer.gpu.window_center());
             state.receive_event(&mut context, &event);
-            state.update(&mut context, &mut renderer);
 
             if context.should_exit {
                 *control_flow = winit::event_loop::ControlFlow::Exit;
