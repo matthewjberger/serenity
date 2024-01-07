@@ -2,7 +2,7 @@
 pub struct Scene {
     pub name: String,
     pub graph: SceneGraph,
-    pub children: Vec<Scene>,
+    pub textures: Vec<Texture>,
 }
 
 pub fn create_camera_node(aspect_ratio: f32) -> Node {
@@ -502,4 +502,63 @@ impl Default for LightKind {
     fn default() -> Self {
         Self::Directional
     }
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Texture {
+    pub pixels: Vec<u8>,
+    pub format: TextureFormat,
+    pub width: u32,
+    pub height: u32,
+    pub sampler: Sampler,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum TextureFormat {
+    R8,
+    R8G8,
+    R8G8B8,
+    R8G8B8A8,
+    B8G8R8,
+    B8G8R8A8,
+    R16,
+    R16G16,
+    R16G16B16,
+    R16G16B16A16,
+    R16F,
+    R16G16F,
+    R16G16B16F,
+    R16G16B16A16F,
+    R32,
+    R32G32,
+    R32G32B32,
+    R32G32B32A32,
+    R32F,
+    R32G32F,
+    R32G32B32F,
+    R32G32B32A32F,
+}
+
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Sampler {
+    pub name: String,
+    pub min_filter: Filter,
+    pub mag_filter: Filter,
+    pub wrap_s: WrappingMode,
+    pub wrap_t: WrappingMode,
+}
+
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum WrappingMode {
+    ClampToEdge,
+    MirroredRepeat,
+    #[default]
+    Repeat,
+}
+
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum Filter {
+    #[default]
+    Nearest,
+    Linear,
 }
