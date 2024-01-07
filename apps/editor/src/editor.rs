@@ -1,4 +1,4 @@
-use dragonglass::{egui, nalgebra_glm, winit};
+use dragonglass::{egui, log, nalgebra_glm, petgraph, winit};
 
 pub struct Editor {
     broker: Broker,
@@ -82,7 +82,7 @@ impl dragonglass::app::State for Editor {
         camera_system(context);
     }
 
-    fn ui(&mut self, ui_context: &mut egui::Context) {
+    fn ui(&mut self, context: &mut dragonglass::app::Context, ui_context: &mut egui::Context) {
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .show(ui_context, |ui| {
@@ -96,7 +96,7 @@ impl dragonglass::app::State for Editor {
                             {
                                 self.publish_import_gltf_command(&path.display().to_string());
                             }
-                        };
+                        }
                     });
                 });
             });
@@ -104,8 +104,41 @@ impl dragonglass::app::State for Editor {
             .resizable(true)
             .show(ui_context, |ui| {
                 ui.heading("Scene Tree");
+                if context.scene.graph.node_count() > 0 {
+                    ui.group(|ui| {
+                        egui::ScrollArea::vertical()
+                            .id_source(ui.next_auto_id())
+                            .show(ui, |ui| {
+                                node_ui(ui, &context.scene.graph, 0.into());
+                            });
+                    });
+                }
             });
     }
+}
+
+fn node_ui(
+    ui: &mut egui::Ui,
+    graph: &petgraph::graph::Graph<dragonglass::scene::Node, ()>,
+    node_idx: petgraph::graph::NodeIndex,
+) {
+    let node = &graph[node_idx];
+    let id = ui.make_persistent_id(ui.next_auto_id());
+    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+        .show_header(ui, |ui| {
+            let name = node.name.to_string();
+
+            // let response = ui.selectable_label(false, format!("🔴🎬 {name}"));
+            let response = ui.selectable_label(false, format!("🎬 {name}"));
+            if response.clicked() {
+                log::info!("Scene selected: {name}");
+            }
+        })
+        .body(|ui| {
+            for child_index in graph.neighbors_directed(node_idx, petgraph::Direction::Outgoing) {
+                node_ui(ui, graph, child_index);
+            }
+        });
 }
 
 fn camera_system(context: &mut dragonglass::app::Context) {

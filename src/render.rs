@@ -38,16 +38,25 @@ impl Renderer {
     pub fn render_frame(
         &mut self,
         context: &mut crate::app::Context,
-        ui_callback: impl FnOnce(&mut egui::Context),
+        ui_callback: impl FnOnce(&mut crate::app::Context, &mut egui::Context),
     ) {
+        self.begin_frame(context);
+        ui_callback(context, &mut self.gui.context);
+        self.end_frame(context);
+    }
+
+    fn begin_frame(&mut self, context: &mut crate::app::Context) {
+        self.gui.begin_frame(&context.window);
+    }
+
+    fn end_frame(&mut self, context: &mut crate::app::Context) {
         let mut encoder = self
             .gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-        self.gui.begin_frame(&context.window);
-        ui_callback(&mut self.gui.context);
+
         let (paint_jobs, screen_descriptor) =
             self.gui.end_frame(&self.gpu, &context.window, &mut encoder);
 
