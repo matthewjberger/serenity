@@ -1,8 +1,9 @@
-use dragonglass::{egui, log, nalgebra_glm, petgraph, winit};
+use dragonglass::{egui, nalgebra_glm, petgraph, winit};
 
 pub struct Editor {
     broker: Broker,
     client: ClientHandle,
+    selected: Option<petgraph::graph::NodeIndex>,
 }
 
 impl Editor {
@@ -13,6 +14,7 @@ impl Editor {
         Self {
             broker,
             client: client.into(),
+            selected: None,
         }
     }
 
@@ -109,10 +111,31 @@ impl dragonglass::app::State for Editor {
                         egui::ScrollArea::vertical()
                             .id_source(ui.next_auto_id())
                             .show(ui, |ui| {
-                                node_ui(ui, &context.scene.graph, 0.into());
+                                node_ui(ui, &context.scene.graph, 0.into(), &mut self.selected);
                             });
                     });
                 }
+            });
+        egui::SidePanel::right("right_panel")
+            .resizable(true)
+            .show(ui_context, |ui| {
+                ui.heading("Properties");
+                ui.group(|ui| {
+                    egui::ScrollArea::vertical()
+                        .id_source(ui.next_auto_id())
+                        .show(ui, |ui| {
+                            if let Some(selected) = self.selected {
+                                let node = &context.scene.graph[selected];
+                                ui.group(|ui| {
+                                    ui.heading("Transform");
+                                    ui.label(format!("Name: {}", node.name));
+                                    ui.label(format!("Position: {:?}", node.transform.translation));
+                                    ui.label(format!("Rotation: {:?}", node.transform.rotation));
+                                    ui.label(format!("Scale: {:?}", node.transform.scale));
+                                });
+                            }
+                        });
+                });
             });
     }
 }
@@ -120,24 +143,29 @@ impl dragonglass::app::State for Editor {
 fn node_ui(
     ui: &mut egui::Ui,
     graph: &petgraph::graph::Graph<dragonglass::scene::Node, ()>,
-    node_idx: petgraph::graph::NodeIndex,
+    node_index: petgraph::graph::NodeIndex,
+    selected_index: &mut Option<petgraph::graph::NodeIndex>,
 ) {
-    let node = &graph[node_idx];
+    let node = &graph[node_index];
     let id = ui.make_persistent_id(ui.next_auto_id());
     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
         .show_header(ui, |ui| {
             let name = node.name.to_string();
-
-            // let response = ui.selectable_label(false, format!("🔴🎬 {name}"));
-            let response = ui.selectable_label(false, format!("🎬 {name}"));
+            let selected = selected_index
+                .as_ref()
+                .map(|index| *index == node_index)
+                .unwrap_or_default();
+            let response = ui.selectable_label(selected, format!("🔴 {name}"));
             if response.clicked() {
-                log::info!("Scene selected: {name}");
+                *selected_index = Some(node_index);
             }
         })
         .body(|ui| {
-            for child_index in graph.neighbors_directed(node_idx, petgraph::Direction::Outgoing) {
-                node_ui(ui, graph, child_index);
-            }
+            graph
+                .neighbors_directed(node_index, petgraph::Direction::Outgoing)
+                .for_each(|child_index| {
+                    node_ui(ui, graph, child_index, selected_index);
+                });
         });
 }
 
