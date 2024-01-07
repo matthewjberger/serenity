@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'dragonglass'",
+            "name": "Debug executable 'serenity'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=dragonglass",
-                    "--package=dragonglass"
+                    "--bin=serenity",
+                    "--package=serenity"
                 ],
                 "filter": {
-                    "name": "dragonglass",
+                    "name": "serenity",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'dragonglass'",
+            "name": "Debug unit tests in executable 'serenity'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=dragonglass",
-                    "--package=dragonglass"
+                    "--bin=serenity",
+                    "--package=serenity"
                 ],
                 "filter": {
-                    "name": "dragonglass",
+                    "name": "serenity",
                     "kind": "bin"
                 }
             },

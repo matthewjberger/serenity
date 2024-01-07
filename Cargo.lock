@@ -531,30 +531,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
-name = "dragonglass"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "egui",
- "egui-wgpu",
- "egui-winit",
- "egui_extras",
- "env_logger",
- "gltf",
- "image",
- "log",
- "nalgebra",
- "nalgebra-glm",
- "petgraph",
- "pollster",
- "raw-window-handle",
- "serde",
- "thiserror",
- "wgpu",
- "winit",
-]
-
-[[package]]
 name = "ecolor"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -568,9 +544,10 @@ dependencies = [
 name = "editor"
 version = "0.1.0"
 dependencies = [
- "dragonglass",
+ "egui-toast",
  "rfd",
  "serde",
+ "serenity",
  "uuid",
 ]
 
@@ -586,6 +563,15 @@ dependencies = [
  "log",
  "nohash-hasher",
  "serde",
+]
+
+[[package]]
+name = "egui-toast"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18207eb4ab0934f48a999ebe86699f2fdd2aa6b3670b1e6ad01cb744d5ac2481"
+dependencies = [
+ "egui",
 ]
 
 [[package]]
@@ -2254,6 +2240,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb3622f419d1296904700073ea6cc23ad690adbd66f13ea683df73298736f0c1"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "serenity"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "egui",
+ "egui-wgpu",
+ "egui-winit",
+ "egui_extras",
+ "env_logger",
+ "gltf",
+ "image",
+ "log",
+ "nalgebra",
+ "nalgebra-glm",
+ "petgraph",
+ "pollster",
+ "raw-window-handle",
+ "serde",
+ "thiserror",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]

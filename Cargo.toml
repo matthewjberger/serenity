@@ -2,12 +2,12 @@
 members = ["apps/editor"]
 
 [package]
-name = "dragonglass"
+name = "serenity"
 authors = ["Matthew Berger <matthewjordanberger@gmail.com>"]
 edition = "2021"
-homepage = "https://github.com/matthewjberger/looking_glass"
+homepage = "https://github.com/matthewjberger/serenity"
 license = "MIT"
-repository = "https://github.com/matthewjberger/looking_glass"
+repository = "https://github.com/matthewjberger/serenity"
 version = "0.1.0"
 
 [dependencies]
