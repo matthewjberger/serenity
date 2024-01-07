@@ -1,4 +1,4 @@
-use dragonglass::{egui, nalgebra_glm, petgraph, winit};
+use serenity::{egui, nalgebra_glm, petgraph, winit};
 
 pub struct Editor {
     broker: Broker,
@@ -6,6 +6,7 @@ pub struct Editor {
     selected: Option<petgraph::graph::NodeIndex>,
     console_history: Vec<String>,
     console_command: String,
+    toasts: egui_toast::Toasts,
 }
 
 impl Editor {
@@ -13,12 +14,16 @@ impl Editor {
         let mut broker = Broker::default();
         let client: ClientHandle = Client::new(10).into();
         broker.subscribe(&Topic::Command.to_string(), &client);
+        broker.subscribe(&Topic::Toast.to_string(), &client);
         Self {
             broker,
             client,
             selected: None,
-            console_history: vec!["Welcome to the DragonGlass Editor!".to_string()],
+            console_history: vec!["Welcome to the Serenity editor!".to_string()],
             console_command: "Type /help for more commands.".to_string(),
+            toasts: egui_toast::Toasts::new()
+                .anchor(egui::Align2::RIGHT_BOTTOM, (-10.0, -10.0))
+                .direction(egui::Direction::BottomUp),
         }
     }
 
@@ -36,8 +41,8 @@ impl Editor {
 
     fn receive_messages(
         &mut self,
-        context: &mut dragonglass::app::Context,
-        renderer: &mut dragonglass::render::Renderer,
+        context: &mut serenity::app::Context,
+        renderer: &mut serenity::render::Renderer,
     ) {
         while let Some(message) = self.client.borrow().next_message() {
             match message {
@@ -46,33 +51,42 @@ impl Editor {
                         context.should_exit = true;
                     }
                     Command::ImportGltfFile(path) => {
-                        context.scene = dragonglass::gltf::import_gltf(&path).unwrap()[0].clone();
+                        context.scene = serenity::gltf::import_gltf(&path).unwrap()[0].clone();
                         if !context.scene.has_camera() {
                             context
                                 .scene
-                                .add_root_node(dragonglass::scene::create_camera_node(
+                                .add_root_node(serenity::scene::create_camera_node(
                                     renderer.gpu.aspect_ratio(),
                                 ));
                         }
                         renderer.view.import_scene(&context.scene, &renderer.gpu);
                     }
                 },
+                Message::Toast(message) => {
+                    self.toasts.add(egui_toast::Toast {
+                        text: message.into(),
+                        kind: egui_toast::ToastKind::Info,
+                        options: egui_toast::ToastOptions::default()
+                            .duration_in_seconds(5.0)
+                            .show_progress(true),
+                    });
+                }
             }
         }
     }
 }
 
-impl dragonglass::app::State for Editor {
+impl serenity::app::State for Editor {
     fn receive_event(
         &mut self,
-        _context: &mut dragonglass::app::Context,
+        _context: &mut serenity::app::Context,
         event: &winit::event::Event<()>,
     ) {
         if let winit::event::Event::WindowEvent {
             event:
                 winit::event::WindowEvent::KeyboardInput {
                     input:
-                        dragonglass::winit::event::KeyboardInput {
+                        serenity::winit::event::KeyboardInput {
                             virtual_keycode: Some(keycode),
                             state,
                             ..
@@ -92,14 +106,14 @@ impl dragonglass::app::State for Editor {
 
     fn update(
         &mut self,
-        context: &mut dragonglass::app::Context,
-        renderer: &mut dragonglass::render::Renderer,
+        context: &mut serenity::app::Context,
+        renderer: &mut serenity::render::Renderer,
     ) {
         self.receive_messages(context, renderer);
         camera_system(context);
     }
 
-    fn ui(&mut self, context: &mut dragonglass::app::Context, ui_context: &mut egui::Context) {
+    fn ui(&mut self, context: &mut serenity::app::Context, ui_context: &mut egui::Context) {
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .show(ui_context, |ui| {
@@ -121,7 +135,6 @@ impl dragonglass::app::State for Editor {
             .resizable(true)
             .show(ui_context, |ui| {
                 ui.set_width(ui.available_width());
-
                 ui.heading("Scene Tree");
                 if context.scene.graph.node_count() > 0 {
                     ui.group(|ui| {
@@ -138,39 +151,29 @@ impl dragonglass::app::State for Editor {
             .show(ui_context, |ui| {
                 ui.set_width(ui.available_width());
 
-                ui.heading("Properties");
-                ui.group(|ui| {
-                    egui::ScrollArea::vertical()
-                        .id_source(ui.next_auto_id())
-                        .show(ui, |ui| {
-                            if let Some(selected) = self.selected {
-                                if let Some(node) = context.scene.graph.node_weight(selected) {
-                                    ui.group(|ui| {
-                                        ui.heading("Transform");
-                                        ui.label(format!("Name: {}", node.name));
-                                        ui.label(format!(
-                                            "Position: {:?}",
-                                            node.transform.translation
-                                        ));
-                                        ui.label(format!(
-                                            "Rotation: {:?}",
-                                            node.transform.rotation
-                                        ));
-                                        ui.label(format!("Scale: {:?}", node.transform.scale));
-                                    });
-                                }
-                            }
-                        });
-                });
+                ui.heading("Node Inspector");
+                egui::ScrollArea::vertical()
+                    .id_source(ui.next_auto_id())
+                    .show(ui, |ui| {
+                        if let Some(selected) = self.selected {
+                            let node = &context.scene.graph[selected];
+                            ui.group(|ui| {
+                                ui.heading("Transform");
+                                ui.label(format!("Name: {}", node.name));
+                                ui.label(format!("Position: {:?}", node.transform.translation));
+                                ui.label(format!("Rotation: {:?}", node.transform.rotation));
+                                ui.label(format!("Scale: {:?}", node.transform.scale));
+                            });
+                        }
+                    });
             });
-
         egui::TopBottomPanel::bottom("bottom_panel")
             .resizable(true)
             .show(ui_context, |ui| {
                 ui.set_height(ui.available_height());
 
+                ui.heading("Console");
                 ui.group(|ui| {
-                    ui.heading("Console");
                     ui.horizontal(|ui| {
                         let input = ui.text_edit_singleline(&mut self.console_command);
                         if input.lost_focus()
@@ -178,33 +181,33 @@ impl dragonglass::app::State for Editor {
                             || ui.button("Run").clicked()
                         {
                             self.console_history
-                                .push(format!(">> {}\n", self.console_command));
-                            self.console_history.push(self.console_command.to_string());
+                                .push(format!(">> {}", self.console_command));
                             self.console_command.clear();
                             ui.memory_mut(|memory| memory.request_focus(input.id));
                         }
                     });
 
-                    ui.group(|ui| {
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, true])
-                            .max_height(ui.available_height() - 30.0)
-                            .stick_to_bottom(true)
-                            .show(ui, |ui| {
-                                for line in self.console_history.iter() {
-                                    ui.label(line);
-                                    ui.colored_label(egui::Color32::GREEN, "Achievement unlocked!");
-                                }
+                    egui::ScrollArea::vertical()
+                        .id_source(ui.next_auto_id())
+                        .auto_shrink([false, true])
+                        .stick_to_bottom(true)
+                        .max_width(ui.available_width())
+                        .max_height(ui.available_height() * 0.5)
+                        .show(ui, |ui| {
+                            self.console_history.iter().for_each(|line| {
+                                ui.label(line);
                             });
-                    });
+                        });
                 });
             });
+
+        self.toasts.show(&ui_context);
     }
 }
 
 fn node_ui(
     ui: &mut egui::Ui,
-    graph: &petgraph::graph::Graph<dragonglass::scene::Node, ()>,
+    graph: &petgraph::graph::Graph<serenity::scene::Node, ()>,
     node_index: petgraph::graph::NodeIndex,
     selected_index: &mut Option<petgraph::graph::NodeIndex>,
 ) {
@@ -231,10 +234,10 @@ fn node_ui(
         });
 }
 
-fn camera_system(context: &mut dragonglass::app::Context) {
+fn camera_system(context: &mut serenity::app::Context) {
     context.scene.walk_dfs_mut(|node, _| {
         node.components.iter_mut().for_each(|component| {
-            if let dragonglass::scene::NodeComponent::Camera(camera) = component {
+            if let serenity::scene::NodeComponent::Camera(camera) = component {
                 let speed = (1.0_f64 * context.delta_time) as f32;
 
                 if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
@@ -357,12 +360,14 @@ impl Client {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Topic {
     Command,
+    Toast,
 }
 
 impl std::fmt::Display for Topic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Command => write!(f, "command"),
+            Self::Command => write!(f, "Command"),
+            Self::Toast => write!(f, "Toast"),
         }
     }
 }
@@ -376,4 +381,5 @@ pub enum Command {
 #[derive(Clone, Debug)]
 pub enum Message {
     Command(Command),
+    Toast(String),
 }
