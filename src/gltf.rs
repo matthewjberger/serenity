@@ -69,7 +69,7 @@ fn import_node(
             .push(crate::scene::NodeComponent::Light(light.into()));
     }
 
-    let node_index = scene.graph.add_node(scene_node.clone());
+    let node_index = scene.graph.add_node(scene_node);
 
     if parent_node_index != node_index {
         scene.graph.add_edge(parent_node_index, node_index, ());

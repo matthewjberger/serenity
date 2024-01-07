@@ -7,13 +7,13 @@ pub struct Scene {
 
 pub fn create_camera_node(aspect_ratio: f32) -> Node {
     crate::scene::Node {
-        name: "Camera".to_string(),
+        name: "Main Camera".to_string(),
         transform: crate::scene::Transform {
             translation: nalgebra_glm::vec3(0.0, 0.0, 4.0),
             ..Default::default()
         },
         components: vec![crate::scene::NodeComponent::Camera(crate::scene::Camera {
-            name: "Camera".to_string(),
+            name: "Main Camera Component".to_string(),
             projection: crate::scene::Projection::Perspective(crate::scene::PerspectiveCamera {
                 aspect_ratio: Some(aspect_ratio),
                 y_fov_rad: 90_f32.to_radians(),
@@ -257,6 +257,48 @@ impl From<Transform> for nalgebra_glm::Mat4 {
         nalgebra_glm::translation(&transform.translation)
             * nalgebra_glm::quat_to_mat4(&transform.rotation)
             * nalgebra_glm::scaling(&transform.scale)
+    }
+}
+
+pub fn decompose_matrix(
+    matrix: &nalgebra_glm::Mat4,
+) -> (nalgebra_glm::Vec3, nalgebra_glm::Quat, nalgebra_glm::Vec3) {
+    let translation = nalgebra_glm::Vec3::new(matrix.m14, matrix.m24, matrix.m34);
+
+    let (scale_x, scale_y, scale_z) = (
+        nalgebra_glm::length(&nalgebra_glm::Vec3::new(matrix.m11, matrix.m12, matrix.m13)),
+        nalgebra_glm::length(&nalgebra_glm::Vec3::new(matrix.m21, matrix.m22, matrix.m23)),
+        nalgebra_glm::length(&nalgebra_glm::Vec3::new(matrix.m31, matrix.m32, matrix.m33)),
+    );
+
+    let scale = nalgebra_glm::Vec3::new(scale_x, scale_y, scale_z);
+
+    // Normalize the matrix to extract rotation
+    let rotation_matrix = nalgebra_glm::mat3(
+        matrix.m11 / scale_x,
+        matrix.m12 / scale_y,
+        matrix.m13 / scale_z,
+        matrix.m21 / scale_x,
+        matrix.m22 / scale_y,
+        matrix.m23 / scale_z,
+        matrix.m31 / scale_x,
+        matrix.m32 / scale_y,
+        matrix.m33 / scale_z,
+    );
+
+    let rotation = nalgebra_glm::mat3_to_quat(&rotation_matrix);
+
+    (translation, rotation, scale)
+}
+
+impl From<nalgebra_glm::Mat4> for Transform {
+    fn from(matrix: nalgebra_glm::Mat4) -> Self {
+        let (translation, rotation, scale) = decompose_matrix(&matrix);
+        Self {
+            translation,
+            rotation,
+            scale,
+        }
     }
 }
 

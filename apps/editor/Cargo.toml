@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 serenity = { path = "../.." }
+egui-gizmo = "0.12.0"
 egui-toast = "0.9.0"
 rfd = "0.12.1"
 serde = { version = "1.0.195", features = ["derive"] }
