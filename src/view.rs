@@ -81,10 +81,10 @@ impl View {
 
         let mut ubo_offset = 0;
         scene.walk_dfs(|node, _| {
+            let offset = ubo_offset;
+            ubo_offset += 1;
             for component in node.components.iter() {
                 if let crate::scene::NodeComponent::Mesh(mesh) = component {
-                    let offset = ubo_offset;
-                    ubo_offset += 1;
                     let offset = (offset * gpu.alignment()) as wgpu::DynamicOffset;
                     render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
                     if let Some(commands) = self.mesh_draw_commands.get(&mesh.name) {
@@ -326,7 +326,7 @@ fn create_pipeline(
             primitive: wgpu::PrimitiveState {
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Line,
+                polygon_mode: wgpu::PolygonMode::Fill,
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {

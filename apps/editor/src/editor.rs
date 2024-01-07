@@ -114,6 +114,38 @@ impl serenity::app::State for Editor {
     }
 
     fn ui(&mut self, context: &mut serenity::app::Context, ui_context: &mut egui::Context) {
+        egui::Area::new("viewport").show(ui_context, |ui| {
+            let window_size = context.window.inner_size();
+            let aspect_ratio = window_size.width as f32 / window_size.height.max(1) as f32;
+            let (_camera_position, projection, view) =
+                serenity::view::create_camera_matrices(&context.scene, aspect_ratio)
+                    .unwrap_or_default();
+            ui.with_layer_id(egui::LayerId::background(), |ui| {
+                if let Some(selected) = self.selected {
+                    let node = &mut context.scene.graph[selected];
+                    let model_matrix = node.transform.matrix();
+                    let gizmo = egui_gizmo::Gizmo::new("My gizmo")
+                        .view_matrix(view)
+                        .projection_matrix(projection)
+                        .model_matrix(model_matrix)
+                        .mode(egui_gizmo::GizmoMode::Translate);
+                    if let Some(response) = gizmo.interact(ui) {
+                        node.transform.translation = nalgebra_glm::Vec3::new(
+                            response.translation.x,
+                            response.translation.y,
+                            response.translation.z,
+                        );
+                        node.transform.rotation = nalgebra_glm::quat(
+                            response.rotation.x,
+                            response.rotation.y,
+                            response.rotation.z,
+                            response.rotation.w,
+                        );
+                    }
+                }
+            });
+        });
+
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .show(ui_context, |ui| {
@@ -131,6 +163,7 @@ impl serenity::app::State for Editor {
                     });
                 });
             });
+
         egui::SidePanel::left("left_panel")
             .resizable(true)
             .show(ui_context, |ui| {
@@ -144,8 +177,10 @@ impl serenity::app::State for Editor {
                                 node_ui(ui, &context.scene.graph, 0.into(), &mut self.selected);
                             });
                     });
+                    ui.allocate_space(ui.available_size());
                 }
             });
+
         egui::SidePanel::right("right_panel")
             .resizable(true)
             .show(ui_context, |ui| {
@@ -156,22 +191,33 @@ impl serenity::app::State for Editor {
                     .id_source(ui.next_auto_id())
                     .show(ui, |ui| {
                         if let Some(selected) = self.selected {
-                            let node = &context.scene.graph[selected];
-                            ui.group(|ui| {
-                                ui.heading("Transform");
-                                ui.label(format!("Name: {}", node.name));
-                                ui.label(format!("Position: {:?}", node.transform.translation));
-                                ui.label(format!("Rotation: {:?}", node.transform.rotation));
-                                ui.label(format!("Scale: {:?}", node.transform.scale));
-                            });
+                            let node = &mut context.scene.graph[selected];
+                            egui::ScrollArea::vertical()
+                                .id_source(ui.next_auto_id())
+                                .show(ui, |ui| {
+                                    for component in node.components.iter_mut() {
+                                        ui.group(|ui| match component {
+                                            serenity::scene::NodeComponent::Camera(_) => {
+                                                ui.heading("Camera");
+                                            }
+                                            serenity::scene::NodeComponent::Mesh(_) => {
+                                                ui.heading("Mesh");
+                                            }
+                                            serenity::scene::NodeComponent::Light(_) => {
+                                                ui.heading("Light");
+                                            }
+                                        });
+                                    }
+                                });
                         }
                     });
+                ui.allocate_space(ui.available_size());
             });
+
         egui::TopBottomPanel::bottom("bottom_panel")
             .resizable(true)
             .show(ui_context, |ui| {
                 ui.set_height(ui.available_height());
-
                 ui.heading("Console");
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
@@ -186,7 +232,6 @@ impl serenity::app::State for Editor {
                             ui.memory_mut(|memory| memory.request_focus(input.id));
                         }
                     });
-
                     egui::ScrollArea::vertical()
                         .id_source(ui.next_auto_id())
                         .auto_shrink([false, true])
@@ -198,10 +243,11 @@ impl serenity::app::State for Editor {
                                 ui.label(line);
                             });
                         });
+                    ui.allocate_space(ui.available_size());
                 });
             });
 
-        self.toasts.show(&ui_context);
+        self.toasts.show(ui_context);
     }
 }
 
@@ -276,16 +322,13 @@ fn camera_system(context: &mut serenity::app::Context) {
                 }
                 node.transform.translation = camera.orientation.position();
 
-                if context.io.mouse.is_right_clicked {
-                    if context
-                        .io
-                        .is_key_pressed(winit::event::VirtualKeyCode::LAlt)
-                    {
-                        camera.orientation.offset = nalgebra_glm::Vec3::new(0.0, 0.0, 0.0);
-                    }
+                if context.io.is_key_pressed(winit::event::VirtualKeyCode::H) {
+                    node.transform.translation = nalgebra_glm::Vec3::new(1.0, 1.0, 1.0) * 4.0;
+                    camera.orientation.offset = nalgebra_glm::Vec3::new(0.0, 0.0, 0.0);
+                }
 
-                    let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
-                    delta.x *= -1.0;
+                if context.io.mouse.is_right_clicked {
+                    let delta = context.io.mouse.position_delta * context.delta_time as f32;
                     camera.orientation.rotate(&delta);
                 }
 
