@@ -84,10 +84,10 @@ impl View {
             let offset = ubo_offset;
             ubo_offset += 1;
             node.components.iter().for_each(|component| {
-                if let crate::scene::NodeComponent::Mesh(mesh) = component {
+                if let crate::scene::NodeComponent::Mesh(mesh_id) = component {
                     let offset = (offset * gpu.alignment()) as wgpu::DynamicOffset;
                     render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
-                    if let Some(commands) = self.mesh_draw_commands.get(&mesh.id) {
+                    if let Some(commands) = self.mesh_draw_commands.get(mesh_id) {
                         execute_draw_commands(commands, render_pass);
                     }
                 }

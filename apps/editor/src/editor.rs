@@ -53,7 +53,7 @@ impl Editor {
                         context.should_exit = true;
                     }
                     Command::ImportGltfFile(path) => {
-                        context.scene = serenity::gltf::import_gltf(&path).unwrap().clone();
+                        context.scene = serenity::gltf::import_gltf(&path).clone();
                         if !context.scene.has_camera() {
                             context
                                 .scene
