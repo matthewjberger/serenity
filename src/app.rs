@@ -88,11 +88,29 @@ impl App {
                 renderer.resize(width, height);
             }
 
-            renderer.gui.receive_event(&event, &context.window);
-            context
-                .io
-                .receive_event(&event, renderer.gpu.window_center());
-            state.receive_event(&mut context, &event);
+            let gui_consumed_event = {
+                match &event {
+                    winit::event::Event::WindowEvent { event, window_id } => {
+                        if *window_id == context.window.id() {
+                            renderer
+                                .gui
+                                .state
+                                .on_event(&renderer.gui.context, event)
+                                .consumed
+                        } else {
+                            false
+                        }
+                    }
+                    _ => false,
+                }
+            };
+
+            if !gui_consumed_event {
+                context
+                    .io
+                    .receive_event(&event, renderer.gpu.window_center());
+                state.receive_event(&mut context, &event);
+            }
 
             if context.should_exit {
                 *control_flow = winit::event_loop::ControlFlow::Exit;
