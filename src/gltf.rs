@@ -608,3 +608,14 @@ impl From<gltf::mesh::Mode> for crate::scene::PrimitiveMode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[ignore]
+    #[test]
+    fn import() {
+        let scene = crate::gltf::import_gltf(&"resources/models/DamagedHelmet.glb");
+        dbg!(scene.textures);
+        dbg!(scene.materials);
+    }
+}
