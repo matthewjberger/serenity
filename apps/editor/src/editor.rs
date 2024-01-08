@@ -53,7 +53,7 @@ impl Editor {
                         context.should_exit = true;
                     }
                     Command::ImportGltfFile(path) => {
-                        context.scene = serenity::gltf::import_gltf(&path).unwrap()[0].clone();
+                        context.scene = serenity::gltf::import_gltf(&path).unwrap().clone();
                         if !context.scene.has_camera() {
                             context
                                 .scene
@@ -165,23 +165,23 @@ impl serenity::app::State for Editor {
                                 .pick_file()
                             {
                                 self.publish_import_gltf_command(&path.display().to_string());
+                                ui.close_menu();
                             }
                         }
                     });
-                    ui.group(|ui| {
-                        ui.horizontal(|ui| {
-                            if ui.button("Translate").clicked() {
-                                self.gizmo_mode = egui_gizmo::GizmoMode::Translate;
-                            }
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("Translate").clicked() {
+                            self.gizmo_mode = egui_gizmo::GizmoMode::Translate;
+                        }
 
-                            if ui.button("Rotate").clicked() {
-                                self.gizmo_mode = egui_gizmo::GizmoMode::Rotate;
-                            }
+                        if ui.button("Rotate").clicked() {
+                            self.gizmo_mode = egui_gizmo::GizmoMode::Rotate;
+                        }
 
-                            if ui.button("Scale").clicked() {
-                                self.gizmo_mode = egui_gizmo::GizmoMode::Scale;
-                            }
-                        });
+                        if ui.button("Scale").clicked() {
+                            self.gizmo_mode = egui_gizmo::GizmoMode::Scale;
+                        }
                     });
                 });
             });
@@ -279,19 +279,18 @@ fn node_ui(
     node_index: petgraph::graph::NodeIndex,
     selected_index: &mut Option<petgraph::graph::NodeIndex>,
 ) {
-    let node = &graph[node_index];
+    if graph
+        .neighbors_directed(node_index, petgraph::Direction::Outgoing)
+        .count()
+        == 0
+    {
+        node_header_ui(selected_index, node_index, ui, &graph[node_index]);
+        return;
+    }
     let id = ui.make_persistent_id(ui.next_auto_id());
     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
         .show_header(ui, |ui| {
-            let name = node.name.to_string();
-            let selected = selected_index
-                .as_ref()
-                .map(|index| *index == node_index)
-                .unwrap_or_default();
-            let response = ui.selectable_label(selected, format!("🔴 {name}"));
-            if response.clicked() {
-                *selected_index = Some(node_index);
-            }
+            node_header_ui(selected_index, node_index, ui, &graph[node_index]);
         })
         .body(|ui| {
             graph
@@ -300,6 +299,22 @@ fn node_ui(
                     node_ui(ui, graph, child_index, selected_index);
                 });
         });
+}
+
+fn node_header_ui(
+    selected_index: &mut Option<petgraph::prelude::NodeIndex>,
+    node_index: petgraph::prelude::NodeIndex,
+    ui: &mut egui::Ui,
+    node: &serenity::scene::Node,
+) {
+    let selected = selected_index
+        .as_ref()
+        .map(|index| *index == node_index)
+        .unwrap_or_default();
+    let response = ui.selectable_label(selected, node.label.to_string());
+    if response.clicked() {
+        *selected_index = Some(node_index);
+    }
 }
 
 fn camera_system(context: &mut serenity::app::Context) {

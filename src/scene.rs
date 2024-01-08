@@ -1,19 +1,20 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Scene {
-    pub name: String,
     pub graph: SceneGraph,
-    pub textures: Vec<Texture>,
+    pub images: std::collections::HashMap<String, Image>,
+    pub samplers: std::collections::HashMap<String, Sampler>,
+    pub textures: std::collections::HashMap<String, Texture>,
+    pub materials: std::collections::HashMap<String, Material>,
 }
 
 pub fn create_camera_node(aspect_ratio: f32) -> Node {
     crate::scene::Node {
-        name: "Main Camera".to_string(),
+        label: "Main Camera".to_string(),
         transform: crate::scene::Transform {
             translation: nalgebra_glm::vec3(0.0, 0.0, 4.0),
             ..Default::default()
         },
         components: vec![crate::scene::NodeComponent::Camera(crate::scene::Camera {
-            name: "Main Camera Component".to_string(),
             projection: crate::scene::Projection::Perspective(crate::scene::PerspectiveCamera {
                 aspect_ratio: Some(aspect_ratio),
                 y_fov_rad: 90_f32.to_radians(),
@@ -88,7 +89,7 @@ impl Scene {
         self.walk_dfs(|node, _| {
             for component in node.components.iter() {
                 if let crate::scene::NodeComponent::Mesh(mesh) = component {
-                    meshes.insert(mesh.name.to_string(), {
+                    meshes.insert(mesh.id.to_string(), {
                         mesh.primitives
                             .iter()
                             .map(|primitive| {
@@ -194,27 +195,29 @@ impl SceneGraph {
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Mesh {
-    pub name: String,
+    pub id: String,
+    pub label: String,
     pub primitives: Vec<Primitive>,
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Primitive {
     pub mode: PrimitiveMode,
+    pub material: String,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
 }
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Node {
-    pub name: String,
+    pub label: String,
     pub transform: Transform,
     pub components: Vec<NodeComponent>,
 }
 
 impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.name)
+        write!(f, "{}", self.label)
     }
 }
 
@@ -310,7 +313,6 @@ impl Transform {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
-    pub name: String,
     pub projection: Projection,
     pub orientation: Orientation,
 }
@@ -479,9 +481,8 @@ pub struct PrimitiveDrawCommand {
     pub indices: usize,
 }
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Light {
-    pub name: String,
     pub intensity: f32,
     pub range: f32,
     pub color: nalgebra_glm::Vec3,
@@ -506,14 +507,22 @@ impl Default for LightKind {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Texture {
+    pub label: String,
+    pub image: String,
+    pub sampler: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Image {
+    pub id: String,
     pub pixels: Vec<u8>,
-    pub format: TextureFormat,
+    pub format: ImageFormat,
     pub width: u32,
     pub height: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum TextureFormat {
+pub enum ImageFormat {
     R8,
     R8G8,
     R8G8B8,
@@ -540,7 +549,7 @@ pub enum TextureFormat {
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Sampler {
-    pub name: String,
+    pub id: String,
     pub min_filter: Filter,
     pub mag_filter: Filter,
     pub wrap_s: WrappingMode,
@@ -560,4 +569,18 @@ pub enum Filter {
     #[default]
     Nearest,
     Linear,
+}
+
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Material {
+    pub base_color_factor: nalgebra_glm::Vec4,
+    pub base_color_texture: String,
+}
+
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum AlphaMode {
+    #[default]
+    Opaque = 1,
+    Mask,
+    Blend,
 }

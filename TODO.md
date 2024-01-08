@@ -51,8 +51,10 @@
 ## Textures/GLTF
 
 - each texture in gltf.textures() has a texture.sampler().index()
- - This can be used to index into the flat array of samplers during the import
-- Add links between the textures and the samplers
+  - This can be used to index into the flat array of samplers during the import
+  - Add links between the textures and the samplers
+- each texture in gltf.textures() has a texture.source().index()
+  - This can be used to index into the loaded `images` to know which texture to use
 
 ## Meshes
 

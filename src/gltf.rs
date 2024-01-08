@@ -9,20 +9,98 @@ pub enum Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-pub fn import_gltf(path: impl AsRef<std::path::Path>) -> Result<Vec<crate::scene::Scene>> {
-    let (gltf, buffers, images) = gltf::import(path.as_ref()).map_err(Error::ImportGltfScene)?;
-    let _samplers = gltf
+pub fn import_gltf(path: impl AsRef<std::path::Path>) -> Result<crate::scene::Scene> {
+    let (gltf, buffers, raw_images) =
+        gltf::import(path.as_ref()).map_err(Error::ImportGltfScene)?;
+
+    let mut samplers = std::collections::HashMap::new();
+    samplers.insert("default".to_string(), crate::scene::Sampler::default());
+    let sampler_handles = gltf
         .samplers()
-        .map(|sampler| crate::scene::Sampler::from(sampler))
+        .map(crate::scene::Sampler::from)
+        .map(|sampler| {
+            let id = uuid::Uuid::new_v4().to_string();
+            samplers.insert(id.to_string(), sampler);
+            id
+        })
         .collect::<Vec<_>>();
-    let _textures = images
+
+    let mut images = std::collections::HashMap::new();
+    let image_handles = raw_images
         .into_iter()
-        .map(|image| crate::scene::Texture::from(image))
+        .map(crate::scene::Image::from)
+        .map(|image| {
+            let id = uuid::Uuid::new_v4().to_string();
+            images.insert(id.to_string(), image);
+            id
+        })
         .collect::<Vec<_>>();
-    Ok(gltf
+
+    let mut textures = std::collections::HashMap::new();
+    let texture_handles = gltf
+        .textures()
+        .map(|texture| {
+            let id = uuid::Uuid::new_v4().to_string();
+            let sampler = match texture.sampler().index() {
+                Some(index) => sampler_handles[index].to_string(),
+                None => "default".to_string(),
+            };
+            textures.insert(
+                id.to_string(),
+                crate::scene::Texture {
+                    label: texture.name().unwrap_or("Unnamed texture").to_string(),
+                    image: image_handles[texture.source().index()].to_string(),
+                    sampler,
+                },
+            );
+            id
+        })
+        .collect::<Vec<_>>();
+
+    // TODO: nodes can reference these
+    let mut materials = std::collections::HashMap::new();
+    materials.insert("default".to_string(), crate::scene::Material::default());
+    let material_handles = gltf
+        .materials()
+        .map(|primitive_material| {
+            let pbr = primitive_material.pbr_metallic_roughness();
+            let id = uuid::Uuid::new_v4().to_string();
+            let mut material = crate::scene::Material {
+                base_color_factor: nalgebra_glm::Vec4::from(pbr.base_color_factor()),
+                ..Default::default()
+            };
+            if let Some(base_color_texture) = pbr.base_color_texture() {
+                material.base_color_texture =
+                    texture_handles[base_color_texture.texture().index()].to_string();
+            }
+            materials.insert(id.to_string(), material);
+            id
+        })
+        .collect::<Vec<_>>();
+
+    let graph = gltf
         .scenes()
-        .map(|gltf_scene| import_scene(gltf_scene, &buffers))
-        .collect())
+        .map(|gltf_scene| import_scene(gltf_scene, &buffers, &material_handles))
+        .next() // Only take the first scene, even though gltf can store multiple
+        .unwrap_or_default();
+
+    Ok(crate::scene::Scene {
+        graph,
+        images,
+        samplers,
+        textures,
+        materials,
+    })
+}
+
+impl From<gltf::material::AlphaMode> for crate::scene::AlphaMode {
+    fn from(mode: gltf::material::AlphaMode) -> Self {
+        match mode {
+            gltf::material::AlphaMode::Opaque => crate::scene::AlphaMode::Opaque,
+            gltf::material::AlphaMode::Mask => crate::scene::AlphaMode::Mask,
+            gltf::material::AlphaMode::Blend => crate::scene::AlphaMode::Blend,
+        }
+    }
 }
 
 impl From<gltf::texture::Sampler<'_>> for crate::scene::Sampler {
@@ -64,7 +142,7 @@ impl From<gltf::texture::Sampler<'_>> for crate::scene::Sampler {
         };
 
         Self {
-            name: sampler.name().unwrap_or("Unnamed sampler").to_string(),
+            id: uuid::Uuid::new_v4().to_string(),
             min_filter,
             mag_filter,
             wrap_s,
@@ -73,9 +151,10 @@ impl From<gltf::texture::Sampler<'_>> for crate::scene::Sampler {
     }
 }
 
-impl From<gltf::image::Data> for crate::scene::Texture {
+impl From<gltf::image::Data> for crate::scene::Image {
     fn from(data: gltf::image::Data) -> Self {
         Self {
+            id: uuid::Uuid::new_v4().to_string(),
             pixels: data.pixels.to_vec(),
             format: data.format.into(),
             width: data.width,
@@ -84,55 +163,57 @@ impl From<gltf::image::Data> for crate::scene::Texture {
     }
 }
 
-impl From<gltf::image::Format> for crate::scene::TextureFormat {
+impl From<gltf::image::Format> for crate::scene::ImageFormat {
     fn from(value: gltf::image::Format) -> Self {
         match value {
-            gltf::image::Format::R8 => crate::scene::TextureFormat::R8,
-            gltf::image::Format::R8G8 => crate::scene::TextureFormat::R8G8,
-            gltf::image::Format::R8G8B8 => crate::scene::TextureFormat::R8G8B8,
-            gltf::image::Format::R8G8B8A8 => crate::scene::TextureFormat::R8G8B8A8,
-            gltf::image::Format::R16 => crate::scene::TextureFormat::R16,
-            gltf::image::Format::R16G16 => crate::scene::TextureFormat::R16G16,
-            gltf::image::Format::R16G16B16 => crate::scene::TextureFormat::R16G16B16,
-            gltf::image::Format::R16G16B16A16 => crate::scene::TextureFormat::R16G16B16A16,
-            gltf::image::Format::R32G32B32FLOAT => crate::scene::TextureFormat::R32G32B32,
-            gltf::image::Format::R32G32B32A32FLOAT => crate::scene::TextureFormat::R32G32B32A32,
+            gltf::image::Format::R8 => crate::scene::ImageFormat::R8,
+            gltf::image::Format::R8G8 => crate::scene::ImageFormat::R8G8,
+            gltf::image::Format::R8G8B8 => crate::scene::ImageFormat::R8G8B8,
+            gltf::image::Format::R8G8B8A8 => crate::scene::ImageFormat::R8G8B8A8,
+            gltf::image::Format::R16 => crate::scene::ImageFormat::R16,
+            gltf::image::Format::R16G16 => crate::scene::ImageFormat::R16G16,
+            gltf::image::Format::R16G16B16 => crate::scene::ImageFormat::R16G16B16,
+            gltf::image::Format::R16G16B16A16 => crate::scene::ImageFormat::R16G16B16A16,
+            gltf::image::Format::R32G32B32FLOAT => crate::scene::ImageFormat::R32G32B32,
+            gltf::image::Format::R32G32B32A32FLOAT => crate::scene::ImageFormat::R32G32B32A32,
         }
     }
 }
 
-fn import_scene(gltf_scene: gltf::Scene, buffers: &[gltf::buffer::Data]) -> crate::scene::Scene {
-    let mut scene = crate::scene::Scene {
-        name: gltf_scene.name().unwrap_or("Unnamed scene").to_string(),
-        ..Default::default()
-    };
-    let root_node = scene.graph.add_node(crate::scene::Node {
-        name: "Root".to_string(),
+fn import_scene(
+    gltf_scene: gltf::Scene,
+    buffers: &[gltf::buffer::Data],
+    material_handles: &[String],
+) -> crate::scene::SceneGraph {
+    let mut scenegraph = crate::scene::SceneGraph::default();
+    let root_node = scenegraph.add_node(crate::scene::Node {
+        label: "Root".to_string(),
         ..Default::default()
     });
     gltf_scene.nodes().for_each(|node| {
-        import_node(root_node, node, buffers, &mut scene);
+        import_node(root_node, node, buffers, &mut scenegraph, material_handles);
     });
-    scene
+    scenegraph
 }
 
 fn import_node(
     parent_node_index: petgraph::graph::NodeIndex,
     gltf_node: gltf::Node,
     buffers: &[gltf::buffer::Data],
-    scene: &mut crate::scene::Scene,
+    scenegraph: &mut crate::scene::SceneGraph,
+    material_handles: &[String],
 ) {
     let name = gltf_node.name().unwrap_or("Unnamed node");
 
     let mut scene_node = crate::scene::Node {
-        name: name.to_string(),
+        label: name.to_string(),
         transform: crate::scene::Transform::from(gltf_node.transform().decomposed()),
         ..Default::default()
     };
 
     gltf_node
         .mesh()
-        .map(|gltf_mesh| import_mesh(gltf_mesh, buffers))
+        .map(|gltf_mesh| import_mesh(gltf_mesh, buffers, material_handles))
         .map(|mesh| {
             mesh.map(|mesh| {
                 scene_node
@@ -153,24 +234,28 @@ fn import_node(
             .push(crate::scene::NodeComponent::Light(light.into()));
     }
 
-    let node_index = scene.graph.add_node(scene_node);
+    let node_index = scenegraph.add_node(scene_node);
 
     if parent_node_index != node_index {
-        scene.graph.add_edge(parent_node_index, node_index, ());
+        scenegraph.add_edge(parent_node_index, node_index, ());
     }
 
     gltf_node.children().for_each(|child| {
-        import_node(node_index, child, buffers, scene);
+        import_node(node_index, child, buffers, scenegraph, material_handles);
     });
 }
 
-fn import_mesh(mesh: gltf::Mesh, buffers: &[gltf::buffer::Data]) -> Result<crate::scene::Mesh> {
-    let id = mesh.name().unwrap_or("Unnamed mesh");
+fn import_mesh(
+    mesh: gltf::Mesh,
+    buffers: &[gltf::buffer::Data],
+    material_handles: &[String],
+) -> Result<crate::scene::Mesh> {
     Ok(crate::scene::Mesh {
-        name: id.to_string(),
+        id: uuid::Uuid::new_v4().to_string(),
+        label: mesh.name().unwrap_or("Unnamed mesh").to_string(),
         primitives: mesh
             .primitives()
-            .map(|primitive| import_primitive(primitive, buffers))
+            .map(|primitive| import_primitive(primitive, buffers, material_handles))
             .collect::<Result<Vec<_>, _>>()?,
     })
 }
@@ -178,9 +263,15 @@ fn import_mesh(mesh: gltf::Mesh, buffers: &[gltf::buffer::Data]) -> Result<crate
 fn import_primitive(
     primitive: gltf::Primitive,
     buffers: &[gltf::buffer::Data],
+    material_handles: &[String],
 ) -> Result<crate::scene::Primitive> {
+    let material = match primitive.material().index() {
+        Some(index) => material_handles[index].to_string(),
+        None => "default".to_string(),
+    };
     Ok(crate::scene::Primitive {
         mode: primitive.mode().into(),
+        material,
         vertices: import_primitive_vertices(&primitive, buffers)?,
         indices: import_primitive_indices(&primitive, buffers),
     })
@@ -283,7 +374,6 @@ fn import_primitive_vertices(
 impl From<gltf::Camera<'_>> for crate::scene::Camera {
     fn from(camera: gltf::Camera) -> Self {
         Self {
-            name: camera.name().unwrap_or("Unnamed camera").to_string(),
             projection: match camera.projection() {
                 gltf::camera::Projection::Perspective(camera) => {
                     crate::scene::Projection::Perspective(crate::scene::PerspectiveCamera {
@@ -310,7 +400,6 @@ impl From<gltf::Camera<'_>> for crate::scene::Camera {
 impl From<gltf::khr_lights_punctual::Light<'_>> for crate::scene::Light {
     fn from(light: gltf::khr_lights_punctual::Light) -> Self {
         Self {
-            name: light.name().unwrap_or("Unnamed light").to_string(),
             color: light.color().into(),
             intensity: light.intensity(),
             range: light.range().unwrap_or(0.0),
