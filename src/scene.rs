@@ -6,6 +6,7 @@ pub struct Scene {
     pub textures: std::collections::HashMap<String, Texture>,
     pub materials: std::collections::HashMap<String, Material>,
     pub meshes: std::collections::HashMap<String, Mesh>,
+    pub animations: std::collections::HashMap<String, Animation>,
 }
 
 pub fn create_camera_node(aspect_ratio: f32) -> Node {
@@ -581,4 +582,47 @@ pub enum AlphaMode {
     Opaque = 1,
     Mask,
     Blend,
+}
+
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Animation {
+    pub name: String,
+    pub time: f32,
+    pub channels: Vec<Channel>,
+    pub max_animation_time: f32,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Channel {
+    pub target: String,
+    pub inputs: Vec<f32>,
+    pub transformations: TransformationSet,
+    pub _interpolation: Interpolation,
+}
+
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum Interpolation {
+    #[default]
+    Linear,
+    Step,
+    CubicSpline,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum TransformationSet {
+    Translations(Vec<nalgebra_glm::Vec3>),
+    Rotations(Vec<nalgebra_glm::Vec4>),
+    Scales(Vec<nalgebra_glm::Vec3>),
+    MorphTargetWeights(Vec<f32>),
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Skin {
+    pub joints: Vec<Joint>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Joint {
+    pub target: String,
+    pub inverse_bind_matrix: nalgebra_glm::Mat4,
 }
