@@ -51,10 +51,11 @@ impl Scene {
         has_camera
     }
 
-    pub fn add_root_node(&mut self, node: crate::scene::Node) {
+    pub fn add_root_node(&mut self, node: crate::scene::Node) -> petgraph::graph::NodeIndex {
         let child = self.graph.add_node(node);
         self.graph
             .add_edge(petgraph::graph::NodeIndex::new(0), child, ());
+        child
     }
 
     pub fn walk_dfs(&self, mut visit_node: impl FnMut(&Node, petgraph::graph::NodeIndex)) {
