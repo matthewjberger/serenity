@@ -10,11 +10,95 @@ pub enum Error {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub fn import_gltf(path: impl AsRef<std::path::Path>) -> Result<Vec<crate::scene::Scene>> {
-    let (gltf, buffers, _images) = gltf::import(path.as_ref()).map_err(Error::ImportGltfScene)?;
+    let (gltf, buffers, images) = gltf::import(path.as_ref()).map_err(Error::ImportGltfScene)?;
+    let _samplers = gltf
+        .samplers()
+        .map(|sampler| crate::scene::Sampler::from(sampler))
+        .collect::<Vec<_>>();
+    let _textures = images
+        .into_iter()
+        .map(|image| crate::scene::Texture::from(image))
+        .collect::<Vec<_>>();
     Ok(gltf
         .scenes()
         .map(|gltf_scene| import_scene(gltf_scene, &buffers))
         .collect())
+}
+
+impl From<gltf::texture::Sampler<'_>> for crate::scene::Sampler {
+    fn from(sampler: gltf::texture::Sampler<'_>) -> Self {
+        let min_filter = sampler
+            .min_filter()
+            .map(|filter| match filter {
+                gltf::texture::MinFilter::Linear
+                | gltf::texture::MinFilter::LinearMipmapLinear
+                | gltf::texture::MinFilter::LinearMipmapNearest => crate::scene::Filter::Linear,
+                gltf::texture::MinFilter::Nearest
+                | gltf::texture::MinFilter::NearestMipmapLinear
+                | gltf::texture::MinFilter::NearestMipmapNearest => crate::scene::Filter::Nearest,
+            })
+            .unwrap_or_default();
+
+        let mag_filter = sampler
+            .mag_filter()
+            .map(|filter| match filter {
+                gltf::texture::MagFilter::Linear => crate::scene::Filter::Linear,
+                gltf::texture::MagFilter::Nearest => crate::scene::Filter::Nearest,
+            })
+            .unwrap_or_default();
+
+        let wrap_s = match sampler.wrap_s() {
+            gltf::texture::WrappingMode::ClampToEdge => crate::scene::WrappingMode::ClampToEdge,
+            gltf::texture::WrappingMode::MirroredRepeat => {
+                crate::scene::WrappingMode::MirroredRepeat
+            }
+            gltf::texture::WrappingMode::Repeat => crate::scene::WrappingMode::Repeat,
+        };
+
+        let wrap_t = match sampler.wrap_t() {
+            gltf::texture::WrappingMode::ClampToEdge => crate::scene::WrappingMode::ClampToEdge,
+            gltf::texture::WrappingMode::MirroredRepeat => {
+                crate::scene::WrappingMode::MirroredRepeat
+            }
+            gltf::texture::WrappingMode::Repeat => crate::scene::WrappingMode::Repeat,
+        };
+
+        Self {
+            name: sampler.name().unwrap_or("Unnamed sampler").to_string(),
+            min_filter,
+            mag_filter,
+            wrap_s,
+            wrap_t,
+        }
+    }
+}
+
+impl From<gltf::image::Data> for crate::scene::Texture {
+    fn from(data: gltf::image::Data) -> Self {
+        Self {
+            pixels: data.pixels.to_vec(),
+            format: data.format.into(),
+            width: data.width,
+            height: data.height,
+        }
+    }
+}
+
+impl From<gltf::image::Format> for crate::scene::TextureFormat {
+    fn from(value: gltf::image::Format) -> Self {
+        match value {
+            gltf::image::Format::R8 => crate::scene::TextureFormat::R8,
+            gltf::image::Format::R8G8 => crate::scene::TextureFormat::R8G8,
+            gltf::image::Format::R8G8B8 => crate::scene::TextureFormat::R8G8B8,
+            gltf::image::Format::R8G8B8A8 => crate::scene::TextureFormat::R8G8B8A8,
+            gltf::image::Format::R16 => crate::scene::TextureFormat::R16,
+            gltf::image::Format::R16G16 => crate::scene::TextureFormat::R16G16,
+            gltf::image::Format::R16G16B16 => crate::scene::TextureFormat::R16G16B16,
+            gltf::image::Format::R16G16B16A16 => crate::scene::TextureFormat::R16G16B16A16,
+            gltf::image::Format::R32G32B32FLOAT => crate::scene::TextureFormat::R32G32B32,
+            gltf::image::Format::R32G32B32A32FLOAT => crate::scene::TextureFormat::R32G32B32A32,
+        }
+    }
 }
 
 fn import_scene(gltf_scene: gltf::Scene, buffers: &[gltf::buffer::Data]) -> crate::scene::Scene {

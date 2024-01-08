@@ -510,7 +510,6 @@ pub struct Texture {
     pub format: TextureFormat,
     pub width: u32,
     pub height: u32,
-    pub sampler: Sampler,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
