@@ -7,10 +7,12 @@ pub struct Scene {
     pub materials: std::collections::HashMap<String, Material>,
     pub meshes: std::collections::HashMap<String, Mesh>,
     pub animations: std::collections::HashMap<String, Animation>,
+    pub skins: std::collections::HashMap<String, Skin>,
 }
 
 pub fn create_camera_node(aspect_ratio: f32) -> Node {
     crate::scene::Node {
+        id: uuid::Uuid::new_v4().to_string(),
         label: "Main Camera".to_string(),
         transform: crate::scene::Transform {
             translation: nalgebra_glm::vec3(0.0, 0.0, 4.0),
@@ -211,6 +213,7 @@ pub struct Primitive {
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Node {
+    pub id: String,
     pub label: String,
     pub transform: Transform,
     pub components: Vec<NodeComponent>,
@@ -224,6 +227,7 @@ impl std::fmt::Debug for Node {
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum NodeComponent {
+    // TODO: make these just take strings that key into the scene's resources
     Camera(Camera),
     Mesh(String),
     Light(Light),
@@ -586,7 +590,7 @@ pub enum AlphaMode {
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Animation {
-    pub name: String,
+    pub label: String,
     pub time: f32,
     pub channels: Vec<Channel>,
     pub max_animation_time: f32,
@@ -597,7 +601,7 @@ pub struct Channel {
     pub target: String,
     pub inputs: Vec<f32>,
     pub transformations: TransformationSet,
-    pub _interpolation: Interpolation,
+    pub interpolation: Interpolation,
 }
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -618,6 +622,7 @@ pub enum TransformationSet {
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Skin {
+    pub label: String,
     pub joints: Vec<Joint>,
 }
 
