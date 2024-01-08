@@ -1,17 +1,5 @@
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("Failed to import gltf scene!")]
-    ImportGltfScene(#[source] gltf::Error),
-
-    #[error("No primitive vertex positions specified for a mesh primitive.")]
-    ReadVertexPositions,
-}
-
-type Result<T, E = Error> = std::result::Result<T, E>;
-
-pub fn import_gltf(path: impl AsRef<std::path::Path>) -> Result<crate::scene::Scene> {
-    let (gltf, buffers, raw_images) =
-        gltf::import(path.as_ref()).map_err(Error::ImportGltfScene)?;
+pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::scene::Scene {
+    let (gltf, buffers, raw_images) = gltf::import(path.as_ref()).expect("Failed to import gltf");
 
     let mut samplers = std::collections::HashMap::new();
     samplers.insert("default".to_string(), crate::scene::Sampler::default());
@@ -57,7 +45,6 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> Result<crate::scene::Sc
         })
         .collect::<Vec<_>>();
 
-    // TODO: nodes can reference these
     let mut materials = std::collections::HashMap::new();
     materials.insert("default".to_string(), crate::scene::Material::default());
     let material_handles = gltf
@@ -78,19 +65,46 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> Result<crate::scene::Sc
         })
         .collect::<Vec<_>>();
 
-    let graph = gltf
-        .scenes()
-        .map(|gltf_scene| import_scene(gltf_scene, &buffers, &material_handles))
-        .next() // Only take the first scene, even though gltf can store multiple
-        .unwrap_or_default();
+    let mut meshes = std::collections::HashMap::new();
+    meshes.insert("default".to_string(), crate::scene::Mesh::default());
+    let mesh_handles = gltf
+        .meshes()
+        .map(|primitive_mesh| {
+            let id = uuid::Uuid::new_v4().to_string();
+            let mesh = import_mesh(primitive_mesh, &buffers, &material_handles);
+            meshes.insert(id.to_string(), mesh);
+            id
+        })
+        .collect::<Vec<_>>();
 
-    Ok(crate::scene::Scene {
+    let mut first_scenegraph = None;
+    let mut scenegraphs = std::collections::HashMap::new();
+    scenegraphs.insert("Main".to_string(), crate::scene::SceneGraph::default());
+    gltf.scenes().for_each(|gltf_scene| {
+        let id = uuid::Uuid::new_v4().to_string();
+        if first_scenegraph.is_none() {
+            first_scenegraph = Some(id.to_string());
+        }
+        let mut graph = crate::scene::SceneGraph::default();
+        let root_node = graph.add_node(crate::scene::Node {
+            label: "Root".to_string(),
+            ..Default::default()
+        });
+        gltf_scene.nodes().for_each(|node| {
+            import_node(root_node, node, &mut graph, &mesh_handles);
+        });
+        scenegraphs.insert(id.to_string(), graph);
+    });
+    let graph = scenegraphs[&first_scenegraph.unwrap_or("Main".to_string())].clone();
+
+    crate::scene::Scene {
         graph,
         images,
         samplers,
         textures,
         materials,
-    })
+        meshes,
+    }
 }
 
 impl From<gltf::material::AlphaMode> for crate::scene::AlphaMode {
@@ -142,7 +156,6 @@ impl From<gltf::texture::Sampler<'_>> for crate::scene::Sampler {
         };
 
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
             min_filter,
             mag_filter,
             wrap_s,
@@ -154,7 +167,6 @@ impl From<gltf::texture::Sampler<'_>> for crate::scene::Sampler {
 impl From<gltf::image::Data> for crate::scene::Image {
     fn from(data: gltf::image::Data) -> Self {
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
             pixels: data.pixels.to_vec(),
             format: data.format.into(),
             width: data.width,
@@ -180,28 +192,11 @@ impl From<gltf::image::Format> for crate::scene::ImageFormat {
     }
 }
 
-fn import_scene(
-    gltf_scene: gltf::Scene,
-    buffers: &[gltf::buffer::Data],
-    material_handles: &[String],
-) -> crate::scene::SceneGraph {
-    let mut scenegraph = crate::scene::SceneGraph::default();
-    let root_node = scenegraph.add_node(crate::scene::Node {
-        label: "Root".to_string(),
-        ..Default::default()
-    });
-    gltf_scene.nodes().for_each(|node| {
-        import_node(root_node, node, buffers, &mut scenegraph, material_handles);
-    });
-    scenegraph
-}
-
 fn import_node(
     parent_node_index: petgraph::graph::NodeIndex,
     gltf_node: gltf::Node,
-    buffers: &[gltf::buffer::Data],
     scenegraph: &mut crate::scene::SceneGraph,
-    material_handles: &[String],
+    mesh_handles: &[String],
 ) {
     let name = gltf_node.name().unwrap_or("Unnamed node");
 
@@ -211,16 +206,12 @@ fn import_node(
         ..Default::default()
     };
 
-    gltf_node
-        .mesh()
-        .map(|gltf_mesh| import_mesh(gltf_mesh, buffers, material_handles))
-        .map(|mesh| {
-            mesh.map(|mesh| {
-                scene_node
-                    .components
-                    .push(crate::scene::NodeComponent::Mesh(mesh));
-            })
-        });
+    if let Some(mesh) = gltf_node.mesh() {
+        let mesh_id = mesh_handles[mesh.index()].to_string();
+        scene_node
+            .components
+            .push(crate::scene::NodeComponent::Mesh(mesh_id));
+    }
 
     if let Some(camera) = gltf_node.camera() {
         scene_node
@@ -241,7 +232,7 @@ fn import_node(
     }
 
     gltf_node.children().for_each(|child| {
-        import_node(node_index, child, buffers, scenegraph, material_handles);
+        import_node(node_index, child, scenegraph, mesh_handles);
     });
 }
 
@@ -249,32 +240,31 @@ fn import_mesh(
     mesh: gltf::Mesh,
     buffers: &[gltf::buffer::Data],
     material_handles: &[String],
-) -> Result<crate::scene::Mesh> {
-    Ok(crate::scene::Mesh {
-        id: uuid::Uuid::new_v4().to_string(),
+) -> crate::scene::Mesh {
+    crate::scene::Mesh {
         label: mesh.name().unwrap_or("Unnamed mesh").to_string(),
         primitives: mesh
             .primitives()
             .map(|primitive| import_primitive(primitive, buffers, material_handles))
-            .collect::<Result<Vec<_>, _>>()?,
-    })
+            .collect(),
+    }
 }
 
 fn import_primitive(
     primitive: gltf::Primitive,
     buffers: &[gltf::buffer::Data],
     material_handles: &[String],
-) -> Result<crate::scene::Primitive> {
+) -> crate::scene::Primitive {
     let material = match primitive.material().index() {
         Some(index) => material_handles[index].to_string(),
         None => "default".to_string(),
     };
-    Ok(crate::scene::Primitive {
+    crate::scene::Primitive {
         mode: primitive.mode().into(),
         material,
-        vertices: import_primitive_vertices(&primitive, buffers)?,
+        vertices: import_primitive_vertices(&primitive, buffers),
         indices: import_primitive_indices(&primitive, buffers),
-    })
+    }
 }
 
 fn import_primitive_indices(
@@ -285,18 +275,20 @@ fn import_primitive_indices(
         .reader(|buffer| Some(&*buffers[buffer.index()]))
         .read_indices()
         .take()
-        .map(|read_indices| read_indices.into_u32().collect::<Vec<_>>())
+        .map(|read_indices| read_indices.into_u32().collect())
         .unwrap_or_default()
 }
 
 fn import_primitive_vertices(
     gltf_primitive: &gltf::Primitive,
     buffers: &[gltf::buffer::Data],
-) -> Result<Vec<crate::scene::Vertex>> {
+) -> Vec<crate::scene::Vertex> {
     let reader = gltf_primitive.reader(|buffer| Some(&*buffers[buffer.index()]));
 
     let mut positions = Vec::new();
-    let read_positions = reader.read_positions().ok_or(Error::ReadVertexPositions)?;
+    let read_positions = reader
+        .read_positions()
+        .expect("Failed to read gltf vertex positions");
     read_positions.for_each(|position| {
         positions.push(nalgebra_glm::Vec3::from(position));
     });
@@ -332,10 +324,7 @@ fn import_primitive_vertices(
         convert_joints,
     );
     let convert_weights = |weights: gltf::mesh::util::ReadWeights| -> Vec<nalgebra_glm::Vec4> {
-        weights
-            .into_f32()
-            .map(nalgebra_glm::Vec4::from)
-            .collect::<Vec<_>>()
+        weights.into_f32().map(nalgebra_glm::Vec4::from).collect()
     };
     let weights_0 = reader.read_weights(0).map_or(
         vec![nalgebra_glm::vec4(1.0, 0.0, 0.0, 0.0); number_of_vertices],
@@ -354,7 +343,8 @@ fn import_primitive_vertices(
 
     // every vertex is guaranteed to have a position attribute,
     // so we can use the position attribute array to index into the other attribute arrays
-    let vertices = positions
+
+    positions
         .into_iter()
         .enumerate()
         .map(|(index, position)| crate::scene::Vertex {
@@ -366,9 +356,7 @@ fn import_primitive_vertices(
             weight_0: weights_0[index],
             color_0: colors_0[index],
         })
-        .collect();
-
-    Ok(vertices)
+        .collect()
 }
 
 impl From<gltf::Camera<'_>> for crate::scene::Camera {

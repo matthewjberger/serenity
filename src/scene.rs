@@ -5,6 +5,7 @@ pub struct Scene {
     pub samplers: std::collections::HashMap<String, Sampler>,
     pub textures: std::collections::HashMap<String, Texture>,
     pub materials: std::collections::HashMap<String, Material>,
+    pub meshes: std::collections::HashMap<String, Mesh>,
 }
 
 pub fn create_camera_node(aspect_ratio: f32) -> Node {
@@ -88,34 +89,34 @@ impl Scene {
 
         self.walk_dfs(|node, _| {
             for component in node.components.iter() {
-                if let crate::scene::NodeComponent::Mesh(mesh) = component {
-                    meshes.insert(mesh.id.to_string(), {
-                        mesh.primitives
-                            .iter()
-                            .map(|primitive| {
-                                let primitive_vertices = primitive.vertices.to_vec();
-                                let vertex_offset = vertices.len();
-                                let number_of_vertices = primitive.vertices.len();
-                                vertices.extend_from_slice(&primitive_vertices);
+                if let crate::scene::NodeComponent::Mesh(mesh_id) = component {
+                    let commands = self.meshes[mesh_id]
+                        .primitives
+                        .iter()
+                        .map(|primitive| {
+                            let primitive_vertices = primitive.vertices.to_vec();
+                            let vertex_offset = vertices.len();
+                            let number_of_vertices = primitive.vertices.len();
+                            vertices.extend_from_slice(&primitive_vertices);
 
-                                let primitive_indices = primitive
-                                    .indices
-                                    .iter()
-                                    .map(|x| *x as u16)
-                                    .collect::<Vec<_>>();
-                                let index_offset = indices.len();
-                                let number_of_indices = primitive.indices.len();
-                                indices.extend_from_slice(&primitive_indices);
+                            let primitive_indices = primitive
+                                .indices
+                                .iter()
+                                .map(|x| *x as u16)
+                                .collect::<Vec<_>>();
+                            let index_offset = indices.len();
+                            let number_of_indices = primitive.indices.len();
+                            indices.extend_from_slice(&primitive_indices);
 
-                                PrimitiveDrawCommand {
-                                    vertex_offset,
-                                    index_offset,
-                                    vertices: number_of_vertices,
-                                    indices: number_of_indices,
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                    });
+                            PrimitiveDrawCommand {
+                                vertex_offset,
+                                index_offset,
+                                vertices: number_of_vertices,
+                                indices: number_of_indices,
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    meshes.insert(mesh_id.clone(), commands);
                 }
             }
         });
@@ -195,7 +196,6 @@ impl SceneGraph {
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Mesh {
-    pub id: String,
     pub label: String,
     pub primitives: Vec<Primitive>,
 }
@@ -224,7 +224,7 @@ impl std::fmt::Debug for Node {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum NodeComponent {
     Camera(Camera),
-    Mesh(Mesh),
+    Mesh(String),
     Light(Light),
 }
 
@@ -514,7 +514,6 @@ pub struct Texture {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Image {
-    pub id: String,
     pub pixels: Vec<u8>,
     pub format: ImageFormat,
     pub width: u32,
@@ -549,7 +548,6 @@ pub enum ImageFormat {
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Sampler {
-    pub id: String,
     pub min_filter: Filter,
     pub mag_filter: Filter,
     pub wrap_s: WrappingMode,
