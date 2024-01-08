@@ -8,6 +8,9 @@ pub struct Context {
 }
 
 pub trait State {
+    /// Called once before the main loop
+    fn initialize(&mut self, _context: &mut Context) {}
+
     /// Called when a winit event is received
     fn receive_event(&mut self, _context: &mut Context, _event: &winit::event::Event<()>) {}
 
@@ -58,6 +61,8 @@ impl App {
             mut context,
             mut renderer,
         } = self;
+
+        state.initialize(&mut context);
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = winit::event_loop::ControlFlow::Poll;
