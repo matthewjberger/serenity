@@ -47,3 +47,13 @@
 - Add animations
 - Add skinning
 
+
+## Textures/GLTF
+
+- each texture in gltf.textures() has a texture.sampler().index()
+ - This can be used to index into the flat array of samplers during the import
+- Add links between the textures and the samplers
+
+## Meshes
+
+- Mesh draw commands are looked up using a string that is just the name of the node, this should be something more unique
