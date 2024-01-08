@@ -28,23 +28,6 @@ impl Gui {
         }
     }
 
-    pub fn receive_event(
-        &mut self,
-        event: &winit::event::Event<()>,
-        window: &winit::window::Window,
-    ) -> bool {
-        match event {
-            winit::event::Event::WindowEvent { event, window_id } => {
-                if *window_id == window.id() {
-                    self.state.on_event(&self.context, event).consumed
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        }
-    }
-
     pub fn end_frame(
         &mut self,
         gpu: &crate::gpu::Gpu,
