@@ -5,6 +5,7 @@ pub struct View {
     pub uniform_bind_group: wgpu::BindGroup,
     pub dynamic_uniform_buffer: wgpu::Buffer,
     pub dynamic_uniform_bind_group: wgpu::BindGroup,
+    pub texture_array_bind_group: wgpu::BindGroup,
     pub pipeline: wgpu::RenderPipeline,
     pub mesh_draw_commands:
         std::collections::HashMap<String, Vec<crate::scene::PrimitiveDrawCommand>>,
@@ -18,12 +19,15 @@ impl View {
         let (uniform_buffer, uniform_bind_group_layout, uniform_bind_group) = create_uniform(gpu);
         let (dynamic_uniform_buffer, dynamic_uniform_bind_group_layout, dynamic_uniform_bind_group) =
             create_dynamic_uniform(gpu, Self::MAX_NUMBER_OF_MESHES as _);
+        let (texture_array_bind_group, texture_array_bind_group_layout) =
+            create_texture_array(&gpu.device, &gpu.queue);
 
         let pipeline = create_pipeline(
             gpu,
             &[
                 &uniform_bind_group_layout,
                 &dynamic_uniform_bind_group_layout,
+                &texture_array_bind_group_layout,
             ],
         );
 
@@ -34,6 +38,7 @@ impl View {
             uniform_bind_group,
             dynamic_uniform_buffer,
             dynamic_uniform_bind_group,
+            texture_array_bind_group,
             pipeline,
             mesh_draw_commands: std::collections::HashMap::new(),
         }
@@ -75,9 +80,16 @@ impl View {
 
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.texture_array_bind_group, &[]);
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+        render_pass.set_push_constants(
+            wgpu::ShaderStages::VERTEX_FRAGMENT,
+            0,
+            bytemuck::bytes_of(&[1_u32]),
+        );
 
         let mut ubo_offset = 0;
         scene.walk_dfs(|node, _| {
@@ -309,7 +321,10 @@ fn create_pipeline(
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts,
-            push_constant_ranges: &[],
+            push_constant_ranges: &[wgpu::PushConstantRange {
+                stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                range: 0..32, // 1 byte
+            }],
         });
 
     gpu.device
@@ -400,6 +415,17 @@ struct DynamicUniform {
 @group(1) @binding(0)
 var<uniform> mesh_ubo: DynamicUniform;
 
+@group(2) @binding(0)
+var texture_array: binding_array<texture_2d<f32>>;
+@group(2) @binding(1)
+var sampler_array: binding_array<sampler>;
+
+struct Material {
+    base_texture_index: u32,
+    padding: vec3<u32>,
+}
+var<push_constant> material: Material;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -414,15 +440,17 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) normal: vec3<f32>,
     @location(1) color: vec3<f32>,
+    @location(2) tex_coord: vec2<f32>,
 };
 
 @vertex
 fn vertex_main(vert: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     let mvp = ubo.projection * ubo.view * mesh_ubo.model;
-    out.color = vert.color_0;
     out.position = mvp * vec4(vert.position, 1.0);
     out.normal = vec4((mvp * vec4(vert.normal, 0.0)).xyz, 1.0).xyz;
+    out.color = vert.color_0;
+    out.tex_coord = vert.uv_0;
     return out;
 };
 
@@ -435,6 +463,105 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let result = (ambient_color) * object_color.rgb;
 
-    return vec4<f32>(result, object_color.a);
+    let offset = material.base_texture_index;
+    return textureSampleLevel(texture_array[offset], sampler_array[0], in.tex_coord, 0.0);
 }
 ";
+
+fn create_texture_array(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> (wgpu::BindGroup, wgpu::BindGroupLayout) {
+    let red_texture_data = [255, 0, 0, 255];
+    let green_texture_data = [0, 255, 0, 255];
+
+    let texture_descriptor = wgpu::TextureDescriptor {
+        size: wgpu::Extent3d::default(),
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        label: None,
+        view_formats: &[],
+    };
+
+    let red_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("red"),
+        view_formats: &[],
+        ..texture_descriptor
+    });
+    let red_texture_view = red_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    queue.write_texture(
+        red_texture.as_image_copy(),
+        &red_texture_data,
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(4),
+            rows_per_image: None,
+        },
+        wgpu::Extent3d::default(),
+    );
+
+    let green_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("green"),
+        view_formats: &[],
+        ..texture_descriptor
+    });
+    let green_texture_view = green_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    queue.write_texture(
+        green_texture.as_image_copy(),
+        &green_texture_data,
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(4),
+            rows_per_image: None,
+        },
+        wgpu::Extent3d::default(),
+    );
+
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+
+    let texture_array_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: std::num::NonZeroU32::new(2),
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: std::num::NonZeroU32::new(2),
+                },
+            ],
+        });
+
+    let texture_array_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureViewArray(&[
+                    &red_texture_view,
+                    &green_texture_view,
+                ]),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::SamplerArray(&[&sampler, &sampler]),
+            },
+        ],
+        layout: &texture_array_bind_group_layout,
+        label: Some("bind group"),
+    });
+
+    (texture_array_bind_group, texture_array_bind_group_layout)
+}

@@ -614,7 +614,7 @@ mod tests {
     #[ignore]
     #[test]
     fn import() {
-        let scene = crate::gltf::import_gltf(&"resources/models/DamagedHelmet.glb");
+        let scene = crate::gltf::import_gltf("resources/models/DamagedHelmet.glb");
         dbg!(scene.textures);
         dbg!(scene.materials);
     }
