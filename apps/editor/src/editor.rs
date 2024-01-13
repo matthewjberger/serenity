@@ -1,4 +1,4 @@
-use serenity::{egui, nalgebra_glm, petgraph, winit};
+use serenity::{app::window_aspect_ratio, egui, nalgebra_glm, petgraph, winit};
 
 pub struct Editor {
     broker: Broker,
@@ -41,11 +41,7 @@ impl Editor {
         );
     }
 
-    fn receive_messages(
-        &mut self,
-        context: &mut serenity::app::Context,
-        renderer: &mut serenity::render::Renderer,
-    ) {
+    fn receive_messages(&mut self, context: &mut serenity::app::Context) {
         while let Some(message) = self.client.borrow().next_message() {
             match message {
                 Message::Command(command) => match command {
@@ -53,15 +49,14 @@ impl Editor {
                         context.should_exit = true;
                     }
                     Command::ImportGltfFile(path) => {
-                        context.scene = serenity::gltf::import_gltf(&path).clone();
-                        if !context.scene.has_camera() {
+                        context.world = serenity::gltf::import_gltf(&path).clone();
+                        if !context.world.has_camera() {
                             context
-                                .scene
+                                .world
                                 .add_root_node(serenity::world::create_camera_node(
-                                    renderer.gpu.aspect_ratio(),
+                                    window_aspect_ratio(&context.window),
                                 ));
                         }
-                        renderer.view.import_scene(&context.scene, &renderer.gpu);
                     }
                 },
                 Message::Toast(message) => {
@@ -106,12 +101,8 @@ impl serenity::app::State for Editor {
         }
     }
 
-    fn update(
-        &mut self,
-        context: &mut serenity::app::Context,
-        renderer: &mut serenity::render::Renderer,
-    ) {
-        self.receive_messages(context, renderer);
+    fn update(&mut self, context: &mut serenity::app::Context) {
+        self.receive_messages(context);
         camera_system(context);
     }
 
@@ -120,11 +111,11 @@ impl serenity::app::State for Editor {
             let window_size = context.window.inner_size();
             let aspect_ratio = window_size.width as f32 / window_size.height.max(1) as f32;
             let (_camera_position, projection, view) =
-                serenity::view::create_camera_matrices(&context.scene, aspect_ratio)
+                serenity::view::create_camera_matrices(&context.world, aspect_ratio)
                     .unwrap_or_default();
             ui.with_layer_id(egui::LayerId::background(), |ui| {
                 if let Some(selected) = self.selected {
-                    let node = &mut context.scene.scene[selected];
+                    let node = &mut context.world.scene[selected];
                     let model_matrix = node.transform.matrix();
                     let gizmo = egui_gizmo::Gizmo::new("My gizmo")
                         .view_matrix(view)
@@ -191,12 +182,12 @@ impl serenity::app::State for Editor {
             .show(ui_context, |ui| {
                 ui.set_width(ui.available_width());
                 ui.heading("Scene Tree");
-                if context.scene.scene.node_count() > 0 {
+                if context.world.scene.node_count() > 0 {
                     ui.group(|ui| {
                         egui::ScrollArea::vertical()
                             .id_source(ui.next_auto_id())
                             .show(ui, |ui| {
-                                node_ui(ui, &context.scene.scene, 0.into(), &mut self.selected);
+                                node_ui(ui, &context.world.scene, 0.into(), &mut self.selected);
                             });
                     });
                     ui.allocate_space(ui.available_size());
@@ -213,7 +204,7 @@ impl serenity::app::State for Editor {
                     .id_source(ui.next_auto_id())
                     .show(ui, |ui| {
                         if let Some(selected) = self.selected {
-                            let node = &mut context.scene.scene[selected];
+                            let node = &mut context.world.scene[selected];
                             egui::ScrollArea::vertical()
                                 .id_source(ui.next_auto_id())
                                 .show(ui, |ui| {
@@ -318,7 +309,7 @@ fn node_header_ui(
 }
 
 fn camera_system(context: &mut serenity::app::Context) {
-    context.scene.walk_dfs_mut(|node, _| {
+    context.world.walk_dfs_mut(|node, _| {
         node.components.iter_mut().for_each(|component| {
             if let serenity::world::NodeComponent::Camera(camera) = component {
                 let speed = 10.0 * context.delta_time as f32;

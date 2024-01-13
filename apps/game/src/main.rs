@@ -1,4 +1,4 @@
-use serenity::{nalgebra_glm, petgraph, uuid, winit};
+use serenity::{app::window_aspect_ratio, nalgebra_glm, petgraph, uuid, winit};
 
 fn main() {
     serenity::app::App::new("Serenity", 1920, 1080).run(Game::default());
@@ -10,24 +10,16 @@ struct Game {
 }
 
 impl serenity::app::State for Game {
-    fn initialize(
-        &mut self,
-        context: &mut serenity::app::Context,
-        renderer: &mut serenity::render::Renderer,
-    ) {
-        context.scene = serenity::gltf::import_gltf("resources/models/DamagedHelmet.glb").clone();
-
-        let aspect_ratio = {
-            let serenity::winit::dpi::PhysicalSize { width, height } = context.window.inner_size();
-            width as f32 / height.max(1) as f32
-        };
-        renderer.view.import_scene(&context.scene, &renderer.gpu);
+    fn initialize(&mut self, context: &mut serenity::app::Context) {
+        context.world = serenity::gltf::import_gltf("resources/models/DamagedHelmet.glb").clone();
 
         context
-            .scene
-            .add_root_node(serenity::world::create_camera_node(aspect_ratio));
+            .world
+            .add_root_node(serenity::world::create_camera_node(window_aspect_ratio(
+                &context.window,
+            )));
 
-        self.player_node_index = context.scene.add_root_node({
+        self.player_node_index = context.world.add_root_node({
             serenity::world::Node {
                 id: uuid::Uuid::new_v4().to_string(),
                 label: "Player".to_string(),
@@ -67,13 +59,9 @@ impl serenity::app::State for Game {
         }
     }
 
-    fn update(
-        &mut self,
-        context: &mut serenity::app::Context,
-        _renderer: &mut serenity::render::Renderer,
-    ) {
+    fn update(&mut self, context: &mut serenity::app::Context) {
         if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
-            context.scene.scene[self.player_node_index]
+            context.world.scene[self.player_node_index]
                 .transform
                 .translation
                 .x += 100.0;

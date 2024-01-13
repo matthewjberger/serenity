@@ -8,6 +8,21 @@ pub struct World {
     pub meshes: std::collections::HashMap<String, Mesh>,
     pub animations: std::collections::HashMap<String, Animation>,
     pub skins: std::collections::HashMap<String, Skin>,
+
+    pub active_scene_index: usize,
+    pub linear_animations: Vec<Animation>,
+    pub linear_cameras: Vec<Camera>,
+    pub linear_images: Vec<Image>,
+    pub linear_indices: Vec<u32>,
+    pub linear_materials: Vec<LinearMaterial>,
+    pub linear_meshes: Vec<LinearMesh>,
+    pub linear_nodes: Vec<LinearNode>,
+    pub linear_samplers: Vec<Sampler>,
+    pub linear_scenes: Vec<LinearScene>,
+    pub linear_skins: Vec<Skin>,
+    pub linear_textures: Vec<LinearTexture>,
+    pub linear_transforms: Vec<Transform>,
+    pub linear_vertices: Vec<Vertex>,
 }
 
 pub fn create_camera_node(aspect_ratio: f32) -> Node {
@@ -80,53 +95,6 @@ impl World {
             visit_node(&mut self.scene.0[node_index], node_index);
         }
     }
-
-    pub fn flatten_geometry(
-        &self,
-    ) -> (
-        Vec<crate::world::Vertex>,
-        Vec<u16>,
-        std::collections::HashMap<String, Vec<PrimitiveDrawCommand>>,
-    ) {
-        let (mut vertices, mut indices, mut meshes) =
-            (Vec::new(), Vec::new(), std::collections::HashMap::new());
-
-        self.walk_dfs(|node, _| {
-            for component in node.components.iter() {
-                if let crate::world::NodeComponent::Mesh(mesh_id) = component {
-                    let commands = self.meshes[mesh_id]
-                        .primitives
-                        .iter()
-                        .map(|primitive| {
-                            let primitive_vertices = primitive.vertices.to_vec();
-                            let vertex_offset = vertices.len();
-                            let number_of_vertices = primitive.vertices.len();
-                            vertices.extend_from_slice(&primitive_vertices);
-
-                            let primitive_indices = primitive
-                                .indices
-                                .iter()
-                                .map(|x| *x as u16)
-                                .collect::<Vec<_>>();
-                            let index_offset = indices.len();
-                            let number_of_indices = primitive.indices.len();
-                            indices.extend_from_slice(&primitive_indices);
-
-                            PrimitiveDrawCommand {
-                                vertex_offset,
-                                index_offset,
-                                vertices: number_of_vertices,
-                                indices: number_of_indices,
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    meshes.insert(mesh_id.clone(), commands);
-                }
-            }
-        });
-
-        (vertices, indices, meshes)
-    }
 }
 
 #[repr(C)]
@@ -155,6 +123,11 @@ impl Default for Vertex {
             color_0: nalgebra_glm::vec3(1.0, 1.0, 1.0),
         }
     }
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LinearScene {
+    pub graph: petgraph::Graph<usize, ()>,
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -201,7 +174,13 @@ impl Scene {
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Mesh {
     pub label: String,
+    pub linear_index: usize,
     pub primitives: Vec<Primitive>,
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LinearMesh {
+    pub primitives: Vec<LinearPrimitive>,
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -317,7 +296,7 @@ impl Transform {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
     pub projection: Projection,
     pub orientation: Orientation,
@@ -336,6 +315,12 @@ impl Camera {
 pub enum Projection {
     Perspective(PerspectiveCamera),
     Orthographic(OrthographicCamera),
+}
+
+impl Default for Projection {
+    fn default() -> Self {
+        Self::Perspective(PerspectiveCamera::default())
+    }
 }
 
 #[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
@@ -519,6 +504,31 @@ pub struct Texture {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct LinearTexture {
+    pub label: String,
+    pub image_index: usize,
+    pub sampler_index: Option<usize>,
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LinearPrimitive {
+    pub vertex_offset: usize,
+    pub index_offset: usize,
+    pub number_of_vertices: usize,
+    pub number_of_indices: usize,
+    pub mode: PrimitiveMode,
+    pub material: Option<usize>,
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LinearNode {
+    pub transform_index: Option<usize>,
+    pub camera_index: Option<usize>,
+    pub mesh_index: Option<usize>,
+    pub light_index: Option<usize>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Image {
     pub pixels: Vec<u8>,
     pub format: ImageFormat,
@@ -579,6 +589,12 @@ pub enum Filter {
 pub struct Material {
     pub base_color_factor: nalgebra_glm::Vec4,
     pub base_color_texture: String,
+}
+
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct LinearMaterial {
+    pub base_color_factor: nalgebra_glm::Vec4,
+    pub base_color_texture_index: usize,
 }
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
