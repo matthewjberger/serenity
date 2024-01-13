@@ -1,6 +1,5 @@
 [workspace]
-members = ["apps/editor", "apps/game"]
-
+members = ["apps/editor"]
 [package]
 name = "serenity"
 authors = ["Matthew Berger <matthewjordanberger@gmail.com>"]

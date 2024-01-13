@@ -3,19 +3,19 @@ pub struct Context {
     pub io: crate::io::Io,
     pub delta_time: f64,
     pub last_frame: std::time::Instant,
-    pub scene: crate::scene::Scene,
+    pub world: crate::scene::World,
     pub should_exit: bool,
 }
 
 pub trait State {
     /// Called once before the main loop
-    fn initialize(&mut self, _context: &mut Context, _renderer: &mut crate::render::Renderer) {}
+    fn initialize(&mut self, _context: &mut Context) {}
 
     /// Called when a winit event is received
     fn receive_event(&mut self, _context: &mut Context, _event: &winit::event::Event<()>) {}
 
     /// Called every frame prior to rendering
-    fn update(&mut self, _context: &mut Context, _renderer: &mut crate::render::Renderer) {}
+    fn update(&mut self, _context: &mut Context) {}
 
     /// Called every frame after update()
     /// to create UI paint jobs for rendering
@@ -43,7 +43,7 @@ impl App {
             io: crate::io::Io::default(),
             delta_time: 0.01,
             last_frame: std::time::Instant::now(),
-            scene: crate::scene::Scene::default(),
+            world: crate::scene::World::default(),
             should_exit: false,
         };
         Self {
@@ -62,7 +62,7 @@ impl App {
             mut renderer,
         } = self;
 
-        state.initialize(&mut context, &mut renderer);
+        state.initialize(&mut context);
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = winit::event_loop::ControlFlow::Poll;
@@ -73,7 +73,7 @@ impl App {
                     .as_micros() as f64)
                     / 1_000_000_f64;
                 context.last_frame = std::time::Instant::now();
-                state.update(&mut context, &mut renderer);
+                state.update(&mut context);
             }
 
             if let winit::event::Event::WindowEvent {

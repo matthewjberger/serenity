@@ -113,7 +113,7 @@ impl Renderer {
             });
 
             self.view
-                .render(&mut render_pass, &self.gpu, &context.scene);
+                .render(&mut render_pass, &self.gpu, &context.world);
             self.gui
                 .renderer
                 .render(&mut render_pass, &paint_jobs, &screen_descriptor);

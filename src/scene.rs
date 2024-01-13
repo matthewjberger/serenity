@@ -1,140 +1,40 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Scene {
-    pub graph: SceneGraph,
-
-    pub linear_images: Vec<Image>,
-    pub linear_samplers: Vec<Sampler>,
-    pub linear_textures: Vec<Texture>,
-    pub linear_materials: Vec<Material>,
-    pub linear_meshes: Vec<Mesh>,
-    pub linear_animations: Vec<Animation>,
-    pub linear_skins: Vec<Skin>,
-
-    pub images: std::collections::HashMap<String, Image>,
-    pub samplers: std::collections::HashMap<String, Sampler>,
-    pub textures: std::collections::HashMap<String, Texture>,
-    pub materials: std::collections::HashMap<String, Material>,
-    pub meshes: std::collections::HashMap<String, Mesh>,
-    pub animations: std::collections::HashMap<String, Animation>,
-    pub skins: std::collections::HashMap<String, Skin>,
-}
-
-pub fn create_camera_node(aspect_ratio: f32) -> Node {
-    crate::scene::Node {
-        id: uuid::Uuid::new_v4().to_string(),
-        label: "Main Camera".to_string(),
-        transform: crate::scene::Transform {
-            translation: nalgebra_glm::vec3(0.0, 0.0, 4.0),
-            ..Default::default()
-        },
-        components: vec![crate::scene::NodeComponent::Camera(crate::scene::Camera {
-            projection: crate::scene::Projection::Perspective(crate::scene::PerspectiveCamera {
-                aspect_ratio: Some(aspect_ratio),
-                y_fov_rad: 90_f32.to_radians(),
-                z_far: None,
-                z_near: 0.01,
-            }),
-            orientation: Orientation {
-                min_radius: 1.0,
-                max_radius: 100.0,
-                radius: 5.0,
-                offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                sensitivity: nalgebra_glm::vec2(1.0, 1.0),
-                direction: nalgebra_glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
-            },
-        })],
-    }
+pub struct World {
+    pub active_scene_index: Option<usize>,
+    pub animations: Vec<Animation>,
+    pub cameras: Vec<Camera>,
+    pub images: Vec<Image>,
+    pub indices: Vec<u32>,
+    pub materials: Vec<Material>,
+    pub meshes: Vec<Mesh>,
+    pub nodes: Vec<Node>,
+    pub samplers: Vec<Sampler>,
+    pub scenes: Vec<Scene>,
+    pub skins: Vec<Skin>,
+    pub textures: Vec<Texture>,
+    pub transforms: Vec<Transform>,
+    pub vertices: Vec<Vertex>,
 }
 
 impl Scene {
-    pub fn has_camera(&self) -> bool {
-        let mut has_camera = false;
-        self.walk_dfs(|node, _| {
-            for component in node.components.iter() {
-                if let crate::scene::NodeComponent::Camera(_) = component {
-                    has_camera = true;
-                    return;
-                }
-            }
-        });
-        has_camera
-    }
-
-    pub fn add_root_node(&mut self, node: crate::scene::Node) -> petgraph::graph::NodeIndex {
-        let child = self.graph.add_node(node);
-        self.graph
-            .add_edge(petgraph::graph::NodeIndex::new(0), child, ());
-        child
-    }
-
-    pub fn walk_dfs(&self, mut visit_node: impl FnMut(&Node, petgraph::graph::NodeIndex)) {
-        if self.graph.0.node_count() == 0 {
+    pub fn walk_dfs(&self, mut visit_node: impl FnMut(usize, petgraph::graph::NodeIndex)) {
+        if self.graph.node_count() == 0 {
             return;
         }
-        let mut dfs = petgraph::visit::Dfs::new(&self.graph.0, petgraph::graph::NodeIndex::new(0));
-        while let Some(node_index) = dfs.next(&self.graph.0) {
-            visit_node(&self.graph.0[node_index], node_index);
+        let mut dfs = petgraph::visit::Dfs::new(&self.graph, petgraph::graph::NodeIndex::new(0));
+        while let Some(node_index) = dfs.next(&self.graph) {
+            visit_node(self.graph[node_index], node_index);
         }
     }
 
-    pub fn walk_dfs_mut(
-        &mut self,
-        mut visit_node: impl FnMut(&mut Node, petgraph::graph::NodeIndex),
-    ) {
-        if self.graph.0.node_count() == 0 {
+    pub fn walk_dfs_mut(&mut self, mut visit_node: impl FnMut(usize, petgraph::graph::NodeIndex)) {
+        if self.graph.node_count() == 0 {
             return;
         }
-        let mut dfs = petgraph::visit::Dfs::new(&self.graph.0, petgraph::graph::NodeIndex::new(0));
-        while let Some(node_index) = dfs.next(&self.graph.0) {
-            visit_node(&mut self.graph.0[node_index], node_index);
+        let mut dfs = petgraph::visit::Dfs::new(&self.graph, petgraph::graph::NodeIndex::new(0));
+        while let Some(node_index) = dfs.next(&self.graph) {
+            visit_node(self.graph[node_index], node_index);
         }
-    }
-
-    pub fn flatten_geometry(
-        &self,
-    ) -> (
-        Vec<crate::scene::Vertex>,
-        Vec<u16>,
-        std::collections::HashMap<String, Vec<PrimitiveDrawCommand>>,
-    ) {
-        let (mut vertices, mut indices, mut meshes) =
-            (Vec::new(), Vec::new(), std::collections::HashMap::new());
-
-        self.walk_dfs(|node, _| {
-            for component in node.components.iter() {
-                if let crate::scene::NodeComponent::Mesh(mesh_id) = component {
-                    let commands = self.meshes[mesh_id]
-                        .primitives
-                        .iter()
-                        .map(|primitive| {
-                            let primitive_vertices = primitive.vertices.to_vec();
-                            let vertex_offset = vertices.len();
-                            let number_of_vertices = primitive.vertices.len();
-                            vertices.extend_from_slice(&primitive_vertices);
-
-                            let primitive_indices = primitive
-                                .indices
-                                .iter()
-                                .map(|x| *x as u16)
-                                .collect::<Vec<_>>();
-                            let index_offset = indices.len();
-                            let number_of_indices = primitive.indices.len();
-                            indices.extend_from_slice(&primitive_indices);
-
-                            PrimitiveDrawCommand {
-                                vertex_offset,
-                                index_offset,
-                                vertices: number_of_vertices,
-                                indices: number_of_indices,
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    meshes.insert(mesh_id.clone(), commands);
-                }
-            }
-        });
-
-        (vertices, indices, meshes)
     }
 }
 
@@ -167,41 +67,40 @@ impl Default for Vertex {
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SceneGraph(pub petgraph::Graph<Node, ()>);
+pub struct Scene {
+    pub active_camera_index: Option<usize>,
+    pub graph: petgraph::Graph<usize, ()>,
+}
 
-impl std::fmt::Display for SceneGraph {
+impl std::fmt::Display for Scene {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
             "{:?}",
-            petgraph::dot::Dot::with_config(&self.0, &[petgraph::dot::Config::EdgeNoLabel])
+            petgraph::dot::Dot::with_config(&self.graph, &[petgraph::dot::Config::EdgeNoLabel])
         )
     }
 }
 
-impl std::ops::Deref for SceneGraph {
-    type Target = petgraph::Graph<Node, ()>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for SceneGraph {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl SceneGraph {
-    pub fn global_transform(&self, node_index: petgraph::graph::NodeIndex) -> nalgebra_glm::Mat4 {
-        let transform = self.0[node_index].transform.matrix();
+impl Scene {
+    pub fn global_transform(
+        &self,
+        node_index: petgraph::graph::NodeIndex,
+        transforms: &[crate::scene::Transform],
+        nodes: &[crate::scene::Node],
+    ) -> nalgebra_glm::Mat4 {
+        let transform = transforms[nodes[self.graph[node_index]]
+            .transform_index
+            .unwrap_or_default()]
+        .matrix();
         match self
-            .0
+            .graph
             .neighbors_directed(node_index, petgraph::Direction::Incoming)
             .next()
         {
-            Some(parent_node_index) => self.global_transform(parent_node_index) * transform,
+            Some(parent_node_index) => {
+                self.global_transform(parent_node_index, transforms, nodes) * transform
+            }
             None => transform,
         }
     }
@@ -215,32 +114,27 @@ pub struct Mesh {
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Primitive {
+    pub vertex_offset: usize,
+    pub index_offset: usize,
+    pub number_of_vertices: usize,
+    pub number_of_indices: usize,
     pub mode: PrimitiveMode,
-    pub material: String,
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
+    pub material: Option<usize>,
 }
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Node {
-    pub id: String,
     pub label: String,
-    pub transform: Transform,
-    pub components: Vec<NodeComponent>,
+    pub transform_index: Option<usize>,
+    pub camera_index: Option<usize>,
+    pub mesh_index: Option<usize>,
+    pub light_index: Option<usize>,
 }
 
 impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.label)
     }
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub enum NodeComponent {
-    // TODO: make these just take strings that key into the scene's resources
-    Camera(Camera),
-    Mesh(String),
-    Light(Light),
 }
 
 #[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -337,6 +231,27 @@ impl Camera {
         match &self.projection {
             Projection::Perspective(camera) => camera.matrix(aspect_ratio),
             Projection::Orthographic(camera) => camera.matrix(),
+        }
+    }
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        crate::scene::Camera {
+            projection: crate::scene::Projection::Perspective(crate::scene::PerspectiveCamera {
+                aspect_ratio: None,
+                y_fov_rad: 90_f32.to_radians(),
+                z_far: None,
+                z_near: 0.01,
+            }),
+            orientation: Orientation {
+                min_radius: 1.0,
+                max_radius: 100.0,
+                radius: 5.0,
+                offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                sensitivity: nalgebra_glm::vec2(1.0, 1.0),
+                direction: nalgebra_glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
+            },
         }
     }
 }
@@ -486,14 +401,6 @@ pub enum PrimitiveMode {
     Triangles,
     TriangleStrip,
     TriangleFan,
-}
-
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PrimitiveDrawCommand {
-    pub vertex_offset: usize,
-    pub index_offset: usize,
-    pub vertices: usize,
-    pub indices: usize,
 }
 
 #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
