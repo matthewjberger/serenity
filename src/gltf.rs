@@ -5,11 +5,240 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     let (textures, texture_ids) = import_textures(&gltf, sampler_ids, image_ids);
     let (materials, material_ids) = import_materials(&gltf, texture_ids);
     let (meshes, mesh_ids) = import_meshes(&gltf, &buffers, material_ids);
-    let (node_ids, graph) = import_graph(&gltf, &mesh_ids);
+    let (node_ids, scene) = import_graph(&gltf, &mesh_ids);
     let (animations, _animation_ids) = import_animations(&gltf, &node_ids, &buffers);
     let (skins, _skin_ids) = import_skins(&gltf, &buffers, &node_ids);
+
+    let linear_images = raw_images
+        .into_iter()
+        .map(crate::world::Image::from)
+        .collect::<Vec<_>>();
+    let linear_samplers = gltf
+        .samplers()
+        .map(crate::world::Sampler::from)
+        .collect::<Vec<_>>();
+    let linear_textures = gltf
+        .textures()
+        .map(|texture| crate::world::LinearTexture {
+            label: texture.name().unwrap_or("Unnamed texture").to_string(),
+            image_index: texture.source().index(),
+            sampler_index: texture.sampler().index(),
+        })
+        .collect::<Vec<_>>();
+    let linear_materials = gltf
+        .materials()
+        .map(|material| crate::world::LinearMaterial {
+            base_color_factor: nalgebra_glm::Vec4::from(
+                material.pbr_metallic_roughness().base_color_factor(),
+            ),
+            base_color_texture_index: material
+                .pbr_metallic_roughness()
+                .base_color_texture()
+                .map(|texture| texture.texture().index())
+                .unwrap_or_default(),
+        })
+        .collect::<Vec<_>>();
+
+    let (linear_meshes, linear_vertices, linear_indices) = {
+        let (mut vertices, mut indices) = (vec![], vec![]);
+        let meshes = gltf
+            .meshes()
+            .map(|mesh| {
+                crate::world::LinearMesh {
+                    primitives: mesh
+                        .primitives()
+                        .map(|primitive| {
+                            let primitive_vertices: Vec<crate::world::Vertex> = {
+                                let reader =
+                                    primitive.reader(|buffer| Some(&*buffers[buffer.index()]));
+
+                                let mut positions = Vec::new();
+                                let read_positions = reader
+                                    .read_positions()
+                                    .expect("Failed to read gltf vertex positions");
+                                read_positions.for_each(|position| {
+                                    positions.push(nalgebra_glm::Vec3::from(position));
+                                });
+                                let number_of_vertices = positions.len();
+                                let normals = reader.read_normals().map_or(
+                                    vec![nalgebra_glm::vec3(0.0, 0.0, 0.0); number_of_vertices],
+                                    |normals| {
+                                        normals.map(nalgebra_glm::Vec3::from).collect::<Vec<_>>()
+                                    },
+                                );
+                                let map_to_vec2 =
+                            |coords: gltf::mesh::util::ReadTexCoords| -> Vec<nalgebra_glm::Vec2> {
+                                coords
+                                    .into_f32()
+                                    .map(nalgebra_glm::Vec2::from)
+                                    .collect::<Vec<_>>()
+                            };
+                                let uv_0 = reader.read_tex_coords(0).map_or(
+                                    vec![nalgebra_glm::vec2(0.0, 0.0); number_of_vertices],
+                                    map_to_vec2,
+                                );
+                                let uv_1 = reader.read_tex_coords(1).map_or(
+                                    vec![nalgebra_glm::vec2(0.0, 0.0); number_of_vertices],
+                                    map_to_vec2,
+                                );
+                                let convert_joints =
+                                |joints: gltf::mesh::util::ReadJoints| -> Vec<nalgebra_glm::Vec4> {
+                                    joints
+                                        .into_u16()
+                                        .map(|joint| {
+                                            nalgebra_glm::vec4(
+                                                joint[0] as _,
+                                                joint[1] as _,
+                                                joint[2] as _,
+                                                joint[3] as _,
+                                            )
+                                        })
+                                        .collect::<Vec<_>>()
+                                };
+                                let joints_0 = reader.read_joints(0).map_or(
+                                    vec![
+                                        nalgebra_glm::vec4(0.0, 0.0, 0.0, 0.0);
+                                        number_of_vertices
+                                    ],
+                                    convert_joints,
+                                );
+                                let convert_weights =
+                            |weights: gltf::mesh::util::ReadWeights| -> Vec<nalgebra_glm::Vec4> {
+                                weights.into_f32().map(nalgebra_glm::Vec4::from).collect()
+                            };
+                                let weights_0 = reader.read_weights(0).map_or(
+                                    vec![
+                                        nalgebra_glm::vec4(1.0, 0.0, 0.0, 0.0);
+                                        number_of_vertices
+                                    ],
+                                    convert_weights,
+                                );
+                                let convert_colors =
+                                |colors: gltf::mesh::util::ReadColors| -> Vec<nalgebra_glm::Vec3> {
+                                    colors
+                                        .into_rgb_f32()
+                                        .map(nalgebra_glm::Vec3::from)
+                                        .collect::<Vec<_>>()
+                                };
+                                let colors_0 = reader.read_colors(0).map_or(
+                                    vec![nalgebra_glm::vec3(1.0, 1.0, 1.0); number_of_vertices],
+                                    convert_colors,
+                                );
+
+                                // every vertex is guaranteed to have a position attribute,
+                                // so we can use the position attribute array to index into the other attribute arrays
+
+                                positions
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(index, position)| crate::world::Vertex {
+                                        position,
+                                        normal: normals[index],
+                                        uv_0: uv_0[index],
+                                        uv_1: uv_1[index],
+                                        joint_0: joints_0[index],
+                                        weight_0: weights_0[index],
+                                        color_0: colors_0[index],
+                                    })
+                                    .collect()
+                            };
+
+                            let primitive_indices: Vec<u32> = primitive
+                                .reader(|buffer| Some(&*buffers[buffer.index()]))
+                                .read_indices()
+                                .take()
+                                .map(|read_indices| read_indices.into_u32().collect())
+                                .unwrap_or_default();
+
+                            let primitive = crate::world::LinearPrimitive {
+                                mode: primitive.mode().into(),
+                                material: primitive.material().index(),
+                                vertex_offset: vertices.len(),
+                                index_offset: indices.len(),
+                                number_of_vertices: primitive_vertices.len(),
+                                number_of_indices: primitive_indices.len(),
+                            };
+
+                            vertices.extend(primitive_vertices);
+                            indices.extend(primitive_indices);
+
+                            primitive
+                        })
+                        .collect::<Vec<_>>(),
+                }
+            })
+            .collect::<Vec<_>>();
+        (meshes, vertices, indices)
+    };
+
+    let linear_cameras = {
+        let cameras = gltf
+            .cameras()
+            .map(crate::world::Camera::from)
+            .collect::<Vec<_>>();
+        if cameras.is_empty() {
+            vec![crate::world::Camera::default()]
+        } else {
+            cameras
+        }
+    };
+
+    let (linear_scenes, linear_nodes, linear_transforms) = {
+        let mut nodes = Vec::new();
+        let mut transforms = Vec::new();
+        let scenes = gltf
+            .scenes()
+            .map(|gltf_scene| {
+                fn visit_node(
+                    parent_node_index: petgraph::graph::NodeIndex,
+                    node: &gltf::Node,
+                    scene: &mut crate::world::LinearScene,
+                    nodes: &mut Vec<crate::world::LinearNode>,
+                    transforms: &mut Vec<crate::world::Transform>,
+                ) {
+                    transforms.push(crate::world::Transform::from(node.transform().decomposed()));
+                    nodes.push(crate::world::LinearNode {
+                        transform_index: Some(transforms.len()),
+                        camera_index: node.camera().map(|camera| camera.index()),
+                        mesh_index: node.mesh().map(|mesh| mesh.index()),
+                        light_index: node.light().map(|light| light.index()),
+                    });
+                    let node_index = scene.graph.add_node(nodes.len());
+                    if parent_node_index != node_index {
+                        scene.graph.add_edge(parent_node_index, node_index, ());
+                    }
+                    node.children().for_each(|child| {
+                        visit_node(node_index, &child, scene, nodes, transforms);
+                    });
+                }
+
+                let mut scene = crate::world::LinearScene::default();
+                let root_node_index = scene.graph.add_node(0);
+
+                gltf_scene.nodes().for_each(|root_node| {
+                    visit_node(
+                        root_node_index,
+                        &root_node,
+                        &mut scene,
+                        &mut nodes,
+                        &mut transforms,
+                    );
+                });
+
+                scene
+            })
+            .collect::<Vec<_>>();
+        (scenes, nodes, transforms)
+    };
+
+    let active_scene_index = if linear_scenes.is_empty() {
+        None
+    } else {
+        Some(0)
+    };
+
     crate::world::World {
-        scene: graph,
+        scene,
         images,
         samplers,
         textures,
@@ -17,6 +246,20 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         meshes,
         animations,
         skins,
+        active_scene_index,
+        linear_images,
+        linear_samplers,
+        linear_textures,
+        linear_materials,
+        linear_meshes,
+        linear_vertices,
+        linear_indices,
+        linear_animations: vec![],
+        linear_cameras,
+        linear_nodes,
+        linear_scenes,
+        linear_skins: vec![],
+        linear_transforms,
     }
 }
 
