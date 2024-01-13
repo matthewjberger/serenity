@@ -1,13 +1,52 @@
 pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::scene::Scene {
     let (gltf, buffers, raw_images) = gltf::import(path.as_ref()).expect("Failed to import gltf");
-    let (samplers, sampler_ids) = import_samplers(&gltf);
-    let (images, image_ids) = import_images(&raw_images);
-    let (textures, texture_ids) = import_textures(&gltf, sampler_ids, image_ids);
+    let (samplers, _sampler_ids) = import_samplers(&gltf);
+    let (images, _image_ids) = import_images(&raw_images);
+    let (textures, texture_ids) = import_textures(&gltf);
     let (materials, material_ids) = import_materials(&gltf, texture_ids);
-    let (meshes, mesh_ids) = import_meshes(&gltf, &buffers, material_ids);
+    let (meshes, mesh_ids) = import_meshes(&gltf, &buffers, &material_ids);
     let (node_ids, graph) = import_graph(&gltf, &mesh_ids);
     let (animations, _animation_ids) = import_animations(&gltf, &node_ids, &buffers);
     let (skins, _skin_ids) = import_skins(&gltf, &buffers, &node_ids);
+
+    let linear_images = raw_images
+        .into_iter()
+        .map(crate::scene::Image::from)
+        .collect::<Vec<_>>();
+    let linear_samplers = gltf
+        .samplers()
+        .map(crate::scene::Sampler::from)
+        .collect::<Vec<_>>();
+    let linear_textures = gltf
+        .textures()
+        .map(|texture| crate::scene::Texture {
+            label: texture.name().unwrap_or("Unnamed texture").to_string(),
+            image_index: texture.source().index(),
+            sampler_index: texture.sampler().index(),
+        })
+        .collect::<Vec<_>>();
+    let linear_materials = gltf
+        .materials()
+        .map(|material| crate::scene::Material {
+            base_color_factor: nalgebra_glm::Vec4::from(
+                material.pbr_metallic_roughness().base_color_factor(),
+            ),
+            ..Default::default()
+        })
+        .collect::<Vec<_>>();
+    let linear_meshes = gltf
+        .meshes()
+        .map(|mesh| crate::scene::Mesh {
+            label: mesh.name().unwrap_or("Unnamed mesh").to_string(),
+            primitives: mesh
+                .primitives()
+                .map(|primitive| import_primitive(primitive, &buffers, &material_ids))
+                .collect(),
+        })
+        .collect::<Vec<_>>();
+    let linear_animations = Vec::new();
+    let linear_skins = Vec::new();
+
     crate::scene::Scene {
         graph,
         images,
@@ -17,6 +56,13 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::scene::Scene {
         meshes,
         animations,
         skins,
+        linear_images,
+        linear_samplers,
+        linear_textures,
+        linear_materials,
+        linear_meshes,
+        linear_animations,
+        linear_skins,
     }
 }
 
@@ -92,8 +138,6 @@ fn import_images(
 
 fn import_textures(
     gltf: &gltf::Document,
-    sampler_ids: Vec<String>,
-    image_ids: Vec<String>,
 ) -> (
     std::collections::HashMap<String, crate::scene::Texture>,
     Vec<String>,
@@ -103,16 +147,12 @@ fn import_textures(
         .textures()
         .map(|texture| {
             let id = uuid::Uuid::new_v4().to_string();
-            let sampler = match texture.sampler().index() {
-                Some(index) => sampler_ids[index].to_string(),
-                None => "default".to_string(),
-            };
             textures.insert(
                 id.to_string(),
                 crate::scene::Texture {
                     label: texture.name().unwrap_or("Unnamed texture").to_string(),
-                    image: image_ids[texture.source().index()].to_string(),
-                    sampler,
+                    image_index: texture.source().index(),
+                    sampler_index: texture.sampler().index(),
                 },
             );
             id
@@ -153,7 +193,7 @@ fn import_materials(
 fn import_meshes(
     gltf: &gltf::Document,
     buffers: &[gltf::buffer::Data],
-    material_ids: Vec<String>,
+    material_ids: &[String],
 ) -> (
     std::collections::HashMap<String, crate::scene::Mesh>,
     Vec<String>,
@@ -164,7 +204,7 @@ fn import_meshes(
         .meshes()
         .map(|primitive_mesh| {
             let id = uuid::Uuid::new_v4().to_string();
-            let mesh = import_mesh(primitive_mesh, buffers, &material_ids);
+            let mesh = import_mesh(primitive_mesh, buffers, material_ids);
             meshes.insert(id.to_string(), mesh);
             id
         })
@@ -403,9 +443,9 @@ fn import_node(
 
     let scene_node = crate::scene::Node {
         id: node_ids[gltf_node.index()].to_string().to_string(),
-        label: gltf_node.name().unwrap_or("Unnamed node").to_string(),
         transform: crate::scene::Transform::from(gltf_node.transform().decomposed()),
         components,
+        label: "".to_string(),
     };
 
     let node_index = scenegraph.add_node(scene_node);
@@ -614,7 +654,7 @@ mod tests {
     #[ignore]
     #[test]
     fn import() {
-        let scene = crate::gltf::import_gltf(&"resources/models/DamagedHelmet.glb");
+        let scene = crate::gltf::import_gltf("resources/models/DamagedHelmet.glb");
         dbg!(scene.textures);
         dbg!(scene.materials);
     }

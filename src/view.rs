@@ -468,23 +468,6 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 ";
 
-#[derive(Copy, Clone)]
-enum Color {
-    Red,
-    Green,
-    Blue,
-    White,
-}
-
-fn create_texture_data(color: Color) -> [u8; 4] {
-    match color {
-        Color::Red => [255, 0, 0, 255],
-        Color::Green => [0, 255, 0, 255],
-        Color::Blue => [0, 0, 255, 255],
-        Color::White => [255, 255, 255, 255],
-    }
-}
-
 fn create_texture_array(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

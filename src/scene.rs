@@ -1,6 +1,15 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Scene {
     pub graph: SceneGraph,
+
+    pub linear_images: Vec<Image>,
+    pub linear_samplers: Vec<Sampler>,
+    pub linear_textures: Vec<Texture>,
+    pub linear_materials: Vec<Material>,
+    pub linear_meshes: Vec<Mesh>,
+    pub linear_animations: Vec<Animation>,
+    pub linear_skins: Vec<Skin>,
+
     pub images: std::collections::HashMap<String, Image>,
     pub samplers: std::collections::HashMap<String, Sampler>,
     pub textures: std::collections::HashMap<String, Texture>,
@@ -514,8 +523,8 @@ impl Default for LightKind {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Texture {
     pub label: String,
-    pub image: String,
-    pub sampler: String,
+    pub image_index: usize,
+    pub sampler_index: Option<usize>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
