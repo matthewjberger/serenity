@@ -3,7 +3,7 @@ pub struct Context {
     pub io: crate::io::Io,
     pub delta_time: f64,
     pub last_frame: std::time::Instant,
-    pub scene: crate::scene::Scene,
+    pub scene: crate::world::World,
     pub should_exit: bool,
 }
 
@@ -43,7 +43,7 @@ impl App {
             io: crate::io::Io::default(),
             delta_time: 0.01,
             last_frame: std::time::Instant::now(),
-            scene: crate::scene::Scene::default(),
+            scene: crate::world::World::default(),
             should_exit: false,
         };
         Self {

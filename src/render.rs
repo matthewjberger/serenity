@@ -1,7 +1,7 @@
 pub struct Renderer {
     pub gpu: crate::gpu::Gpu,
     pub gui: crate::gui::Gui,
-    pub view: crate::view::View,
+    pub view: crate::view::WorldRender,
     pub depth_texture_view: wgpu::TextureView,
 }
 
@@ -18,7 +18,7 @@ impl Renderer {
         let depth_texture_view =
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
         let gui = crate::gui::Gui::new(&window, &gpu, scale_factor);
-        let view = crate::view::View::new(&gpu);
+        let view = crate::view::WorldRender::new(&gpu);
         Self {
             gpu,
             gui,
@@ -131,33 +131,33 @@ pub struct Texture {
     pub sampler: wgpu::Sampler,
 }
 
-impl From<crate::scene::Sampler> for wgpu::SamplerDescriptor<'static> {
-    fn from(sampler: crate::scene::Sampler) -> Self {
+impl From<crate::world::Sampler> for wgpu::SamplerDescriptor<'static> {
+    fn from(sampler: crate::world::Sampler) -> Self {
         let min_filter = match sampler.min_filter {
-            crate::scene::Filter::Linear => wgpu::FilterMode::Linear,
-            crate::scene::Filter::Nearest => wgpu::FilterMode::Nearest,
+            crate::world::Filter::Linear => wgpu::FilterMode::Linear,
+            crate::world::Filter::Nearest => wgpu::FilterMode::Nearest,
         };
 
         let mipmap_filter = match sampler.min_filter {
-            crate::scene::Filter::Linear => wgpu::FilterMode::Linear,
-            crate::scene::Filter::Nearest => wgpu::FilterMode::Nearest,
+            crate::world::Filter::Linear => wgpu::FilterMode::Linear,
+            crate::world::Filter::Nearest => wgpu::FilterMode::Nearest,
         };
 
         let mag_filter = match sampler.mag_filter {
-            crate::scene::Filter::Nearest => wgpu::FilterMode::Nearest,
-            crate::scene::Filter::Linear => wgpu::FilterMode::Linear,
+            crate::world::Filter::Nearest => wgpu::FilterMode::Nearest,
+            crate::world::Filter::Linear => wgpu::FilterMode::Linear,
         };
 
         let address_mode_u = match sampler.wrap_s {
-            crate::scene::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-            crate::scene::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-            crate::scene::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+            crate::world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+            crate::world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+            crate::world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
         };
 
         let address_mode_v = match sampler.wrap_t {
-            crate::scene::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-            crate::scene::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-            crate::scene::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+            crate::world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+            crate::world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+            crate::world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
         };
 
         let address_mode_w = wgpu::AddressMode::Repeat;

@@ -1,4 +1,4 @@
-pub struct View {
+pub struct WorldRender {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub uniform_buffer: wgpu::Buffer,
@@ -8,10 +8,10 @@ pub struct View {
     pub texture_array_bind_group: wgpu::BindGroup,
     pub pipeline: wgpu::RenderPipeline,
     pub mesh_draw_commands:
-        std::collections::HashMap<String, Vec<crate::scene::PrimitiveDrawCommand>>,
+        std::collections::HashMap<String, Vec<crate::world::PrimitiveDrawCommand>>,
 }
 
-impl View {
+impl WorldRender {
     pub const MAX_NUMBER_OF_MESHES: usize = 10_000;
 
     pub fn new(gpu: &crate::gpu::Gpu) -> Self {
@@ -48,7 +48,7 @@ impl View {
         &'rp self,
         render_pass: &mut wgpu::RenderPass<'rp>,
         gpu: &crate::gpu::Gpu,
-        scene: &crate::scene::Scene,
+        scene: &crate::world::World,
     ) {
         let (camera_position, projection, view) =
             create_camera_matrices(scene, gpu.aspect_ratio()).unwrap_or_default();
@@ -62,11 +62,11 @@ impl View {
             }]),
         );
 
-        let mut mesh_ubos = vec![DynamicUniform::default(); View::MAX_NUMBER_OF_MESHES];
+        let mut mesh_ubos = vec![DynamicUniform::default(); WorldRender::MAX_NUMBER_OF_MESHES];
         let mut ubo_offset = 0;
         scene.walk_dfs(|_, node_index| {
             mesh_ubos[ubo_offset] = DynamicUniform {
-                model: scene.graph.global_transform(node_index),
+                model: scene.scene.global_transform(node_index),
             };
             ubo_offset += 1;
         });
@@ -96,7 +96,7 @@ impl View {
             let offset = ubo_offset;
             ubo_offset += 1;
             node.components.iter().for_each(|component| {
-                if let crate::scene::NodeComponent::Mesh(mesh_id) = component {
+                if let crate::world::NodeComponent::Mesh(mesh_id) = component {
                     let offset = (offset * gpu.alignment()) as wgpu::DynamicOffset;
                     render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
                     if let Some(commands) = self.mesh_draw_commands.get(mesh_id) {
@@ -107,7 +107,7 @@ impl View {
         });
     }
 
-    pub fn import_scene(&mut self, scene: &crate::scene::Scene, gpu: &crate::gpu::Gpu) {
+    pub fn import_scene(&mut self, scene: &crate::world::World, gpu: &crate::gpu::Gpu) {
         let (vertices, indices, mesh_draw_commands) = scene.flatten_geometry();
         let (vertex_buffer, index_buffer) =
             create_geometry_buffers(&gpu.device, &vertices, &indices);
@@ -118,7 +118,7 @@ impl View {
 }
 
 fn execute_draw_commands(
-    commands: &[crate::scene::PrimitiveDrawCommand],
+    commands: &[crate::world::PrimitiveDrawCommand],
     render_pass: &mut wgpu::RenderPass,
 ) {
     commands.iter().for_each(|command| {
@@ -224,13 +224,13 @@ fn create_uniform(gpu: &crate::gpu::Gpu) -> (wgpu::Buffer, wgpu::BindGroupLayout
 }
 
 pub fn create_camera_matrices(
-    scene: &crate::scene::Scene,
+    scene: &crate::world::World,
     aspect_ratio: f32,
 ) -> Option<(nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4)> {
     let mut result = None;
     scene.walk_dfs(|node, _| {
         for component in node.components.iter() {
-            if let crate::scene::NodeComponent::Camera(camera) = component {
+            if let crate::world::NodeComponent::Camera(camera) = component {
                 result = Some((
                     // TODO: later this will need to be the translation of the global transform,
                     //       need to be able to aggregate transforms without turning them in to glm::Mat4 first
@@ -258,7 +258,7 @@ pub fn create_camera_matrices(
 
 fn create_geometry_buffers(
     device: &wgpu::Device,
-    vertices: &[crate::scene::Vertex],
+    vertices: &[crate::world::Vertex],
     indices: &[u16],
 ) -> (wgpu::Buffer, wgpu::Buffer) {
     let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
@@ -334,8 +334,8 @@ fn create_pipeline(
             vertex: wgpu::VertexState {
                 module: &shader_module,
                 entry_point: "vertex_main",
-                buffers: &[crate::scene::Vertex::description(
-                    &crate::scene::Vertex::attributes(),
+                buffers: &[crate::world::Vertex::description(
+                    &crate::world::Vertex::attributes(),
                 )],
             },
             primitive: wgpu::PrimitiveState {
@@ -369,7 +369,7 @@ fn create_pipeline(
         })
 }
 
-impl crate::scene::Vertex {
+impl crate::world::Vertex {
     pub fn attributes() -> Vec<wgpu::VertexAttribute> {
         wgpu::vertex_attr_array![
             0 => Float32x3, // position
@@ -385,7 +385,7 @@ impl crate::scene::Vertex {
 
     pub fn description(attributes: &[wgpu::VertexAttribute]) -> wgpu::VertexBufferLayout {
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<crate::scene::Vertex>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<crate::world::Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes,
         }
