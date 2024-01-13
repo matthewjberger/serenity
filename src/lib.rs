@@ -4,8 +4,8 @@ pub mod gpu;
 pub mod gui;
 pub mod io;
 pub mod render;
-pub mod scene;
 pub mod view;
+pub mod world;
 
 pub use egui;
 pub use log;

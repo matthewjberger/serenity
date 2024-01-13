@@ -1,4 +1,4 @@
-pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::scene::Scene {
+pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     let (gltf, buffers, raw_images) = gltf::import(path.as_ref()).expect("Failed to import gltf");
     let (samplers, sampler_ids) = import_samplers(&gltf);
     let (images, image_ids) = import_images(&raw_images);
@@ -8,8 +8,8 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::scene::Scene {
     let (node_ids, graph) = import_graph(&gltf, &mesh_ids);
     let (animations, _animation_ids) = import_animations(&gltf, &node_ids, &buffers);
     let (skins, _skin_ids) = import_skins(&gltf, &buffers, &node_ids);
-    crate::scene::Scene {
-        graph,
+    crate::world::World {
+        scene: graph,
         images,
         samplers,
         textures,
@@ -20,24 +20,21 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::scene::Scene {
     }
 }
 
-fn import_graph(
-    gltf: &gltf::Document,
-    mesh_ids: &[String],
-) -> (Vec<String>, crate::scene::SceneGraph) {
+fn import_graph(gltf: &gltf::Document, mesh_ids: &[String]) -> (Vec<String>, crate::world::Scene) {
     let node_ids = gltf
         .nodes()
         .map(|_| uuid::Uuid::new_v4().to_string())
         .collect::<Vec<_>>();
     let mut first_scenegraph = None;
     let mut scenegraphs = std::collections::HashMap::new();
-    scenegraphs.insert("Main".to_string(), crate::scene::SceneGraph::default());
+    scenegraphs.insert("Main".to_string(), crate::world::Scene::default());
     gltf.scenes().for_each(|gltf_scene| {
         let id = uuid::Uuid::new_v4().to_string();
         if first_scenegraph.is_none() {
             first_scenegraph = Some(id.to_string());
         }
-        let mut graph = crate::scene::SceneGraph::default();
-        let root_node = graph.add_node(crate::scene::Node {
+        let mut graph = crate::world::Scene::default();
+        let root_node = graph.add_node(crate::world::Node {
             label: "Root".to_string(),
             ..Default::default()
         });
@@ -53,14 +50,14 @@ fn import_graph(
 fn import_samplers(
     gltf: &gltf::Document,
 ) -> (
-    std::collections::HashMap<String, crate::scene::Sampler>,
+    std::collections::HashMap<String, crate::world::Sampler>,
     Vec<String>,
 ) {
     let mut samplers = std::collections::HashMap::new();
-    samplers.insert("default".to_string(), crate::scene::Sampler::default());
+    samplers.insert("default".to_string(), crate::world::Sampler::default());
     let sampler_ids = gltf
         .samplers()
-        .map(crate::scene::Sampler::from)
+        .map(crate::world::Sampler::from)
         .map(|sampler| {
             let id = uuid::Uuid::new_v4().to_string();
             samplers.insert(id.to_string(), sampler);
@@ -73,14 +70,14 @@ fn import_samplers(
 fn import_images(
     raw_images: &[gltf::image::Data],
 ) -> (
-    std::collections::HashMap<String, crate::scene::Image>,
+    std::collections::HashMap<String, crate::world::Image>,
     Vec<String>,
 ) {
     let mut images = std::collections::HashMap::new();
     let image_ids = raw_images
         .iter()
         .cloned()
-        .map(crate::scene::Image::from)
+        .map(crate::world::Image::from)
         .map(|image| {
             let id = uuid::Uuid::new_v4().to_string();
             images.insert(id.to_string(), image);
@@ -95,7 +92,7 @@ fn import_textures(
     sampler_ids: Vec<String>,
     image_ids: Vec<String>,
 ) -> (
-    std::collections::HashMap<String, crate::scene::Texture>,
+    std::collections::HashMap<String, crate::world::Texture>,
     Vec<String>,
 ) {
     let mut textures = std::collections::HashMap::new();
@@ -109,7 +106,7 @@ fn import_textures(
             };
             textures.insert(
                 id.to_string(),
-                crate::scene::Texture {
+                crate::world::Texture {
                     label: texture.name().unwrap_or("Unnamed texture").to_string(),
                     image: image_ids[texture.source().index()].to_string(),
                     sampler,
@@ -125,17 +122,17 @@ fn import_materials(
     gltf: &gltf::Document,
     texture_ids: Vec<String>,
 ) -> (
-    std::collections::HashMap<String, crate::scene::Material>,
+    std::collections::HashMap<String, crate::world::Material>,
     Vec<String>,
 ) {
     let mut materials = std::collections::HashMap::new();
-    materials.insert("default".to_string(), crate::scene::Material::default());
+    materials.insert("default".to_string(), crate::world::Material::default());
     let material_ids = gltf
         .materials()
         .map(|primitive_material| {
             let pbr = primitive_material.pbr_metallic_roughness();
             let id = uuid::Uuid::new_v4().to_string();
-            let mut material = crate::scene::Material {
+            let mut material = crate::world::Material {
                 base_color_factor: nalgebra_glm::Vec4::from(pbr.base_color_factor()),
                 ..Default::default()
             };
@@ -155,11 +152,11 @@ fn import_meshes(
     buffers: &[gltf::buffer::Data],
     material_ids: Vec<String>,
 ) -> (
-    std::collections::HashMap<String, crate::scene::Mesh>,
+    std::collections::HashMap<String, crate::world::Mesh>,
     Vec<String>,
 ) {
     let mut meshes = std::collections::HashMap::new();
-    meshes.insert("default".to_string(), crate::scene::Mesh::default());
+    meshes.insert("default".to_string(), crate::world::Mesh::default());
     let mesh_ids = gltf
         .meshes()
         .map(|primitive_mesh| {
@@ -177,7 +174,7 @@ fn import_skins(
     buffers: &[gltf::buffer::Data],
     node_ids: &[String],
 ) -> (
-    std::collections::HashMap<String, crate::scene::Skin>,
+    std::collections::HashMap<String, crate::world::Skin>,
     Vec<String>,
 ) {
     let mut skins = std::collections::HashMap::new();
@@ -198,14 +195,14 @@ fn import_skins(
                     let inverse_bind_matrix = *inverse_bind_matrices
                         .get(index)
                         .unwrap_or(&nalgebra_glm::Mat4::identity());
-                    crate::scene::Joint {
+                    crate::world::Joint {
                         inverse_bind_matrix,
                         target: node_ids[joint_node.index()].to_string(),
                     }
                 })
                 .collect();
             let label = gltf_skin.name().unwrap_or("Unnamed Skin").to_string();
-            skins.insert(id.to_string(), crate::scene::Skin { label, joints });
+            skins.insert(id.to_string(), crate::world::Skin { label, joints });
             id
         })
         .collect::<Vec<_>>();
@@ -217,7 +214,7 @@ fn import_animations(
     node_ids: &[String],
     buffers: &[gltf::buffer::Data],
 ) -> (
-    std::collections::HashMap<String, crate::scene::Animation>,
+    std::collections::HashMap<String, crate::world::Animation>,
     Vec<String>,
 ) {
     let mut animations = std::collections::HashMap::new();
@@ -243,31 +240,31 @@ fn import_animations(
                             let translations = translations
                                 .map(nalgebra_glm::Vec3::from)
                                 .collect::<Vec<_>>();
-                            crate::scene::TransformationSet::Translations(translations)
+                            crate::world::TransformationSet::Translations(translations)
                         }
                         gltf::animation::util::ReadOutputs::Rotations(rotations) => {
                             let rotations = rotations
                                 .into_f32()
                                 .map(nalgebra_glm::Vec4::from)
                                 .collect::<Vec<_>>();
-                            crate::scene::TransformationSet::Rotations(rotations)
+                            crate::world::TransformationSet::Rotations(rotations)
                         }
                         gltf::animation::util::ReadOutputs::Scales(scales) => {
                             let scales = scales.map(nalgebra_glm::Vec3::from).collect::<Vec<_>>();
-                            crate::scene::TransformationSet::Scales(scales)
+                            crate::world::TransformationSet::Scales(scales)
                         }
                         gltf::animation::util::ReadOutputs::MorphTargetWeights(weights) => {
                             let morph_target_weights = weights.into_f32().collect::<Vec<_>>();
-                            crate::scene::TransformationSet::MorphTargetWeights(
+                            crate::world::TransformationSet::MorphTargetWeights(
                                 morph_target_weights,
                             )
                         }
                     };
-                    crate::scene::Channel {
+                    crate::world::Channel {
                         target,
                         inputs,
                         transformations,
-                        interpolation: crate::scene::Interpolation::default(),
+                        interpolation: crate::world::Interpolation::default(),
                     }
                 })
                 .collect::<Vec<_>>();
@@ -278,7 +275,7 @@ fn import_animations(
                 .fold(0.0, f32::max);
             animations.insert(
                 id.to_string(),
-                crate::scene::Animation {
+                crate::world::Animation {
                     label: gltf_animation
                         .name()
                         .unwrap_or("Unnamed animation")
@@ -294,52 +291,52 @@ fn import_animations(
     (animations, ids)
 }
 
-impl From<gltf::material::AlphaMode> for crate::scene::AlphaMode {
+impl From<gltf::material::AlphaMode> for crate::world::AlphaMode {
     fn from(mode: gltf::material::AlphaMode) -> Self {
         match mode {
-            gltf::material::AlphaMode::Opaque => crate::scene::AlphaMode::Opaque,
-            gltf::material::AlphaMode::Mask => crate::scene::AlphaMode::Mask,
-            gltf::material::AlphaMode::Blend => crate::scene::AlphaMode::Blend,
+            gltf::material::AlphaMode::Opaque => crate::world::AlphaMode::Opaque,
+            gltf::material::AlphaMode::Mask => crate::world::AlphaMode::Mask,
+            gltf::material::AlphaMode::Blend => crate::world::AlphaMode::Blend,
         }
     }
 }
 
-impl From<gltf::texture::Sampler<'_>> for crate::scene::Sampler {
+impl From<gltf::texture::Sampler<'_>> for crate::world::Sampler {
     fn from(sampler: gltf::texture::Sampler<'_>) -> Self {
         let min_filter = sampler
             .min_filter()
             .map(|filter| match filter {
                 gltf::texture::MinFilter::Linear
                 | gltf::texture::MinFilter::LinearMipmapLinear
-                | gltf::texture::MinFilter::LinearMipmapNearest => crate::scene::Filter::Linear,
+                | gltf::texture::MinFilter::LinearMipmapNearest => crate::world::Filter::Linear,
                 gltf::texture::MinFilter::Nearest
                 | gltf::texture::MinFilter::NearestMipmapLinear
-                | gltf::texture::MinFilter::NearestMipmapNearest => crate::scene::Filter::Nearest,
+                | gltf::texture::MinFilter::NearestMipmapNearest => crate::world::Filter::Nearest,
             })
             .unwrap_or_default();
 
         let mag_filter = sampler
             .mag_filter()
             .map(|filter| match filter {
-                gltf::texture::MagFilter::Linear => crate::scene::Filter::Linear,
-                gltf::texture::MagFilter::Nearest => crate::scene::Filter::Nearest,
+                gltf::texture::MagFilter::Linear => crate::world::Filter::Linear,
+                gltf::texture::MagFilter::Nearest => crate::world::Filter::Nearest,
             })
             .unwrap_or_default();
 
         let wrap_s = match sampler.wrap_s() {
-            gltf::texture::WrappingMode::ClampToEdge => crate::scene::WrappingMode::ClampToEdge,
+            gltf::texture::WrappingMode::ClampToEdge => crate::world::WrappingMode::ClampToEdge,
             gltf::texture::WrappingMode::MirroredRepeat => {
-                crate::scene::WrappingMode::MirroredRepeat
+                crate::world::WrappingMode::MirroredRepeat
             }
-            gltf::texture::WrappingMode::Repeat => crate::scene::WrappingMode::Repeat,
+            gltf::texture::WrappingMode::Repeat => crate::world::WrappingMode::Repeat,
         };
 
         let wrap_t = match sampler.wrap_t() {
-            gltf::texture::WrappingMode::ClampToEdge => crate::scene::WrappingMode::ClampToEdge,
+            gltf::texture::WrappingMode::ClampToEdge => crate::world::WrappingMode::ClampToEdge,
             gltf::texture::WrappingMode::MirroredRepeat => {
-                crate::scene::WrappingMode::MirroredRepeat
+                crate::world::WrappingMode::MirroredRepeat
             }
-            gltf::texture::WrappingMode::Repeat => crate::scene::WrappingMode::Repeat,
+            gltf::texture::WrappingMode::Repeat => crate::world::WrappingMode::Repeat,
         };
 
         Self {
@@ -351,7 +348,7 @@ impl From<gltf::texture::Sampler<'_>> for crate::scene::Sampler {
     }
 }
 
-impl From<gltf::image::Data> for crate::scene::Image {
+impl From<gltf::image::Data> for crate::world::Image {
     fn from(data: gltf::image::Data) -> Self {
         Self {
             pixels: data.pixels.to_vec(),
@@ -362,19 +359,19 @@ impl From<gltf::image::Data> for crate::scene::Image {
     }
 }
 
-impl From<gltf::image::Format> for crate::scene::ImageFormat {
+impl From<gltf::image::Format> for crate::world::ImageFormat {
     fn from(value: gltf::image::Format) -> Self {
         match value {
-            gltf::image::Format::R8 => crate::scene::ImageFormat::R8,
-            gltf::image::Format::R8G8 => crate::scene::ImageFormat::R8G8,
-            gltf::image::Format::R8G8B8 => crate::scene::ImageFormat::R8G8B8,
-            gltf::image::Format::R8G8B8A8 => crate::scene::ImageFormat::R8G8B8A8,
-            gltf::image::Format::R16 => crate::scene::ImageFormat::R16,
-            gltf::image::Format::R16G16 => crate::scene::ImageFormat::R16G16,
-            gltf::image::Format::R16G16B16 => crate::scene::ImageFormat::R16G16B16,
-            gltf::image::Format::R16G16B16A16 => crate::scene::ImageFormat::R16G16B16A16,
-            gltf::image::Format::R32G32B32FLOAT => crate::scene::ImageFormat::R32G32B32,
-            gltf::image::Format::R32G32B32A32FLOAT => crate::scene::ImageFormat::R32G32B32A32,
+            gltf::image::Format::R8 => crate::world::ImageFormat::R8,
+            gltf::image::Format::R8G8 => crate::world::ImageFormat::R8G8,
+            gltf::image::Format::R8G8B8 => crate::world::ImageFormat::R8G8B8,
+            gltf::image::Format::R8G8B8A8 => crate::world::ImageFormat::R8G8B8A8,
+            gltf::image::Format::R16 => crate::world::ImageFormat::R16,
+            gltf::image::Format::R16G16 => crate::world::ImageFormat::R16G16,
+            gltf::image::Format::R16G16B16 => crate::world::ImageFormat::R16G16B16,
+            gltf::image::Format::R16G16B16A16 => crate::world::ImageFormat::R16G16B16A16,
+            gltf::image::Format::R32G32B32FLOAT => crate::world::ImageFormat::R32G32B32,
+            gltf::image::Format::R32G32B32A32FLOAT => crate::world::ImageFormat::R32G32B32A32,
         }
     }
 }
@@ -382,7 +379,7 @@ impl From<gltf::image::Format> for crate::scene::ImageFormat {
 fn import_node(
     parent_node_index: petgraph::graph::NodeIndex,
     gltf_node: gltf::Node,
-    scenegraph: &mut crate::scene::SceneGraph,
+    scenegraph: &mut crate::world::Scene,
     mesh_handles: &[String],
     node_ids: &[String],
 ) {
@@ -390,21 +387,21 @@ fn import_node(
 
     if let Some(mesh) = gltf_node.mesh() {
         let mesh_id = mesh_handles[mesh.index()].to_string();
-        components.push(crate::scene::NodeComponent::Mesh(mesh_id));
+        components.push(crate::world::NodeComponent::Mesh(mesh_id));
     }
 
     if let Some(camera) = gltf_node.camera() {
-        components.push(crate::scene::NodeComponent::Camera(camera.into()));
+        components.push(crate::world::NodeComponent::Camera(camera.into()));
     }
 
     if let Some(light) = gltf_node.light() {
-        components.push(crate::scene::NodeComponent::Light(light.into()));
+        components.push(crate::world::NodeComponent::Light(light.into()));
     }
 
-    let scene_node = crate::scene::Node {
+    let scene_node = crate::world::Node {
         id: node_ids[gltf_node.index()].to_string().to_string(),
         label: gltf_node.name().unwrap_or("Unnamed node").to_string(),
-        transform: crate::scene::Transform::from(gltf_node.transform().decomposed()),
+        transform: crate::world::Transform::from(gltf_node.transform().decomposed()),
         components,
     };
 
@@ -423,8 +420,8 @@ fn import_mesh(
     mesh: gltf::Mesh,
     buffers: &[gltf::buffer::Data],
     material_handles: &[String],
-) -> crate::scene::Mesh {
-    crate::scene::Mesh {
+) -> crate::world::Mesh {
+    crate::world::Mesh {
         label: mesh.name().unwrap_or("Unnamed mesh").to_string(),
         primitives: mesh
             .primitives()
@@ -437,12 +434,12 @@ fn import_primitive(
     primitive: gltf::Primitive,
     buffers: &[gltf::buffer::Data],
     material_handles: &[String],
-) -> crate::scene::Primitive {
+) -> crate::world::Primitive {
     let material = match primitive.material().index() {
         Some(index) => material_handles[index].to_string(),
         None => "default".to_string(),
     };
-    crate::scene::Primitive {
+    crate::world::Primitive {
         mode: primitive.mode().into(),
         material,
         vertices: import_primitive_vertices(&primitive, buffers),
@@ -465,7 +462,7 @@ fn import_primitive_indices(
 fn import_primitive_vertices(
     gltf_primitive: &gltf::Primitive,
     buffers: &[gltf::buffer::Data],
-) -> Vec<crate::scene::Vertex> {
+) -> Vec<crate::world::Vertex> {
     let reader = gltf_primitive.reader(|buffer| Some(&*buffers[buffer.index()]));
 
     let mut positions = Vec::new();
@@ -530,7 +527,7 @@ fn import_primitive_vertices(
     positions
         .into_iter()
         .enumerate()
-        .map(|(index, position)| crate::scene::Vertex {
+        .map(|(index, position)| crate::world::Vertex {
             position,
             normal: normals[index],
             uv_0: uv_0[index],
@@ -542,12 +539,12 @@ fn import_primitive_vertices(
         .collect()
 }
 
-impl From<gltf::Camera<'_>> for crate::scene::Camera {
+impl From<gltf::Camera<'_>> for crate::world::Camera {
     fn from(camera: gltf::Camera) -> Self {
         Self {
             projection: match camera.projection() {
                 gltf::camera::Projection::Perspective(camera) => {
-                    crate::scene::Projection::Perspective(crate::scene::PerspectiveCamera {
+                    crate::world::Projection::Perspective(crate::world::PerspectiveCamera {
                         aspect_ratio: camera.aspect_ratio(),
                         y_fov_rad: camera.yfov(),
                         z_far: camera.zfar(),
@@ -555,7 +552,7 @@ impl From<gltf::Camera<'_>> for crate::scene::Camera {
                     })
                 }
                 gltf::camera::Projection::Orthographic(camera) => {
-                    crate::scene::Projection::Orthographic(crate::scene::OrthographicCamera {
+                    crate::world::Projection::Orthographic(crate::world::OrthographicCamera {
                         x_mag: camera.xmag(),
                         y_mag: camera.ymag(),
                         z_far: camera.zfar(),
@@ -563,12 +560,12 @@ impl From<gltf::Camera<'_>> for crate::scene::Camera {
                     })
                 }
             },
-            orientation: crate::scene::Orientation::default(),
+            orientation: crate::world::Orientation::default(),
         }
     }
 }
 
-impl From<gltf::khr_lights_punctual::Light<'_>> for crate::scene::Light {
+impl From<gltf::khr_lights_punctual::Light<'_>> for crate::world::Light {
     fn from(light: gltf::khr_lights_punctual::Light) -> Self {
         Self {
             color: light.color().into(),
@@ -579,15 +576,15 @@ impl From<gltf::khr_lights_punctual::Light<'_>> for crate::scene::Light {
     }
 }
 
-impl From<gltf::khr_lights_punctual::Kind> for crate::scene::LightKind {
+impl From<gltf::khr_lights_punctual::Kind> for crate::world::LightKind {
     fn from(kind: gltf::khr_lights_punctual::Kind) -> Self {
         match kind {
-            gltf::khr_lights_punctual::Kind::Directional => crate::scene::LightKind::Directional,
-            gltf::khr_lights_punctual::Kind::Point => crate::scene::LightKind::Point,
+            gltf::khr_lights_punctual::Kind::Directional => crate::world::LightKind::Directional,
+            gltf::khr_lights_punctual::Kind::Point => crate::world::LightKind::Point,
             gltf::khr_lights_punctual::Kind::Spot {
                 inner_cone_angle,
                 outer_cone_angle,
-            } => crate::scene::LightKind::Spot {
+            } => crate::world::LightKind::Spot {
                 inner_cone_angle,
                 outer_cone_angle,
             },
@@ -595,16 +592,16 @@ impl From<gltf::khr_lights_punctual::Kind> for crate::scene::LightKind {
     }
 }
 
-impl From<gltf::mesh::Mode> for crate::scene::PrimitiveMode {
+impl From<gltf::mesh::Mode> for crate::world::PrimitiveMode {
     fn from(mode: gltf::mesh::Mode) -> Self {
         match mode {
-            gltf::mesh::Mode::Points => crate::scene::PrimitiveMode::Points,
-            gltf::mesh::Mode::Lines => crate::scene::PrimitiveMode::Lines,
-            gltf::mesh::Mode::LineLoop => crate::scene::PrimitiveMode::LineLoop,
-            gltf::mesh::Mode::LineStrip => crate::scene::PrimitiveMode::LineStrip,
-            gltf::mesh::Mode::Triangles => crate::scene::PrimitiveMode::Triangles,
-            gltf::mesh::Mode::TriangleStrip => crate::scene::PrimitiveMode::TriangleStrip,
-            gltf::mesh::Mode::TriangleFan => crate::scene::PrimitiveMode::TriangleFan,
+            gltf::mesh::Mode::Points => crate::world::PrimitiveMode::Points,
+            gltf::mesh::Mode::Lines => crate::world::PrimitiveMode::Lines,
+            gltf::mesh::Mode::LineLoop => crate::world::PrimitiveMode::LineLoop,
+            gltf::mesh::Mode::LineStrip => crate::world::PrimitiveMode::LineStrip,
+            gltf::mesh::Mode::Triangles => crate::world::PrimitiveMode::Triangles,
+            gltf::mesh::Mode::TriangleStrip => crate::world::PrimitiveMode::TriangleStrip,
+            gltf::mesh::Mode::TriangleFan => crate::world::PrimitiveMode::TriangleFan,
         }
     }
 }

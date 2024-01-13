@@ -57,7 +57,7 @@ impl Editor {
                         if !context.scene.has_camera() {
                             context
                                 .scene
-                                .add_root_node(serenity::scene::create_camera_node(
+                                .add_root_node(serenity::world::create_camera_node(
                                     renderer.gpu.aspect_ratio(),
                                 ));
                         }
@@ -124,7 +124,7 @@ impl serenity::app::State for Editor {
                     .unwrap_or_default();
             ui.with_layer_id(egui::LayerId::background(), |ui| {
                 if let Some(selected) = self.selected {
-                    let node = &mut context.scene.graph[selected];
+                    let node = &mut context.scene.scene[selected];
                     let model_matrix = node.transform.matrix();
                     let gizmo = egui_gizmo::Gizmo::new("My gizmo")
                         .view_matrix(view)
@@ -191,12 +191,12 @@ impl serenity::app::State for Editor {
             .show(ui_context, |ui| {
                 ui.set_width(ui.available_width());
                 ui.heading("Scene Tree");
-                if context.scene.graph.node_count() > 0 {
+                if context.scene.scene.node_count() > 0 {
                     ui.group(|ui| {
                         egui::ScrollArea::vertical()
                             .id_source(ui.next_auto_id())
                             .show(ui, |ui| {
-                                node_ui(ui, &context.scene.graph, 0.into(), &mut self.selected);
+                                node_ui(ui, &context.scene.scene, 0.into(), &mut self.selected);
                             });
                     });
                     ui.allocate_space(ui.available_size());
@@ -213,19 +213,19 @@ impl serenity::app::State for Editor {
                     .id_source(ui.next_auto_id())
                     .show(ui, |ui| {
                         if let Some(selected) = self.selected {
-                            let node = &mut context.scene.graph[selected];
+                            let node = &mut context.scene.scene[selected];
                             egui::ScrollArea::vertical()
                                 .id_source(ui.next_auto_id())
                                 .show(ui, |ui| {
                                     for component in node.components.iter_mut() {
                                         ui.group(|ui| match component {
-                                            serenity::scene::NodeComponent::Camera(_) => {
+                                            serenity::world::NodeComponent::Camera(_) => {
                                                 ui.heading("Camera");
                                             }
-                                            serenity::scene::NodeComponent::Mesh(_) => {
+                                            serenity::world::NodeComponent::Mesh(_) => {
                                                 ui.heading("Mesh");
                                             }
-                                            serenity::scene::NodeComponent::Light(_) => {
+                                            serenity::world::NodeComponent::Light(_) => {
                                                 ui.heading("Light");
                                             }
                                         });
@@ -275,7 +275,7 @@ impl serenity::app::State for Editor {
 
 fn node_ui(
     ui: &mut egui::Ui,
-    graph: &petgraph::graph::Graph<serenity::scene::Node, ()>,
+    graph: &petgraph::graph::Graph<serenity::world::Node, ()>,
     node_index: petgraph::graph::NodeIndex,
     selected_index: &mut Option<petgraph::graph::NodeIndex>,
 ) {
@@ -305,7 +305,7 @@ fn node_header_ui(
     selected_index: &mut Option<petgraph::prelude::NodeIndex>,
     node_index: petgraph::prelude::NodeIndex,
     ui: &mut egui::Ui,
-    node: &serenity::scene::Node,
+    node: &serenity::world::Node,
 ) {
     let selected = selected_index
         .as_ref()
@@ -320,7 +320,7 @@ fn node_header_ui(
 fn camera_system(context: &mut serenity::app::Context) {
     context.scene.walk_dfs_mut(|node, _| {
         node.components.iter_mut().for_each(|component| {
-            if let serenity::scene::NodeComponent::Camera(camera) = component {
+            if let serenity::world::NodeComponent::Camera(camera) = component {
                 let speed = 10.0 * context.delta_time as f32;
                 if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
                     camera.orientation.offset -= camera.orientation.direction() * speed;

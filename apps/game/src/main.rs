@@ -25,17 +25,17 @@ impl serenity::app::State for Game {
 
         context
             .scene
-            .add_root_node(serenity::scene::create_camera_node(aspect_ratio));
+            .add_root_node(serenity::world::create_camera_node(aspect_ratio));
 
         self.player_node_index = context.scene.add_root_node({
-            serenity::scene::Node {
+            serenity::world::Node {
                 id: uuid::Uuid::new_v4().to_string(),
                 label: "Player".to_string(),
-                transform: serenity::scene::Transform {
+                transform: serenity::world::Transform {
                     translation: nalgebra_glm::vec3(0.0, 0.0, 0.0),
                     ..Default::default()
                 },
-                components: vec![serenity::scene::NodeComponent::Mesh("player".to_string())],
+                components: vec![serenity::world::NodeComponent::Mesh("player".to_string())],
             }
         });
     }
@@ -73,7 +73,7 @@ impl serenity::app::State for Game {
         _renderer: &mut serenity::render::Renderer,
     ) {
         if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
-            context.scene.graph[self.player_node_index]
+            context.scene.scene[self.player_node_index]
                 .transform
                 .translation
                 .x += 100.0;

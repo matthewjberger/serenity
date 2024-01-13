@@ -1,6 +1,6 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Scene {
-    pub graph: SceneGraph,
+pub struct World {
+    pub scene: Scene,
     pub images: std::collections::HashMap<String, Image>,
     pub samplers: std::collections::HashMap<String, Sampler>,
     pub textures: std::collections::HashMap<String, Texture>,
@@ -11,15 +11,15 @@ pub struct Scene {
 }
 
 pub fn create_camera_node(aspect_ratio: f32) -> Node {
-    crate::scene::Node {
+    crate::world::Node {
         id: uuid::Uuid::new_v4().to_string(),
         label: "Main Camera".to_string(),
-        transform: crate::scene::Transform {
+        transform: crate::world::Transform {
             translation: nalgebra_glm::vec3(0.0, 0.0, 4.0),
             ..Default::default()
         },
-        components: vec![crate::scene::NodeComponent::Camera(crate::scene::Camera {
-            projection: crate::scene::Projection::Perspective(crate::scene::PerspectiveCamera {
+        components: vec![crate::world::NodeComponent::Camera(crate::world::Camera {
+            projection: crate::world::Projection::Perspective(crate::world::PerspectiveCamera {
                 aspect_ratio: Some(aspect_ratio),
                 y_fov_rad: 90_f32.to_radians(),
                 z_far: None,
@@ -37,12 +37,12 @@ pub fn create_camera_node(aspect_ratio: f32) -> Node {
     }
 }
 
-impl Scene {
+impl World {
     pub fn has_camera(&self) -> bool {
         let mut has_camera = false;
         self.walk_dfs(|node, _| {
             for component in node.components.iter() {
-                if let crate::scene::NodeComponent::Camera(_) = component {
+                if let crate::world::NodeComponent::Camera(_) = component {
                     has_camera = true;
                     return;
                 }
@@ -51,20 +51,20 @@ impl Scene {
         has_camera
     }
 
-    pub fn add_root_node(&mut self, node: crate::scene::Node) -> petgraph::graph::NodeIndex {
-        let child = self.graph.add_node(node);
-        self.graph
+    pub fn add_root_node(&mut self, node: crate::world::Node) -> petgraph::graph::NodeIndex {
+        let child = self.scene.add_node(node);
+        self.scene
             .add_edge(petgraph::graph::NodeIndex::new(0), child, ());
         child
     }
 
     pub fn walk_dfs(&self, mut visit_node: impl FnMut(&Node, petgraph::graph::NodeIndex)) {
-        if self.graph.0.node_count() == 0 {
+        if self.scene.0.node_count() == 0 {
             return;
         }
-        let mut dfs = petgraph::visit::Dfs::new(&self.graph.0, petgraph::graph::NodeIndex::new(0));
-        while let Some(node_index) = dfs.next(&self.graph.0) {
-            visit_node(&self.graph.0[node_index], node_index);
+        let mut dfs = petgraph::visit::Dfs::new(&self.scene.0, petgraph::graph::NodeIndex::new(0));
+        while let Some(node_index) = dfs.next(&self.scene.0) {
+            visit_node(&self.scene.0[node_index], node_index);
         }
     }
 
@@ -72,19 +72,19 @@ impl Scene {
         &mut self,
         mut visit_node: impl FnMut(&mut Node, petgraph::graph::NodeIndex),
     ) {
-        if self.graph.0.node_count() == 0 {
+        if self.scene.0.node_count() == 0 {
             return;
         }
-        let mut dfs = petgraph::visit::Dfs::new(&self.graph.0, petgraph::graph::NodeIndex::new(0));
-        while let Some(node_index) = dfs.next(&self.graph.0) {
-            visit_node(&mut self.graph.0[node_index], node_index);
+        let mut dfs = petgraph::visit::Dfs::new(&self.scene.0, petgraph::graph::NodeIndex::new(0));
+        while let Some(node_index) = dfs.next(&self.scene.0) {
+            visit_node(&mut self.scene.0[node_index], node_index);
         }
     }
 
     pub fn flatten_geometry(
         &self,
     ) -> (
-        Vec<crate::scene::Vertex>,
+        Vec<crate::world::Vertex>,
         Vec<u16>,
         std::collections::HashMap<String, Vec<PrimitiveDrawCommand>>,
     ) {
@@ -93,7 +93,7 @@ impl Scene {
 
         self.walk_dfs(|node, _| {
             for component in node.components.iter() {
-                if let crate::scene::NodeComponent::Mesh(mesh_id) = component {
+                if let crate::world::NodeComponent::Mesh(mesh_id) = component {
                     let commands = self.meshes[mesh_id]
                         .primitives
                         .iter()
@@ -158,9 +158,9 @@ impl Default for Vertex {
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SceneGraph(pub petgraph::Graph<Node, ()>);
+pub struct Scene(pub petgraph::Graph<Node, ()>);
 
-impl std::fmt::Display for SceneGraph {
+impl std::fmt::Display for Scene {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
@@ -170,7 +170,7 @@ impl std::fmt::Display for SceneGraph {
     }
 }
 
-impl std::ops::Deref for SceneGraph {
+impl std::ops::Deref for Scene {
     type Target = petgraph::Graph<Node, ()>;
 
     fn deref(&self) -> &Self::Target {
@@ -178,13 +178,13 @@ impl std::ops::Deref for SceneGraph {
     }
 }
 
-impl std::ops::DerefMut for SceneGraph {
+impl std::ops::DerefMut for Scene {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl SceneGraph {
+impl Scene {
     pub fn global_transform(&self, node_index: petgraph::graph::NodeIndex) -> nalgebra_glm::Mat4 {
         let transform = self.0[node_index].transform.matrix();
         match self
