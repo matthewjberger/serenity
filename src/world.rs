@@ -1,19 +1,10 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct World {
-    pub scene: Scene,
-    pub images: std::collections::HashMap<String, Image>,
-    pub samplers: std::collections::HashMap<String, Sampler>,
-    pub textures: std::collections::HashMap<String, Texture>,
-    pub materials: std::collections::HashMap<String, Material>,
-    pub meshes: std::collections::HashMap<String, Mesh>,
-    pub animations: std::collections::HashMap<String, Animation>,
-    pub skins: std::collections::HashMap<String, Skin>,
-
     pub active_scene_index: Option<usize>,
     pub linear_animations: Vec<Animation>,
     pub linear_cameras: Vec<Camera>,
     pub linear_images: Vec<Image>,
-    pub linear_indices: Vec<u32>,
+    pub linear_indices: Vec<u16>,
     pub linear_materials: Vec<LinearMaterial>,
     pub linear_meshes: Vec<LinearMesh>,
     pub linear_nodes: Vec<LinearNode>,
@@ -52,98 +43,6 @@ pub fn create_camera_node(aspect_ratio: f32) -> Node {
     }
 }
 
-impl World {
-    pub fn has_camera(&self) -> bool {
-        let mut has_camera = false;
-        self.walk_dfs(|node, _| {
-            for component in node.components.iter() {
-                if let crate::world::NodeComponent::Camera(_) = component {
-                    has_camera = true;
-                    return;
-                }
-            }
-        });
-        has_camera
-    }
-
-    pub fn add_root_node(&mut self, node: crate::world::Node) -> petgraph::graph::NodeIndex {
-        let child = self.scene.add_node(node);
-        self.scene
-            .add_edge(petgraph::graph::NodeIndex::new(0), child, ());
-        child
-    }
-
-    pub fn walk_dfs(&self, mut visit_node: impl FnMut(&Node, petgraph::graph::NodeIndex)) {
-        if self.scene.0.node_count() == 0 {
-            return;
-        }
-        let mut dfs = petgraph::visit::Dfs::new(&self.scene.0, petgraph::graph::NodeIndex::new(0));
-        while let Some(node_index) = dfs.next(&self.scene.0) {
-            visit_node(&self.scene.0[node_index], node_index);
-        }
-    }
-
-    pub fn walk_dfs_mut(
-        &mut self,
-        mut visit_node: impl FnMut(&mut Node, petgraph::graph::NodeIndex),
-    ) {
-        if self.scene.0.node_count() == 0 {
-            return;
-        }
-        let mut dfs = petgraph::visit::Dfs::new(&self.scene.0, petgraph::graph::NodeIndex::new(0));
-        while let Some(node_index) = dfs.next(&self.scene.0) {
-            visit_node(&mut self.scene.0[node_index], node_index);
-        }
-    }
-
-    pub fn flatten_geometry(
-        &self,
-    ) -> (
-        Vec<crate::world::Vertex>,
-        Vec<u16>,
-        std::collections::HashMap<String, Vec<PrimitiveDrawCommand>>,
-    ) {
-        let (mut vertices, mut indices, mut meshes) =
-            (Vec::new(), Vec::new(), std::collections::HashMap::new());
-
-        self.walk_dfs(|node, _| {
-            for component in node.components.iter() {
-                if let crate::world::NodeComponent::Mesh(mesh_id) = component {
-                    let commands = self.meshes[mesh_id]
-                        .primitives
-                        .iter()
-                        .map(|primitive| {
-                            let primitive_vertices = primitive.vertices.to_vec();
-                            let vertex_offset = vertices.len();
-                            let number_of_vertices = primitive.vertices.len();
-                            vertices.extend_from_slice(&primitive_vertices);
-
-                            let primitive_indices = primitive
-                                .indices
-                                .iter()
-                                .map(|x| *x as u16)
-                                .collect::<Vec<_>>();
-                            let index_offset = indices.len();
-                            let number_of_indices = primitive.indices.len();
-                            indices.extend_from_slice(&primitive_indices);
-
-                            PrimitiveDrawCommand {
-                                vertex_offset,
-                                index_offset,
-                                vertices: number_of_vertices,
-                                indices: number_of_indices,
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    meshes.insert(mesh_id.clone(), commands);
-                }
-            }
-        });
-
-        (vertices, indices, meshes)
-    }
-}
-
 #[repr(C)]
 #[derive(
     Debug, Copy, Clone, serde::Serialize, serde::Deserialize, bytemuck::Pod, bytemuck::Zeroable,
@@ -174,7 +73,52 @@ impl Default for Vertex {
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LinearScene {
+    pub active_camera_index: Option<usize>,
     pub graph: petgraph::Graph<usize, ()>,
+}
+
+impl LinearScene {
+    pub fn global_transform(
+        &self,
+        node_index: petgraph::graph::NodeIndex,
+        transforms: &[Transform],
+        nodes: &[LinearNode],
+    ) -> nalgebra_glm::Mat4 {
+        let transform = transforms[nodes[self.graph[node_index]]
+            .transform_index
+            .unwrap_or_default()]
+        .matrix();
+        match self
+            .graph
+            .neighbors_directed(node_index, petgraph::Direction::Incoming)
+            .next()
+        {
+            Some(parent_node_index) => {
+                self.global_transform(parent_node_index, transforms, nodes) * transform
+            }
+            None => transform,
+        }
+    }
+
+    pub fn walk_dfs(&self, mut visit_node: impl FnMut(usize, petgraph::graph::NodeIndex)) {
+        if self.graph.node_count() == 0 {
+            return;
+        }
+        let mut dfs = petgraph::visit::Dfs::new(&self.graph, petgraph::graph::NodeIndex::new(0));
+        while let Some(node_index) = dfs.next(&self.graph) {
+            visit_node(self.graph[node_index], node_index);
+        }
+    }
+
+    pub fn walk_dfs_mut(&mut self, mut visit_node: impl FnMut(usize, petgraph::graph::NodeIndex)) {
+        if self.graph.node_count() == 0 {
+            return;
+        }
+        let mut dfs = petgraph::visit::Dfs::new(&self.graph, petgraph::graph::NodeIndex::new(0));
+        while let Some(node_index) = dfs.next(&self.graph) {
+            visit_node(self.graph[node_index], node_index);
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -508,14 +452,6 @@ pub enum PrimitiveMode {
     Triangles,
     TriangleStrip,
     TriangleFan,
-}
-
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PrimitiveDrawCommand {
-    pub vertex_offset: usize,
-    pub index_offset: usize,
-    pub vertices: usize,
-    pub indices: usize,
 }
 
 #[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]

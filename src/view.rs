@@ -7,8 +7,6 @@ pub struct WorldRender {
     pub dynamic_uniform_bind_group: wgpu::BindGroup,
     pub texture_array_bind_group: wgpu::BindGroup,
     pub pipeline: wgpu::RenderPipeline,
-    pub mesh_draw_commands:
-        std::collections::HashMap<String, Vec<crate::world::PrimitiveDrawCommand>>,
 }
 
 impl WorldRender {
@@ -40,7 +38,6 @@ impl WorldRender {
             dynamic_uniform_bind_group,
             texture_array_bind_group,
             pipeline,
-            mesh_draw_commands: std::collections::HashMap::new(),
         }
     }
 
@@ -48,10 +45,10 @@ impl WorldRender {
         &'rp self,
         render_pass: &mut wgpu::RenderPass<'rp>,
         gpu: &crate::gpu::Gpu,
-        scene: &crate::world::World,
+        world: &crate::world::World,
     ) {
         let (camera_position, projection, view) =
-            create_camera_matrices(scene, gpu.aspect_ratio()).unwrap_or_default();
+            create_camera_matrices(world, gpu.aspect_ratio()).unwrap_or_default();
         gpu.queue.write_buffer(
             &self.uniform_buffer,
             0,
@@ -62,14 +59,21 @@ impl WorldRender {
             }]),
         );
 
-        let mut mesh_ubos = vec![DynamicUniform::default(); WorldRender::MAX_NUMBER_OF_MESHES];
+        let mut mesh_ubos = vec![DynamicUniform::default(); Self::MAX_NUMBER_OF_MESHES];
         let mut ubo_offset = 0;
-        scene.walk_dfs(|_, node_index| {
-            mesh_ubos[ubo_offset] = DynamicUniform {
-                model: scene.scene.global_transform(node_index),
-            };
-            ubo_offset += 1;
-        });
+        if let Some(active_scene) = world.active_scene_index {
+            let scene = &world.linear_scenes[active_scene];
+            scene.walk_dfs(|_, node_index| {
+                mesh_ubos[ubo_offset] = DynamicUniform {
+                    model: scene.global_transform(
+                        node_index,
+                        &world.linear_transforms,
+                        &world.linear_nodes,
+                    ),
+                };
+                ubo_offset += 1;
+            });
+        }
         gpu.queue
             .write_buffer(&self.dynamic_uniform_buffer, 0, unsafe {
                 std::slice::from_raw_parts(
@@ -91,45 +95,43 @@ impl WorldRender {
             bytemuck::bytes_of(&[1_u32]),
         );
 
-        let mut ubo_offset = 0;
-        scene.walk_dfs(|node, _| {
-            let offset = ubo_offset;
-            ubo_offset += 1;
-            node.components.iter().for_each(|component| {
-                if let crate::world::NodeComponent::Mesh(mesh_id) = component {
-                    let offset = (offset * gpu.alignment()) as wgpu::DynamicOffset;
+        if let Some(active_scene) = world.active_scene_index {
+            let scene = &world.linear_scenes[active_scene];
+            let mut ubo_offset = 0;
+            scene.walk_dfs(|node_index, _graph_node_index| {
+                ubo_offset += 1;
+                if let Some(mesh) = world.linear_meshes.get(node_index) {
+                    let offset = (ubo_offset * gpu.alignment() as usize) as wgpu::DynamicOffset;
                     render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
-                    if let Some(commands) = self.mesh_draw_commands.get(mesh_id) {
-                        execute_draw_commands(commands, render_pass);
-                    }
+                    mesh.primitives.iter().for_each(|primitive| {
+                        if primitive.number_of_indices == 0 {
+                            let start = primitive.vertex_offset as u32;
+                            let end = start + primitive.number_of_vertices as u32;
+                            render_pass.draw(
+                                start..end,
+                                0..1, // TODO: support multiple instances per primitive
+                            );
+                        } else {
+                            let start = primitive.index_offset as u32;
+                            let end = start + primitive.number_of_indices as u32;
+                            render_pass.draw_indexed(
+                                start..end,
+                                primitive.vertex_offset as i32,
+                                0..1, // TODO: support multiple instances per primitive
+                            );
+                        }
+                    });
                 }
             });
-        });
+        }
     }
 
-    pub fn import_scene(&mut self, scene: &crate::world::World, gpu: &crate::gpu::Gpu) {
-        let (vertices, indices, mesh_draw_commands) = scene.flatten_geometry();
+    pub fn import_scene(&mut self, world: &crate::world::World, gpu: &crate::gpu::Gpu) {
         let (vertex_buffer, index_buffer) =
-            create_geometry_buffers(&gpu.device, &vertices, &indices);
+            create_geometry_buffers(&gpu.device, &world.linear_vertices, &world.linear_indices);
         self.vertex_buffer = vertex_buffer;
         self.index_buffer = index_buffer;
-        self.mesh_draw_commands = mesh_draw_commands;
     }
-}
-
-fn execute_draw_commands(
-    commands: &[crate::world::PrimitiveDrawCommand],
-    render_pass: &mut wgpu::RenderPass,
-) {
-    commands.iter().for_each(|command| {
-        let index_offset = command.index_offset as u32;
-        let number_of_indices = index_offset + command.indices as u32;
-        render_pass.draw_indexed(
-            index_offset..number_of_indices,
-            command.vertex_offset as i32,
-            0..1, // TODO: support multiple instances per primitive
-        );
-    });
 }
 
 fn create_dynamic_uniform(
@@ -224,35 +226,42 @@ fn create_uniform(gpu: &crate::gpu::Gpu) -> (wgpu::Buffer, wgpu::BindGroupLayout
 }
 
 pub fn create_camera_matrices(
-    scene: &crate::world::World,
+    world: &crate::world::World,
     aspect_ratio: f32,
 ) -> Option<(nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4)> {
     let mut result = None;
-    scene.walk_dfs(|node, _| {
-        for component in node.components.iter() {
-            if let crate::world::NodeComponent::Camera(camera) = component {
-                result = Some((
-                    // TODO: later this will need to be the translation of the global transform,
-                    //       need to be able to aggregate transforms without turning them in to glm::Mat4 first
-                    node.transform.translation,
-                    camera.projection_matrix(aspect_ratio),
-                    {
-                        let eye = node.transform.translation;
-                        let target = eye
-                            + nalgebra_glm::quat_rotate_vec3(
-                                &node.transform.rotation.normalize(),
-                                &(-nalgebra_glm::Vec3::z()),
-                            );
-                        let up = nalgebra_glm::quat_rotate_vec3(
-                            &node.transform.rotation.normalize(),
-                            &nalgebra_glm::Vec3::y(),
-                        );
-                        nalgebra_glm::look_at(&eye, &target, &up)
-                    },
-                ));
-            }
-        }
+    let scene = match world.active_scene_index {
+        Some(active_scene_index) => &world.linear_scenes[active_scene_index],
+        None => return result,
+    };
+    scene.walk_dfs(|node_index, _graph_node_index| {
+        let camera = match scene.active_camera_index {
+            Some(active_camera_index) => &world.linear_cameras[active_camera_index],
+            None => return,
+        };
+        let transform = match world.linear_nodes[node_index].transform_index {
+            Some(transform_index) => &world.linear_transforms[transform_index],
+            None => return,
+        };
+        result = Some((
+            transform.translation,
+            camera.projection_matrix(aspect_ratio),
+            {
+                let eye = transform.translation;
+                let target = eye
+                    + nalgebra_glm::quat_rotate_vec3(
+                        &transform.rotation.normalize(),
+                        &(-nalgebra_glm::Vec3::z()),
+                    );
+                let up = nalgebra_glm::quat_rotate_vec3(
+                    &transform.rotation.normalize(),
+                    &nalgebra_glm::Vec3::y(),
+                );
+                nalgebra_glm::look_at(&eye, &target, &up)
+            },
+        ));
     });
+
     result
 }
 
@@ -398,76 +407,6 @@ pub struct DynamicUniform {
     pub model: nalgebra_glm::Mat4,
 }
 
-const SHADER_SOURCE: &str = "
-struct Uniform {
-    view: mat4x4<f32>,
-    projection: mat4x4<f32>,
-    camera_position: vec4<f32>,
-};
-
-@group(0) @binding(0)
-var<uniform> ubo: Uniform;
-
-struct DynamicUniform {
-    model: mat4x4<f32>,
-};
-
-@group(1) @binding(0)
-var<uniform> mesh_ubo: DynamicUniform;
-
-@group(2) @binding(0)
-var texture_array: binding_array<texture_2d<f32>>;
-@group(2) @binding(1)
-var sampler_array: binding_array<sampler>;
-
-struct Material {
-    base_texture_index: u32,
-    padding: vec3<u32>,
-}
-var<push_constant> material: Material;
-
-struct VertexInput {
-    @location(0) position: vec3<f32>,
-    @location(1) normal: vec3<f32>,
-    @location(2) uv_0: vec2<f32>,
-    @location(3) uv_1: vec2<f32>,
-    @location(4) joint_0: vec4<f32>,
-    @location(5) weight_0: vec4<f32>,
-    @location(6) color_0: vec3<f32>,
-};
-
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) normal: vec3<f32>,
-    @location(1) color: vec3<f32>,
-    @location(2) tex_coord: vec2<f32>,
-};
-
-@vertex
-fn vertex_main(vert: VertexInput) -> VertexOutput {
-    var out: VertexOutput;
-    let mvp = ubo.projection * ubo.view * mesh_ubo.model;
-    out.position = mvp * vec4(vert.position, 1.0);
-    out.normal = vec4((mvp * vec4(vert.normal, 0.0)).xyz, 1.0).xyz;
-    out.color = vert.color_0;
-    out.tex_coord = vert.uv_0;
-    return out;
-};
-
-@fragment
-fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let object_color: vec4<f32> = vec4(in.color, 1.0);
-
-    let ambient_strength = 0.1;
-    let ambient_color = ambient_strength;
-
-    let result = (ambient_color) * object_color.rgb;
-
-    let offset = material.base_texture_index;
-    return textureSampleLevel(texture_array[offset], sampler_array[0], in.tex_coord, 0.0);
-}
-";
-
 fn create_texture_array(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -565,3 +504,73 @@ fn create_texture_array(
 
     (texture_array_bind_group, texture_array_bind_group_layout)
 }
+
+const SHADER_SOURCE: &str = "
+struct Uniform {
+    view: mat4x4<f32>,
+    projection: mat4x4<f32>,
+    camera_position: vec4<f32>,
+};
+
+@group(0) @binding(0)
+var<uniform> ubo: Uniform;
+
+struct DynamicUniform {
+    model: mat4x4<f32>,
+};
+
+@group(1) @binding(0)
+var<uniform> mesh_ubo: DynamicUniform;
+
+@group(2) @binding(0)
+var texture_array: binding_array<texture_2d<f32>>;
+@group(2) @binding(1)
+var sampler_array: binding_array<sampler>;
+
+struct Material {
+    base_texture_index: u32,
+    padding: vec3<u32>,
+}
+var<push_constant> material: Material;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv_0: vec2<f32>,
+    @location(3) uv_1: vec2<f32>,
+    @location(4) joint_0: vec4<f32>,
+    @location(5) weight_0: vec4<f32>,
+    @location(6) color_0: vec3<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) normal: vec3<f32>,
+    @location(1) color: vec3<f32>,
+    @location(2) tex_coord: vec2<f32>,
+};
+
+@vertex
+fn vertex_main(vert: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    let mvp = ubo.projection * ubo.view * mesh_ubo.model;
+    out.position = mvp * vec4(vert.position, 1.0);
+    out.normal = vec4((mvp * vec4(vert.normal, 0.0)).xyz, 1.0).xyz;
+    out.color = vert.color_0;
+    out.tex_coord = vert.uv_0;
+    return out;
+};
+
+@fragment
+fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let object_color: vec4<f32> = vec4(in.color, 1.0);
+
+    let ambient_strength = 0.1;
+    let ambient_color = ambient_strength;
+
+    let result = (ambient_color) * object_color.rgb;
+
+    let offset = material.base_texture_index;
+    return textureSampleLevel(texture_array[offset], sampler_array[0], in.tex_coord, 0.0);
+}
+";

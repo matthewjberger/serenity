@@ -1,13 +1,5 @@
 pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     let (gltf, buffers, raw_images) = gltf::import(path.as_ref()).expect("Failed to import gltf");
-    let (samplers, sampler_ids) = import_samplers(&gltf);
-    let (images, image_ids) = import_images(&raw_images);
-    let (textures, texture_ids) = import_textures(&gltf, sampler_ids, image_ids);
-    let (materials, material_ids) = import_materials(&gltf, texture_ids);
-    let (meshes, mesh_ids) = import_meshes(&gltf, &buffers, material_ids);
-    let (node_ids, scene) = import_graph(&gltf, &mesh_ids);
-    let (animations, _animation_ids) = import_animations(&gltf, &node_ids, &buffers);
-    let (skins, _skin_ids) = import_skins(&gltf, &buffers, &node_ids);
 
     let linear_images = raw_images
         .into_iter()
@@ -143,11 +135,13 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                                     .collect()
                             };
 
-                            let primitive_indices: Vec<u32> = primitive
+                            let primitive_indices: Vec<u16> = primitive
                                 .reader(|buffer| Some(&*buffers[buffer.index()]))
                                 .read_indices()
                                 .take()
-                                .map(|read_indices| read_indices.into_u32().collect())
+                                .map(|read_indices| {
+                                    read_indices.into_u32().map(|index| index as u16).collect()
+                                })
                                 .unwrap_or_default();
 
                             let primitive = crate::world::LinearPrimitive {
@@ -198,12 +192,12 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                 ) {
                     transforms.push(crate::world::Transform::from(node.transform().decomposed()));
                     nodes.push(crate::world::LinearNode {
-                        transform_index: Some(transforms.len()),
+                        transform_index: Some(transforms.len() - 1),
                         camera_index: node.camera().map(|camera| camera.index()),
                         mesh_index: node.mesh().map(|mesh| mesh.index()),
                         light_index: node.light().map(|light| light.index()),
                     });
-                    let node_index = scene.graph.add_node(nodes.len());
+                    let node_index = scene.graph.add_node(nodes.len() - 1);
                     if parent_node_index != node_index {
                         scene.graph.add_edge(parent_node_index, node_index, ());
                     }
@@ -238,14 +232,6 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     };
 
     crate::world::World {
-        scene,
-        images,
-        samplers,
-        textures,
-        materials,
-        meshes,
-        animations,
-        skins,
         active_scene_index,
         linear_images,
         linear_samplers,
@@ -846,16 +832,5 @@ impl From<gltf::mesh::Mode> for crate::world::PrimitiveMode {
             gltf::mesh::Mode::TriangleStrip => crate::world::PrimitiveMode::TriangleStrip,
             gltf::mesh::Mode::TriangleFan => crate::world::PrimitiveMode::TriangleFan,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[ignore]
-    #[test]
-    fn import() {
-        let scene = crate::gltf::import_gltf("resources/models/DamagedHelmet.glb");
-        dbg!(scene.textures);
-        dbg!(scene.materials);
     }
 }
