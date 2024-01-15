@@ -48,10 +48,10 @@ impl WorldRender {
         &'rp self,
         render_pass: &mut wgpu::RenderPass<'rp>,
         gpu: &crate::gpu::Gpu,
-        scene: &crate::world::World,
+        world: &crate::world::World,
     ) {
         let (camera_position, projection, view) =
-            create_camera_matrices(scene, gpu.aspect_ratio()).unwrap_or_default();
+            create_camera_matrices(world, gpu.aspect_ratio()).unwrap_or_default();
         gpu.queue.write_buffer(
             &self.uniform_buffer,
             0,
@@ -64,9 +64,10 @@ impl WorldRender {
 
         let mut mesh_ubos = vec![DynamicUniform::default(); WorldRender::MAX_NUMBER_OF_MESHES];
         let mut ubo_offset = 0;
-        scene.walk_dfs(|_, node_index| {
+        world.scenes[world.active_scene_index].walk_dfs(|_node_index, graph_node_index| {
             mesh_ubos[ubo_offset] = DynamicUniform {
-                model: scene.scene.global_transform(node_index),
+                model: world.scenes[world.active_scene_index]
+                    .global_transform(world, graph_node_index),
             };
             ubo_offset += 1;
         });
@@ -91,29 +92,27 @@ impl WorldRender {
             bytemuck::bytes_of(&[1_u32]),
         );
 
-        let mut ubo_offset = 0;
-        scene.walk_dfs(|node, _| {
-            let offset = ubo_offset;
-            ubo_offset += 1;
-            node.components.iter().for_each(|component| {
-                if let crate::world::NodeComponent::Mesh(mesh_id) = component {
-                    let offset = (offset * gpu.alignment()) as wgpu::DynamicOffset;
-                    render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
-                    if let Some(commands) = self.mesh_draw_commands.get(mesh_id) {
-                        execute_draw_commands(commands, render_pass);
-                    }
-                }
-            });
-        });
+        todo!("Execute the draw commands")
+        // let mut ubo_offset = 0;
+        // scene.walk_dfs(|node, _| {
+        //     let offset = ubo_offset;
+        //     ubo_offset += 1;
+        //     let offset = (offset * gpu.alignment()) as wgpu::DynamicOffset;
+        //     render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
+        //     if let Some(commands) = self.mesh_draw_commands.get(mesh_id) {
+        //         execute_draw_commands(commands, render_pass);
+        //     }
+        // });
     }
 
     pub fn import_scene(&mut self, scene: &crate::world::World, gpu: &crate::gpu::Gpu) {
-        let (vertices, indices, mesh_draw_commands) = scene.flatten_geometry();
-        let (vertex_buffer, index_buffer) =
-            create_geometry_buffers(&gpu.device, &vertices, &indices);
-        self.vertex_buffer = vertex_buffer;
-        self.index_buffer = index_buffer;
-        self.mesh_draw_commands = mesh_draw_commands;
+        todo!("Import the scene")
+        // let (vertices, indices, mesh_draw_commands) = scene.flatten_geometry();
+        // let (vertex_buffer, index_buffer) =
+        //     create_geometry_buffers(&gpu.device, &vertices, &indices);
+        // self.vertex_buffer = vertex_buffer;
+        // self.index_buffer = index_buffer;
+        // self.mesh_draw_commands = mesh_draw_commands;
     }
 }
 
@@ -224,34 +223,30 @@ fn create_uniform(gpu: &crate::gpu::Gpu) -> (wgpu::Buffer, wgpu::BindGroupLayout
 }
 
 pub fn create_camera_matrices(
-    scene: &crate::world::World,
+    world: &crate::world::World,
     aspect_ratio: f32,
 ) -> Option<(nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4)> {
     let mut result = None;
-    scene.walk_dfs(|node, _| {
-        for component in node.components.iter() {
-            if let crate::world::NodeComponent::Camera(camera) = component {
-                result = Some((
-                    // TODO: later this will need to be the translation of the global transform,
-                    //       need to be able to aggregate transforms without turning them in to glm::Mat4 first
-                    node.transform.translation,
-                    camera.projection_matrix(aspect_ratio),
-                    {
-                        let eye = node.transform.translation;
-                        let target = eye
-                            + nalgebra_glm::quat_rotate_vec3(
-                                &node.transform.rotation.normalize(),
-                                &(-nalgebra_glm::Vec3::z()),
-                            );
-                        let up = nalgebra_glm::quat_rotate_vec3(
-                            &node.transform.rotation.normalize(),
-                            &nalgebra_glm::Vec3::y(),
-                        );
-                        nalgebra_glm::look_at(&eye, &target, &up)
-                    },
-                ));
-            }
-        }
+    world.scenes[world.active_scene_index].walk_dfs(|node, _| {
+        // result = Some((
+        //     // TODO: later this will need to be the translation of the global transform,
+        //     //       need to be able to aggregate transforms without turning them in to glm::Mat4 first
+        //     node.transform.translation,
+        //     camera.projection_matrix(aspect_ratio),
+        //     {
+        //         let eye = node.transform.translation;
+        //         let target = eye
+        //             + nalgebra_glm::quat_rotate_vec3(
+        //                 &node.transform.rotation.normalize(),
+        //                 &(-nalgebra_glm::Vec3::z()),
+        //             );
+        //         let up = nalgebra_glm::quat_rotate_vec3(
+        //             &node.transform.rotation.normalize(),
+        //             &nalgebra_glm::Vec3::y(),
+        //         );
+        //         nalgebra_glm::look_at(&eye, &target, &up)
+        //     },
+        // ));
     });
     result
 }
