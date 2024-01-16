@@ -190,12 +190,12 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                 ) {
                     transforms.push(crate::world::Transform::from(node.transform().decomposed()));
                     nodes.push(crate::world::Node {
-                        transform_index: transforms.len().checked_sub(1).unwrap_or(0),
+                        transform_index: transforms.len() - 1,
                         camera_index: node.camera().map(|camera| camera.index()),
                         mesh_index: node.mesh().map(|mesh| mesh.index()),
                         light_index: node.light().map(|light| light.index()),
                     });
-                    let node_index = scene.graph.add_node(nodes.len());
+                    let node_index = scene.graph.add_node(nodes.len() - 1);
                     if parent_node_index != node_index {
                         scene.graph.add_edge(parent_node_index, node_index, ());
                     }

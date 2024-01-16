@@ -7,8 +7,6 @@ pub struct WorldRender {
     pub dynamic_uniform_bind_group: wgpu::BindGroup,
     pub texture_array_bind_group: wgpu::BindGroup,
     pub pipeline: wgpu::RenderPipeline,
-    pub mesh_draw_commands:
-        std::collections::HashMap<String, Vec<crate::world::PrimitiveDrawCommand>>,
 }
 
 impl WorldRender {
@@ -40,16 +38,22 @@ impl WorldRender {
             dynamic_uniform_bind_group,
             texture_array_bind_group,
             pipeline,
-            mesh_draw_commands: std::collections::HashMap::new(),
         }
     }
 
     pub fn render<'rp>(
-        &'rp self,
+        &'rp mut self,
         render_pass: &mut wgpu::RenderPass<'rp>,
         gpu: &crate::gpu::Gpu,
         world: &crate::world::World,
     ) {
+        if world.vertices.len() > self.vertex_buffer.size() as usize {
+            let (vertex_buffer, index_buffer) =
+                create_geometry_buffers(&gpu.device, &world.vertices, &world.indices);
+            self.vertex_buffer = vertex_buffer;
+            self.index_buffer = index_buffer;
+        }
+
         let (camera_position, projection, view) =
             create_camera_matrices(world, gpu.aspect_ratio()).unwrap_or_default();
         gpu.queue.write_buffer(
@@ -63,13 +67,12 @@ impl WorldRender {
         );
 
         let mut mesh_ubos = vec![DynamicUniform::default(); WorldRender::MAX_NUMBER_OF_MESHES];
-        let mut ubo_offset = 0;
-        world.scenes[world.active_scene_index].walk_dfs(|_node_index, graph_node_index| {
-            mesh_ubos[ubo_offset] = DynamicUniform {
+        let scene = &world.scenes[world.active_scene_index];
+        scene.walk_dfs(|node_index, graph_node_index| {
+            mesh_ubos[node_index] = DynamicUniform {
                 model: world.scenes[world.active_scene_index]
                     .global_transform(world, graph_node_index),
             };
-            ubo_offset += 1;
         });
         gpu.queue
             .write_buffer(&self.dynamic_uniform_buffer, 0, unsafe {
@@ -84,51 +87,32 @@ impl WorldRender {
         render_pass.set_bind_group(2, &self.texture_array_bind_group, &[]);
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
         render_pass.set_push_constants(
             wgpu::ShaderStages::VERTEX_FRAGMENT,
             0,
-            bytemuck::bytes_of(&[1_u32]),
+            bytemuck::bytes_of(&[0_u32]),
         );
 
-        todo!("Execute the draw commands")
-        // let mut ubo_offset = 0;
-        // scene.walk_dfs(|node, _| {
-        //     let offset = ubo_offset;
-        //     ubo_offset += 1;
-        //     let offset = (offset * gpu.alignment()) as wgpu::DynamicOffset;
-        //     render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
-        //     if let Some(commands) = self.mesh_draw_commands.get(mesh_id) {
-        //         execute_draw_commands(commands, render_pass);
-        //     }
-        // });
+        let scene = &world.scenes[world.active_scene_index];
+        scene.walk_dfs(|node_index, _| {
+            let offset = (node_index * gpu.alignment() as usize) as wgpu::DynamicOffset;
+            render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
+            if let Some(mesh_index) = world.nodes[node_index].mesh_index {
+                let mesh = &world.meshes[mesh_index];
+                for primitive in mesh.primitives.iter() {
+                    let index_offset = primitive.index_offset as u32;
+                    let number_of_indices = index_offset + primitive.number_of_indices as u32;
+                    render_pass.draw_indexed(
+                        index_offset..number_of_indices,
+                        primitive.vertex_offset as i32,
+                        0..1, // TODO: support multiple instances per primitive
+                    );
+                }
+            }
+        });
     }
-
-    pub fn import_scene(&mut self, scene: &crate::world::World, gpu: &crate::gpu::Gpu) {
-        todo!("Import the scene")
-        // let (vertices, indices, mesh_draw_commands) = scene.flatten_geometry();
-        // let (vertex_buffer, index_buffer) =
-        //     create_geometry_buffers(&gpu.device, &vertices, &indices);
-        // self.vertex_buffer = vertex_buffer;
-        // self.index_buffer = index_buffer;
-        // self.mesh_draw_commands = mesh_draw_commands;
-    }
-}
-
-fn execute_draw_commands(
-    commands: &[crate::world::PrimitiveDrawCommand],
-    render_pass: &mut wgpu::RenderPass,
-) {
-    commands.iter().for_each(|command| {
-        let index_offset = command.index_offset as u32;
-        let number_of_indices = index_offset + command.indices as u32;
-        render_pass.draw_indexed(
-            index_offset..number_of_indices,
-            command.vertex_offset as i32,
-            0..1, // TODO: support multiple instances per primitive
-        );
-    });
 }
 
 fn create_dynamic_uniform(
@@ -227,26 +211,29 @@ pub fn create_camera_matrices(
     aspect_ratio: f32,
 ) -> Option<(nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4)> {
     let mut result = None;
-    world.scenes[world.active_scene_index].walk_dfs(|node, _| {
-        // result = Some((
-        //     // TODO: later this will need to be the translation of the global transform,
-        //     //       need to be able to aggregate transforms without turning them in to glm::Mat4 first
-        //     node.transform.translation,
-        //     camera.projection_matrix(aspect_ratio),
-        //     {
-        //         let eye = node.transform.translation;
-        //         let target = eye
-        //             + nalgebra_glm::quat_rotate_vec3(
-        //                 &node.transform.rotation.normalize(),
-        //                 &(-nalgebra_glm::Vec3::z()),
-        //             );
-        //         let up = nalgebra_glm::quat_rotate_vec3(
-        //             &node.transform.rotation.normalize(),
-        //             &nalgebra_glm::Vec3::y(),
-        //         );
-        //         nalgebra_glm::look_at(&eye, &target, &up)
-        //     },
-        // ));
+    let scene = &world.scenes[world.active_scene_index];
+    scene.walk_dfs(|node_index, _| {
+        let transform = &world.transforms[node_index];
+        let camera = &world.cameras[scene.active_camera_index];
+        result = Some((
+            // TODO: later this will need to be the translation of the global transform,
+            //       need to be able to aggregate transforms without turning them in to glm::Mat4 first
+            transform.translation,
+            camera.projection_matrix(aspect_ratio),
+            {
+                let eye = transform.translation;
+                let target = eye
+                    + nalgebra_glm::quat_rotate_vec3(
+                        &transform.rotation.normalize(),
+                        &(-nalgebra_glm::Vec3::z()),
+                    );
+                let up = nalgebra_glm::quat_rotate_vec3(
+                    &transform.rotation.normalize(),
+                    &nalgebra_glm::Vec3::y(),
+                );
+                nalgebra_glm::look_at(&eye, &target, &up)
+            },
+        ));
     });
     result
 }
@@ -254,7 +241,7 @@ pub fn create_camera_matrices(
 fn create_geometry_buffers(
     device: &wgpu::Device,
     vertices: &[crate::world::Vertex],
-    indices: &[u16],
+    indices: &[u32],
 ) -> (wgpu::Buffer, wgpu::Buffer) {
     let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
         device,

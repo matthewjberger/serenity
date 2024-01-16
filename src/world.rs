@@ -1,4 +1,4 @@
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct World {
     pub active_scene_index: usize,
     pub cameras: Vec<Camera>,
@@ -14,32 +14,28 @@ pub struct World {
     pub vertices: Vec<Vertex>,
 }
 
-pub fn create_camera_node(aspect_ratio: f32) -> Node {
-    todo!("Create a new camera node")
-    //     crate::world::Node {
-    //         id: uuid::Uuid::new_v4().to_string(),
-    //         label: "Main Camera".to_string(),
-    //         transform: crate::world::Transform {
-    //             translation: nalgebra_glm::vec3(0.0, 0.0, 4.0),
-    //             ..Default::default()
-    //         },
-    //         components: vec![crate::world::NodeComponent::Camera(crate::world::Camera {
-    //             projection: crate::world::Projection::Perspective(crate::world::PerspectiveCamera {
-    //                 aspect_ratio: Some(aspect_ratio),
-    //                 y_fov_rad: 90_f32.to_radians(),
-    //                 z_far: None,
-    //                 z_near: 0.01,
-    //             }),
-    //             orientation: Orientation {
-    //                 min_radius: 1.0,
-    //                 max_radius: 100.0,
-    //                 radius: 5.0,
-    //                 offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-    //                 sensitivity: nalgebra_glm::vec2(1.0, 1.0),
-    //                 direction: nalgebra_glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
-    //             },
-    //         })],
-    //     }
+impl Default for World {
+    fn default() -> Self {
+        Self {
+            active_scene_index: 0,
+            cameras: vec![Camera::default()],
+            images: Vec::new(),
+            indices: Vec::new(),
+            materials: Vec::new(),
+            meshes: Vec::new(),
+            nodes: vec![Node {
+                transform_index: 0,
+                camera_index: Some(0),
+                mesh_index: None,
+                light_index: None,
+            }],
+            samplers: Vec::new(),
+            scenes: vec![Scene::default()],
+            textures: Vec::new(),
+            transforms: vec![Transform::default()],
+            vertices: Vec::new(),
+        }
+    }
 }
 
 impl Scene {
@@ -82,9 +78,21 @@ impl Default for Vertex {
     }
 }
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Scene {
+    pub active_camera_index: usize,
     pub graph: petgraph::Graph<usize, ()>,
+}
+
+impl Default for Scene {
+    fn default() -> Self {
+        let mut graph = petgraph::Graph::new();
+        graph.add_node(0);
+        Self {
+            active_camera_index: 0,
+            graph,
+        }
+    }
 }
 
 impl std::fmt::Display for Scene {
@@ -204,10 +212,31 @@ impl Transform {
     }
 }
 
-#[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
     pub projection: Projection,
     pub orientation: Orientation,
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self {
+            projection: crate::world::Projection::Perspective(crate::world::PerspectiveCamera {
+                aspect_ratio: None,
+                y_fov_rad: 90_f32.to_radians(),
+                z_far: None,
+                z_near: 0.01,
+            }),
+            orientation: Orientation {
+                min_radius: 1.0,
+                max_radius: 100.0,
+                radius: 5.0,
+                offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                sensitivity: nalgebra_glm::vec2(1.0, 1.0),
+                direction: nalgebra_glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
+            },
+        }
+    }
 }
 
 impl Camera {
