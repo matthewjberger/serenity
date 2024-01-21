@@ -1,9 +1,9 @@
-use serenity::{app::window_aspect_ratio, egui, nalgebra_glm, petgraph, winit};
+use serenity::{egui, nalgebra_glm, petgraph, winit};
 
 pub struct Editor {
     broker: Broker,
     client: ClientHandle,
-    selected: Option<petgraph::graph::NodeIndex>,
+    _selected: Option<petgraph::graph::NodeIndex>,
     console_history: Vec<String>,
     console_command: String,
     toasts: egui_toast::Toasts,
@@ -19,7 +19,7 @@ impl Editor {
         Self {
             broker,
             client,
-            selected: None,
+            _selected: None,
             console_history: vec!["Welcome to the Serenity editor!".to_string()],
             console_command: "Type /help for more commands.".to_string(),
             toasts: egui_toast::Toasts::new()
@@ -49,14 +49,8 @@ impl Editor {
                         context.should_exit = true;
                     }
                     Command::ImportGltfFile(path) => {
-                        context.world = serenity::gltf::import_gltf(&path).clone();
-                        if !context.world.has_camera() {
-                            context
-                                .world
-                                .add_root_node(serenity::world::create_camera_node(
-                                    window_aspect_ratio(&context.window),
-                                ));
-                        }
+                        context.world = serenity::gltf::import_gltf(&path);
+                        context.should_sync_renderer = true;
                     }
                 },
                 Message::Toast(message) => {
@@ -74,6 +68,11 @@ impl Editor {
 }
 
 impl serenity::app::State for Editor {
+    fn initialize(&mut self, context: &mut serenity::app::Context) {
+        context.world = serenity::gltf::import_gltf("resources/models/BlockLevel.glb");
+        context.should_sync_renderer = true;
+    }
+
     fn receive_event(
         &mut self,
         _context: &mut serenity::app::Context,
@@ -106,44 +105,7 @@ impl serenity::app::State for Editor {
         camera_system(context);
     }
 
-    fn ui(&mut self, context: &mut serenity::app::Context, ui_context: &mut egui::Context) {
-        egui::Area::new("viewport").show(ui_context, |ui| {
-            let window_size = context.window.inner_size();
-            let aspect_ratio = window_size.width as f32 / window_size.height.max(1) as f32;
-            let (_camera_position, projection, view) =
-                serenity::view::create_camera_matrices(&context.world, aspect_ratio)
-                    .unwrap_or_default();
-            ui.with_layer_id(egui::LayerId::background(), |ui| {
-                if let Some(selected) = self.selected {
-                    let node = &mut context.world.scene[selected];
-                    let model_matrix = node.transform.matrix();
-                    let gizmo = egui_gizmo::Gizmo::new("My gizmo")
-                        .view_matrix(view)
-                        .projection_matrix(projection)
-                        .model_matrix(model_matrix)
-                        .mode(self.gizmo_mode);
-                    if let Some(response) = gizmo.interact(ui) {
-                        node.transform.translation = nalgebra_glm::Vec3::new(
-                            response.translation.x,
-                            response.translation.y,
-                            response.translation.z,
-                        );
-                        node.transform.rotation = nalgebra_glm::quat(
-                            response.rotation.x,
-                            response.rotation.y,
-                            response.rotation.z,
-                            response.rotation.w,
-                        );
-                        node.transform.scale = nalgebra_glm::Vec3::new(
-                            response.scale.x,
-                            response.scale.y,
-                            response.scale.z,
-                        );
-                    }
-                }
-            });
-        });
-
+    fn ui(&mut self, _context: &mut serenity::app::Context, ui_context: &mut egui::Context) {
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .show(ui_context, |ui| {
@@ -177,61 +139,11 @@ impl serenity::app::State for Editor {
                 });
             });
 
-        egui::SidePanel::left("left_panel")
-            .resizable(true)
+        egui::Window::new("Console")
+            .collapsible(true)
+            .default_open(false)
+            .movable(true)
             .show(ui_context, |ui| {
-                ui.set_width(ui.available_width());
-                ui.heading("Scene Tree");
-                if context.world.scene.node_count() > 0 {
-                    ui.group(|ui| {
-                        egui::ScrollArea::vertical()
-                            .id_source(ui.next_auto_id())
-                            .show(ui, |ui| {
-                                node_ui(ui, &context.world.scene, 0.into(), &mut self.selected);
-                            });
-                    });
-                    ui.allocate_space(ui.available_size());
-                }
-            });
-
-        egui::SidePanel::right("right_panel")
-            .resizable(true)
-            .show(ui_context, |ui| {
-                ui.set_width(ui.available_width());
-
-                ui.heading("Node Inspector");
-                egui::ScrollArea::vertical()
-                    .id_source(ui.next_auto_id())
-                    .show(ui, |ui| {
-                        if let Some(selected) = self.selected {
-                            let node = &mut context.world.scene[selected];
-                            egui::ScrollArea::vertical()
-                                .id_source(ui.next_auto_id())
-                                .show(ui, |ui| {
-                                    for component in node.components.iter_mut() {
-                                        ui.group(|ui| match component {
-                                            serenity::world::NodeComponent::Camera(_) => {
-                                                ui.heading("Camera");
-                                            }
-                                            serenity::world::NodeComponent::Mesh(_) => {
-                                                ui.heading("Mesh");
-                                            }
-                                            serenity::world::NodeComponent::Light(_) => {
-                                                ui.heading("Light");
-                                            }
-                                        });
-                                    }
-                                });
-                        }
-                    });
-                ui.allocate_space(ui.available_size());
-            });
-
-        egui::TopBottomPanel::bottom("bottom_panel")
-            .resizable(true)
-            .show(ui_context, |ui| {
-                ui.set_height(ui.available_height());
-                ui.heading("Console");
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
                         let input = ui.text_edit_singleline(&mut self.console_command);
@@ -264,106 +176,67 @@ impl serenity::app::State for Editor {
     }
 }
 
-fn node_ui(
-    ui: &mut egui::Ui,
-    graph: &petgraph::graph::Graph<serenity::world::Node, ()>,
-    node_index: petgraph::graph::NodeIndex,
-    selected_index: &mut Option<petgraph::graph::NodeIndex>,
-) {
-    if graph
-        .neighbors_directed(node_index, petgraph::Direction::Outgoing)
-        .count()
-        == 0
-    {
-        node_header_ui(selected_index, node_index, ui, &graph[node_index]);
-        return;
-    }
-    let id = ui.make_persistent_id(ui.next_auto_id());
-    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
-        .show_header(ui, |ui| {
-            node_header_ui(selected_index, node_index, ui, &graph[node_index]);
-        })
-        .body(|ui| {
-            graph
-                .neighbors_directed(node_index, petgraph::Direction::Outgoing)
-                .for_each(|child_index| {
-                    node_ui(ui, graph, child_index, selected_index);
-                });
-        });
-}
-
-fn node_header_ui(
-    selected_index: &mut Option<petgraph::prelude::NodeIndex>,
-    node_index: petgraph::prelude::NodeIndex,
-    ui: &mut egui::Ui,
-    node: &serenity::world::Node,
-) {
-    let selected = selected_index
-        .as_ref()
-        .map(|index| *index == node_index)
-        .unwrap_or_default();
-    let response = ui.selectable_label(selected, node.label.to_string());
-    if response.clicked() {
-        *selected_index = Some(node_index);
-    }
-}
-
 fn camera_system(context: &mut serenity::app::Context) {
-    context.world.walk_dfs_mut(|node, _| {
-        node.components.iter_mut().for_each(|component| {
-            if let serenity::world::NodeComponent::Camera(camera) = component {
-                let speed = 10.0 * context.delta_time as f32;
-                if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
-                    camera.orientation.offset -= camera.orientation.direction() * speed;
-                }
-                if context.io.is_key_pressed(winit::event::VirtualKeyCode::A) {
-                    camera.orientation.offset += camera.orientation.right() * speed;
-                }
-                if context.io.is_key_pressed(winit::event::VirtualKeyCode::S) {
-                    camera.orientation.offset += camera.orientation.direction() * speed;
-                }
-                if context.io.is_key_pressed(winit::event::VirtualKeyCode::D) {
-                    camera.orientation.offset -= camera.orientation.right() * speed;
-                }
-                if context
-                    .io
-                    .is_key_pressed(winit::event::VirtualKeyCode::Space)
-                {
-                    camera.orientation.offset += camera.orientation.up() * speed;
-                }
-                if context
-                    .io
-                    .is_key_pressed(winit::event::VirtualKeyCode::LShift)
-                {
-                    camera.orientation.offset -= camera.orientation.up() * speed;
-                }
+    let scene = match context.world.scenes.get_mut(0) {
+        Some(scene) => scene,
+        None => return,
+    };
+    scene.walk_dfs_mut(|_graph_node_index, node_index| {
+        let node = &context.world.nodes[node_index];
+        if let Some(camera_index) = node.camera_index {
+            let transform = &mut context.world.transforms[node.transform_index];
+            let camera = &mut context.world.cameras[camera_index];
+            let speed = 10.0 * context.delta_time as f32;
+            if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
+                camera.orientation.offset -= camera.orientation.direction() * speed;
+            }
+            if context.io.is_key_pressed(winit::event::VirtualKeyCode::A) {
+                camera.orientation.offset += camera.orientation.right() * speed;
+            }
+            if context.io.is_key_pressed(winit::event::VirtualKeyCode::S) {
+                camera.orientation.offset += camera.orientation.direction() * speed;
+            }
+            if context.io.is_key_pressed(winit::event::VirtualKeyCode::D) {
+                camera.orientation.offset -= camera.orientation.right() * speed;
+            }
+            if context
+                .io
+                .is_key_pressed(winit::event::VirtualKeyCode::Space)
+            {
+                camera.orientation.offset += camera.orientation.up() * speed;
+            }
+            if context
+                .io
+                .is_key_pressed(winit::event::VirtualKeyCode::LShift)
+            {
+                camera.orientation.offset -= camera.orientation.up() * speed;
+            }
 
+            camera
+                .orientation
+                .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
+
+            if context.io.mouse.is_middle_clicked {
                 camera
                     .orientation
-                    .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
-
-                if context.io.mouse.is_middle_clicked {
-                    camera
-                        .orientation
-                        .pan(&(context.io.mouse.position_delta * context.delta_time as f32));
-                }
-                node.transform.translation = camera.orientation.position();
-
-                if context.io.is_key_pressed(winit::event::VirtualKeyCode::H) {
-                    node.transform.translation = nalgebra_glm::Vec3::new(1.0, 1.0, 1.0) * 4.0;
-                    camera.orientation.offset = nalgebra_glm::Vec3::new(0.0, 0.0, 0.0);
-                }
-
-                if context.io.mouse.is_right_clicked {
-                    let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
-                    delta.x *= -1.0;
-                    delta.y *= -1.0;
-                    camera.orientation.rotate(&delta);
-                }
-
-                node.transform.rotation = camera.orientation.look_at_offset();
+                    .pan(&(context.io.mouse.position_delta * context.delta_time as f32));
             }
-        });
+            transform.translation = camera.orientation.position();
+
+            if context.io.is_key_pressed(winit::event::VirtualKeyCode::H) {
+                transform.translation = nalgebra_glm::Vec3::new(1.0, 1.0, 1.0) * 4.0;
+                camera.orientation.offset = nalgebra_glm::Vec3::new(0.0, 0.0, 0.0);
+            }
+
+            if context.io.mouse.is_right_clicked {
+                let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
+                delta.x *= -1.0;
+                delta.y *= -1.0;
+                camera.orientation.rotate(&delta);
+            }
+
+            transform.rotation = camera.orientation.look_at_offset();
+        }
     });
 }
 

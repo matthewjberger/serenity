@@ -1,98 +1,38 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct World {
-    pub scene: Scene,
-    pub images: std::collections::HashMap<String, Image>,
-    pub samplers: std::collections::HashMap<String, Sampler>,
-    pub textures: std::collections::HashMap<String, Texture>,
-    pub materials: std::collections::HashMap<String, Material>,
-    pub meshes: std::collections::HashMap<String, Mesh>,
-    pub animations: std::collections::HashMap<String, Animation>,
-    pub skins: std::collections::HashMap<String, Skin>,
-
-    pub active_scene_index: usize,
-    pub linear_animations: Vec<Animation>,
-    pub linear_cameras: Vec<Camera>,
-    pub linear_images: Vec<Image>,
-    pub linear_indices: Vec<u32>,
-    pub linear_materials: Vec<LinearMaterial>,
-    pub linear_meshes: Vec<LinearMesh>,
-    pub linear_nodes: Vec<LinearNode>,
-    pub linear_samplers: Vec<Sampler>,
-    pub linear_scenes: Vec<LinearScene>,
-    pub linear_skins: Vec<Skin>,
-    pub linear_textures: Vec<LinearTexture>,
-    pub linear_transforms: Vec<Transform>,
-    pub linear_vertices: Vec<Vertex>,
-}
-
-pub fn create_camera_node(aspect_ratio: f32) -> Node {
-    crate::world::Node {
-        id: uuid::Uuid::new_v4().to_string(),
-        label: "Main Camera".to_string(),
-        transform: crate::world::Transform {
-            translation: nalgebra_glm::vec3(0.0, 0.0, 4.0),
-            ..Default::default()
-        },
-        components: vec![crate::world::NodeComponent::Camera(crate::world::Camera {
-            projection: crate::world::Projection::Perspective(crate::world::PerspectiveCamera {
-                aspect_ratio: Some(aspect_ratio),
-                y_fov_rad: 90_f32.to_radians(),
-                z_far: None,
-                z_near: 0.01,
-            }),
-            orientation: Orientation {
-                min_radius: 1.0,
-                max_radius: 100.0,
-                radius: 5.0,
-                offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                sensitivity: nalgebra_glm::vec2(1.0, 1.0),
-                direction: nalgebra_glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
-            },
-        })],
-    }
+    pub animations: Vec<Animation>,
+    pub cameras: Vec<Camera>,
+    pub images: Vec<Image>,
+    pub indices: Vec<u32>,
+    pub materials: Vec<Material>,
+    pub meshes: Vec<Mesh>,
+    pub nodes: Vec<Node>,
+    pub samplers: Vec<Sampler>,
+    pub scenes: Vec<Scene>,
+    pub skins: Vec<Skin>,
+    pub textures: Vec<Texture>,
+    pub transforms: Vec<Transform>,
+    pub vertices: Vec<Vertex>,
 }
 
 impl World {
-    pub fn has_camera(&self) -> bool {
-        let mut has_camera = false;
-        self.walk_dfs(|node, _| {
-            for component in node.components.iter() {
-                if let crate::world::NodeComponent::Camera(_) = component {
-                    has_camera = true;
-                    return;
-                }
+    pub fn global_transform(
+        &self,
+        scene_index: usize,
+        graph_node_index: petgraph::graph::NodeIndex,
+    ) -> nalgebra_glm::Mat4 {
+        let graph = &self.scenes[scene_index].graph;
+        let node_index = graph[graph_node_index];
+        let transform_index = self.nodes[node_index].transform_index;
+        let transform = self.transforms[transform_index].matrix();
+        match graph
+            .neighbors_directed(graph_node_index, petgraph::Direction::Incoming)
+            .next()
+        {
+            Some(parent_node_index) => {
+                self.global_transform(scene_index, parent_node_index) * transform
             }
-        });
-        has_camera
-    }
-
-    pub fn add_root_node(&mut self, node: crate::world::Node) -> petgraph::graph::NodeIndex {
-        let child = self.scene.add_node(node);
-        self.scene
-            .add_edge(petgraph::graph::NodeIndex::new(0), child, ());
-        child
-    }
-
-    pub fn walk_dfs(&self, mut visit_node: impl FnMut(&Node, petgraph::graph::NodeIndex)) {
-        if self.scene.0.node_count() == 0 {
-            return;
-        }
-        let mut dfs = petgraph::visit::Dfs::new(&self.scene.0, petgraph::graph::NodeIndex::new(0));
-        while let Some(node_index) = dfs.next(&self.scene.0) {
-            visit_node(&self.scene.0[node_index], node_index);
-        }
-    }
-
-    pub fn walk_dfs_mut(
-        &mut self,
-        mut visit_node: impl FnMut(&mut Node, petgraph::graph::NodeIndex),
-    ) {
-        if self.scene.0.node_count() == 0 {
-            return;
-        }
-        let mut dfs = petgraph::visit::Dfs::new(&self.scene.0, petgraph::graph::NodeIndex::new(0));
-        while let Some(node_index) = dfs.next(&self.scene.0) {
-            visit_node(&mut self.scene.0[node_index], node_index);
+            None => transform,
         }
     }
 }
@@ -125,92 +65,38 @@ impl Default for Vertex {
     }
 }
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LinearScene {
-    pub graph: petgraph::Graph<usize, ()>,
-}
+pub type SceneGraph = petgraph::Graph<usize, ()>;
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Scene(pub petgraph::Graph<Node, ()>);
-
-impl std::fmt::Display for Scene {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{:?}",
-            petgraph::dot::Dot::with_config(&self.0, &[petgraph::dot::Config::EdgeNoLabel])
-        )
-    }
-}
-
-impl std::ops::Deref for Scene {
-    type Target = petgraph::Graph<Node, ()>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for Scene {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
+pub struct Scene {
+    pub graph: SceneGraph,
 }
 
 impl Scene {
-    pub fn global_transform(&self, node_index: petgraph::graph::NodeIndex) -> nalgebra_glm::Mat4 {
-        let transform = self.0[node_index].transform.matrix();
-        match self
-            .0
-            .neighbors_directed(node_index, petgraph::Direction::Incoming)
-            .next()
-        {
-            Some(parent_node_index) => self.global_transform(parent_node_index) * transform,
-            None => transform,
+    pub fn walk_dfs(&self, mut visit_node: impl FnMut(petgraph::graph::NodeIndex, usize)) {
+        if self.graph.node_count() == 0 {
+            return;
+        }
+        let mut dfs = petgraph::visit::Dfs::new(&self.graph, petgraph::graph::NodeIndex::new(0));
+        while let Some(graph_node_index) = dfs.next(&self.graph) {
+            visit_node(graph_node_index, self.graph[graph_node_index]);
+        }
+    }
+
+    pub fn walk_dfs_mut(&mut self, mut visit_node: impl FnMut(petgraph::graph::NodeIndex, usize)) {
+        if self.graph.node_count() == 0 {
+            return;
+        }
+        let mut dfs = petgraph::visit::Dfs::new(&self.graph, petgraph::graph::NodeIndex::new(0));
+        while let Some(graph_node_index) = dfs.next(&self.graph) {
+            visit_node(graph_node_index, self.graph[graph_node_index]);
         }
     }
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Mesh {
-    pub label: String,
-    pub linear_index: usize,
     pub primitives: Vec<Primitive>,
-}
-
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LinearMesh {
-    pub primitives: Vec<LinearPrimitive>,
-}
-
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Primitive {
-    pub mode: PrimitiveMode,
-    pub material: String,
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
-}
-
-#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Node {
-    pub id: String,
-    pub label: String,
-    pub transform: Transform,
-    pub components: Vec<NodeComponent>,
-}
-
-impl std::fmt::Debug for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.label)
-    }
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub enum NodeComponent {
-    // TODO: make these just take strings that key into the scene's resources
-    Camera(Camera),
-    Mesh(String),
-    Light(Light),
 }
 
 #[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -296,10 +182,31 @@ impl Transform {
     }
 }
 
-#[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
     pub projection: Projection,
     pub orientation: Orientation,
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self {
+            projection: crate::world::Projection::Perspective(crate::world::PerspectiveCamera {
+                aspect_ratio: None,
+                y_fov_rad: 90_f32.to_radians(),
+                z_far: None,
+                z_near: 0.01,
+            }),
+            orientation: Orientation {
+                min_radius: 1.0,
+                max_radius: 100.0,
+                radius: 5.0,
+                offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                sensitivity: nalgebra_glm::vec2(1.0, 1.0),
+                direction: nalgebra_glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
+            },
+        }
+    }
 }
 
 impl Camera {
@@ -498,31 +405,23 @@ impl Default for LightKind {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Texture {
-    pub label: String,
-    pub image: String,
-    pub sampler: String,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct LinearTexture {
-    pub label: String,
     pub image_index: usize,
     pub sampler_index: Option<usize>,
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LinearPrimitive {
+pub struct Primitive {
     pub vertex_offset: usize,
     pub index_offset: usize,
     pub number_of_vertices: usize,
     pub number_of_indices: usize,
     pub mode: PrimitiveMode,
-    pub material: Option<usize>,
+    pub material_index: Option<usize>,
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LinearNode {
-    pub transform_index: Option<usize>,
+pub struct Node {
+    pub transform_index: usize,
     pub camera_index: Option<usize>,
     pub mesh_index: Option<usize>,
     pub light_index: Option<usize>,
@@ -564,8 +463,8 @@ pub enum ImageFormat {
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Sampler {
-    pub min_filter: Filter,
-    pub mag_filter: Filter,
+    pub min_filter: MinFilter,
+    pub mag_filter: MagFilter,
     pub wrap_s: WrappingMode,
     pub wrap_t: WrappingMode,
 }
@@ -579,20 +478,25 @@ pub enum WrappingMode {
 }
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub enum Filter {
+pub enum MagFilter {
+    Nearest = 1,
     #[default]
-    Nearest,
     Linear,
 }
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct Material {
-    pub base_color_factor: nalgebra_glm::Vec4,
-    pub base_color_texture: String,
+pub enum MinFilter {
+    Nearest = 1,
+    #[default]
+    Linear,
+    NearestMipmapNearest,
+    LinearMipmapNearest,
+    NearestMipmapLinear,
+    LinearMipmapLinear,
 }
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct LinearMaterial {
+pub struct Material {
     pub base_color_factor: nalgebra_glm::Vec4,
     pub base_color_texture_index: usize,
 }
@@ -607,7 +511,6 @@ pub enum AlphaMode {
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Animation {
-    pub label: String,
     pub time: f32,
     pub channels: Vec<Channel>,
     pub max_animation_time: f32,
@@ -615,7 +518,7 @@ pub struct Animation {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Channel {
-    pub target: String,
+    pub target_node_index: usize,
     pub inputs: Vec<f32>,
     pub transformations: TransformationSet,
     pub interpolation: Interpolation,
@@ -639,12 +542,11 @@ pub enum TransformationSet {
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Skin {
-    pub label: String,
     pub joints: Vec<Joint>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Joint {
-    pub target: String,
+    pub target_node_index: usize,
     pub inverse_bind_matrix: nalgebra_glm::Mat4,
 }

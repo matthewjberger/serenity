@@ -5,6 +5,7 @@ pub struct Context {
     pub last_frame: std::time::Instant,
     pub world: crate::world::World,
     pub should_exit: bool,
+    pub should_sync_renderer: bool,
 }
 
 pub fn window_aspect_ratio(window: &winit::window::Window) -> f32 {
@@ -50,6 +51,7 @@ impl App {
             last_frame: std::time::Instant::now(),
             world: crate::world::World::default(),
             should_exit: false,
+            should_sync_renderer: false,
         };
         Self {
             event_loop,
@@ -128,6 +130,10 @@ impl App {
             }
 
             if let winit::event::Event::MainEventsCleared = event {
+                if context.should_sync_renderer {
+                    renderer.assign_world(&context.world);
+                    context.should_sync_renderer = false;
+                }
                 renderer.render_frame(&mut context, |context, ui| {
                     state.ui(context, ui);
                 });
