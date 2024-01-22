@@ -177,66 +177,62 @@ impl serenity::app::State for Editor {
 }
 
 fn camera_system(context: &mut serenity::app::Context) {
-    let scene = match context.world.scenes.get_mut(0) {
-        Some(scene) => scene,
-        None => return,
-    };
-    scene.walk_dfs_mut(|_graph_node_index, node_index| {
-        let node = &context.world.nodes[node_index];
-        if let Some(camera_index) = node.camera_index {
-            let transform = &mut context.world.transforms[node.transform_index];
-            let camera = &mut context.world.cameras[camera_index];
-            let speed = 10.0 * context.delta_time as f32;
-            if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
-                camera.orientation.offset -= camera.orientation.direction() * speed;
-            }
-            if context.io.is_key_pressed(winit::event::VirtualKeyCode::A) {
-                camera.orientation.offset += camera.orientation.right() * speed;
-            }
-            if context.io.is_key_pressed(winit::event::VirtualKeyCode::S) {
-                camera.orientation.offset += camera.orientation.direction() * speed;
-            }
-            if context.io.is_key_pressed(winit::event::VirtualKeyCode::D) {
-                camera.orientation.offset -= camera.orientation.right() * speed;
-            }
-            if context
-                .io
-                .is_key_pressed(winit::event::VirtualKeyCode::Space)
-            {
-                camera.orientation.offset += camera.orientation.up() * speed;
-            }
-            if context
-                .io
-                .is_key_pressed(winit::event::VirtualKeyCode::LShift)
-            {
-                camera.orientation.offset -= camera.orientation.up() * speed;
-            }
-
-            camera
-                .orientation
-                .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
-
-            if context.io.mouse.is_middle_clicked {
+    let mut ubo_offset = 0;
+    context.world.scenes.iter().for_each(|scene| {
+        scene.graph.node_indices().for_each(|graph_node_index| {
+            let node_index = scene.graph[graph_node_index];
+            let node = &context.world.nodes[node_index];
+            if let Some(camera_index) = node.camera_index {
+                let transform = &mut context.world.transforms[node.transform_index];
+                let camera = &mut context.world.cameras[camera_index];
+                let speed = 10.0 * context.delta_time as f32;
+                if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
+                    camera.orientation.offset -= camera.orientation.direction() * speed;
+                }
+                if context.io.is_key_pressed(winit::event::VirtualKeyCode::A) {
+                    camera.orientation.offset += camera.orientation.right() * speed;
+                }
+                if context.io.is_key_pressed(winit::event::VirtualKeyCode::S) {
+                    camera.orientation.offset += camera.orientation.direction() * speed;
+                }
+                if context.io.is_key_pressed(winit::event::VirtualKeyCode::D) {
+                    camera.orientation.offset -= camera.orientation.right() * speed;
+                }
+                if context
+                    .io
+                    .is_key_pressed(winit::event::VirtualKeyCode::Space)
+                {
+                    camera.orientation.offset += camera.orientation.up() * speed;
+                }
+                if context
+                    .io
+                    .is_key_pressed(winit::event::VirtualKeyCode::LShift)
+                {
+                    camera.orientation.offset -= camera.orientation.up() * speed;
+                }
                 camera
                     .orientation
-                    .pan(&(context.io.mouse.position_delta * context.delta_time as f32));
+                    .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
+                if context.io.mouse.is_middle_clicked {
+                    camera
+                        .orientation
+                        .pan(&(context.io.mouse.position_delta * context.delta_time as f32));
+                }
+                transform.translation = camera.orientation.position();
+                if context.io.is_key_pressed(winit::event::VirtualKeyCode::H) {
+                    transform.translation = nalgebra_glm::Vec3::new(1.0, 1.0, 1.0) * 4.0;
+                    camera.orientation.offset = nalgebra_glm::Vec3::new(0.0, 0.0, 0.0);
+                }
+                if context.io.mouse.is_right_clicked {
+                    let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
+                    delta.x *= -1.0;
+                    delta.y *= -1.0;
+                    camera.orientation.rotate(&delta);
+                }
+                transform.rotation = camera.orientation.look_at_offset();
             }
-            transform.translation = camera.orientation.position();
-
-            if context.io.is_key_pressed(winit::event::VirtualKeyCode::H) {
-                transform.translation = nalgebra_glm::Vec3::new(1.0, 1.0, 1.0) * 4.0;
-                camera.orientation.offset = nalgebra_glm::Vec3::new(0.0, 0.0, 0.0);
-            }
-
-            if context.io.mouse.is_right_clicked {
-                let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
-                delta.x *= -1.0;
-                delta.y *= -1.0;
-                camera.orientation.rotate(&delta);
-            }
-
-            transform.rotation = camera.orientation.look_at_offset();
-        }
+            ubo_offset += 1;
+        });
     });
 }
 

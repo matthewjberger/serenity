@@ -71,28 +71,6 @@ pub struct Scene {
     pub graph: SceneGraph,
 }
 
-impl Scene {
-    pub fn walk_dfs(&self, mut visit_node: impl FnMut(petgraph::graph::NodeIndex, usize)) {
-        if self.graph.node_count() == 0 {
-            return;
-        }
-        let mut dfs = petgraph::visit::Dfs::new(&self.graph, petgraph::graph::NodeIndex::new(0));
-        while let Some(graph_node_index) = dfs.next(&self.graph) {
-            visit_node(graph_node_index, self.graph[graph_node_index]);
-        }
-    }
-
-    pub fn walk_dfs_mut(&mut self, mut visit_node: impl FnMut(petgraph::graph::NodeIndex, usize)) {
-        if self.graph.node_count() == 0 {
-            return;
-        }
-        let mut dfs = petgraph::visit::Dfs::new(&self.graph, petgraph::graph::NodeIndex::new(0));
-        while let Some(graph_node_index) = dfs.next(&self.graph) {
-            visit_node(graph_node_index, self.graph[graph_node_index]);
-        }
-    }
-}
-
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Mesh {
     pub primitives: Vec<Primitive>,
