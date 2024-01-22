@@ -69,7 +69,17 @@ impl Editor {
 
 impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        context.world = serenity::gltf::import_gltf("resources/models/BlockLevel.glb");
+        // TODO (matt) add materials to push constants
+
+        // has no textures
+        // context.world = serenity::gltf::import_gltf("resources/models/OrientationTest.glb");
+
+        // has a single texture
+        // context.world = serenity::gltf::import_gltf("resources/models/Lantern.glb");
+
+        // Has multiple textures
+        context.world = serenity::gltf::import_gltf("resources/models/DamagedHelmet.glb");
+
         context.should_sync_renderer = true;
     }
 

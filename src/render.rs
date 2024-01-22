@@ -130,12 +130,6 @@ impl Renderer {
     }
 }
 
-pub struct Texture {
-    pub texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
-    pub sampler: wgpu::Sampler,
-}
-
 impl From<crate::world::Sampler> for wgpu::SamplerDescriptor<'static> {
     fn from(sampler: crate::world::Sampler) -> Self {
         let min_filter = match sampler.min_filter {
