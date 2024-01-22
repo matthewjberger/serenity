@@ -169,7 +169,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
             .scenes()
             .map(|gltf_scene| {
                 fn visit_node(
-                    parent_graph_node_index: petgraph::graph::NodeIndex,
+                    parent_graph_node_index: Option<petgraph::graph::NodeIndex>,
                     node: &gltf::Node,
                     scene: &mut crate::world::Scene,
                     nodes: &mut Vec<crate::world::Node>,
@@ -185,26 +185,22 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                         light_index: node.light().map(|light| light.index()),
                     });
                     let graph_node_index = scene.graph.add_node(node_index);
-                    if parent_graph_node_index != graph_node_index {
-                        scene
-                            .graph
-                            .add_edge(parent_graph_node_index, graph_node_index, ());
+                    if let Some(parent_graph_node_index) = parent_graph_node_index {
+                        if parent_graph_node_index != graph_node_index {
+                            scene
+                                .graph
+                                .add_edge(parent_graph_node_index, graph_node_index, ());
+                        }
                     }
                     node.children().for_each(|child| {
-                        visit_node(graph_node_index, &child, scene, nodes, transforms);
+                        visit_node(Some(graph_node_index), &child, scene, nodes, transforms);
                     });
                 }
 
                 let mut scene = crate::world::Scene::default();
 
                 gltf_scene.nodes().for_each(|root_node| {
-                    visit_node(
-                        petgraph::graph::NodeIndex::new(0),
-                        &root_node,
-                        &mut scene,
-                        &mut nodes,
-                        &mut transforms,
-                    );
+                    visit_node(None, &root_node, &mut scene, &mut nodes, &mut transforms);
                 });
 
                 scene

@@ -44,30 +44,6 @@ impl WorldRender {
         gpu: &crate::gpu::Gpu,
         world: &crate::world::World,
     ) {
-        if world.vertices.len() * std::mem::size_of::<crate::world::Vertex>()
-            > self.vertex_buffer.size() as usize
-        {
-            self.vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
-                &gpu.device,
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("Vertex Buffer"),
-                    contents: bytemuck::cast_slice(&world.vertices),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                },
-            );
-        }
-
-        if world.indices.len() * std::mem::size_of::<u32>() > self.index_buffer.size() as usize {
-            self.index_buffer = wgpu::util::DeviceExt::create_buffer_init(
-                &gpu.device,
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("Index Buffer"),
-                    contents: bytemuck::cast_slice(&world.indices),
-                    usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-                },
-            );
-        }
-
         let (camera_position, projection, view) =
             create_camera_matrices(world, &world.scenes[0], gpu.aspect_ratio()).unwrap_or_default();
         gpu.queue.write_buffer(
@@ -82,14 +58,14 @@ impl WorldRender {
 
         let mut mesh_ubos = vec![DynamicUniform::default(); world.transforms.len()];
         let mut ubo_offset = 0;
-        for scene in world.scenes.iter() {
-            scene.walk_dfs(|graph_node_index, _node_index| {
+        world.scenes.iter().for_each(|scene| {
+            scene.graph.node_indices().for_each(|graph_node_index| {
                 mesh_ubos[ubo_offset] = DynamicUniform {
                     model: world.global_transform(&scene.graph, graph_node_index),
                 };
                 ubo_offset += 1;
             });
-        }
+        });
         gpu.queue
             .write_buffer(&self.dynamic_uniform_buffer, 0, unsafe {
                 std::slice::from_raw_parts(
@@ -112,9 +88,11 @@ impl WorldRender {
         );
 
         let mut ubo_offset = 0;
-        for scene in world.scenes.iter() {
-            scene.walk_dfs(|_graph_node_index, node_index| {
-                if let Some(mesh_index) = world.nodes[node_index].mesh_index {
+        world.scenes.iter().for_each(|scene| {
+            scene.graph.node_indices().for_each(|graph_node_index| {
+                let node_index = scene.graph[graph_node_index];
+                let node = &world.nodes[node_index];
+                if let Some(mesh_index) = node.mesh_index {
                     let offset = (ubo_offset * gpu.alignment()) as wgpu::DynamicOffset;
                     render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
                     let mesh = &world.meshes[mesh_index];
@@ -141,7 +119,7 @@ impl WorldRender {
                 }
                 ubo_offset += 1;
             });
-        }
+        });
     }
 }
 
@@ -242,7 +220,9 @@ pub fn create_camera_matrices(
     aspect_ratio: f32,
 ) -> Option<(nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4)> {
     let mut result = None;
-    scene.walk_dfs(|_graph_node_index, node_index| {
+
+    for graph_node_index in scene.graph.node_indices() {
+        let node_index = scene.graph[graph_node_index];
         let node = &world.nodes[node_index];
         if let Some(camera_index) = node.camera_index {
             let transform = &world.transforms[node.transform_index];
@@ -267,8 +247,7 @@ pub fn create_camera_matrices(
                 },
             ));
         }
-    });
-
+    }
     result
 }
 
