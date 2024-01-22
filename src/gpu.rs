@@ -95,6 +95,7 @@ impl Gpu {
                     &wgpu::DeviceDescriptor {
                         features: (optional_features & adapter.features()) | required_features,
                         limits: wgpu::Limits {
+                            max_sampled_textures_per_shader_stage: 256,
                             max_push_constant_size: 256,
                             ..Default::default()
                         }

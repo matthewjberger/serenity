@@ -408,9 +408,30 @@ impl From<gltf::texture::Sampler<'_>> for crate::world::Sampler {
 
 impl From<gltf::image::Data> for crate::world::Image {
     fn from(data: gltf::image::Data) -> Self {
+        let img = match data.format {
+            gltf::image::Format::R8 => image::DynamicImage::ImageLuma8(
+                image::ImageBuffer::from_raw(data.width, data.height, data.pixels.to_vec())
+                    .unwrap(),
+            ),
+            gltf::image::Format::R8G8 => image::DynamicImage::ImageLumaA8(
+                image::ImageBuffer::from_raw(data.width, data.height, data.pixels.to_vec())
+                    .unwrap(),
+            ),
+            gltf::image::Format::R8G8B8 => image::DynamicImage::ImageRgb8(
+                image::ImageBuffer::from_raw(data.width, data.height, data.pixels.to_vec())
+                    .unwrap(),
+            ),
+            gltf::image::Format::R8G8B8A8 => image::DynamicImage::ImageRgba8(
+                image::ImageBuffer::from_raw(data.width, data.height, data.pixels.to_vec())
+                    .unwrap(),
+            ),
+            _ => panic!("Unsupported image format!"),
+        };
+        let rgba_img = img.to_rgba8();
+        let pixels = rgba_img.into_raw();
         Self {
-            pixels: data.pixels.to_vec(),
-            format: data.format.into(),
+            pixels,
+            format: crate::world::ImageFormat::R8G8B8A8,
             width: data.width,
             height: data.height,
         }
