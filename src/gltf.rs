@@ -22,6 +22,8 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
             base_color_factor: nalgebra_glm::Vec4::from(
                 material.pbr_metallic_roughness().base_color_factor(),
             ),
+            alpha_mode: material.alpha_mode().into(),
+            alpha_cutoff: material.alpha_cutoff(),
             base_color_texture_index: material
                 .pbr_metallic_roughness()
                 .base_color_texture()

@@ -476,12 +476,14 @@ pub enum MinFilter {
 pub struct Material {
     pub base_color_factor: nalgebra_glm::Vec4,
     pub base_color_texture_index: usize,
+    pub alpha_mode: AlphaMode,
+    pub alpha_cutoff: Option<f32>,
 }
 
-#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Copy, Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
 pub enum AlphaMode {
     #[default]
-    Opaque = 1,
+    Opaque,
     Mask,
     Blend,
 }
