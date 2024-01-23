@@ -8,7 +8,8 @@ pub struct WorldRender {
     pub texture_array_bind_group: wgpu::BindGroup,
     pub samplers: Vec<wgpu::Sampler>,
     pub textures: Vec<wgpu::Texture>,
-    pub pipeline: wgpu::RenderPipeline,
+    pub opaque_pipeline: wgpu::RenderPipeline,
+    pub blend_pipeline: wgpu::RenderPipeline,
 }
 
 impl WorldRender {
@@ -162,13 +163,25 @@ impl WorldRender {
 
             (texture_array_bind_group, texture_array_bind_group_layout)
         };
-        let pipeline = create_pipeline(
+
+        let opaque_pipeline = create_pipeline(
             gpu,
             &[
                 &uniform_bind_group_layout,
                 &dynamic_uniform_bind_group_layout,
                 &texture_array_bind_group_layout,
             ],
+            false,
+        );
+
+        let blend_pipeline = create_pipeline(
+            gpu,
+            &[
+                &uniform_bind_group_layout,
+                &dynamic_uniform_bind_group_layout,
+                &texture_array_bind_group_layout,
+            ],
+            true,
         );
 
         Self {
@@ -179,7 +192,8 @@ impl WorldRender {
             dynamic_uniform_buffer,
             dynamic_uniform_bind_group,
             texture_array_bind_group,
-            pipeline,
+            opaque_pipeline,
+            blend_pipeline,
             textures,
             samplers,
         }
@@ -221,61 +235,81 @@ impl WorldRender {
                 )
             });
 
-        render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_bind_group(2, &self.texture_array_bind_group, &[]);
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        for alpha_mode in [
+            crate::world::AlphaMode::Opaque,
+            crate::world::AlphaMode::Mask,
+            crate::world::AlphaMode::Blend,
+        ]
+        .iter()
+        {
+            match alpha_mode {
+                crate::world::AlphaMode::Opaque | crate::world::AlphaMode::Mask => {
+                    render_pass.set_pipeline(&self.opaque_pipeline)
+                }
+                crate::world::AlphaMode::Blend => render_pass.set_pipeline(&self.blend_pipeline),
+            }
+            let mut ubo_offset = 0;
+            world.scenes.iter().for_each(|scene| {
+                scene.graph.node_indices().for_each(|graph_node_index| {
+                    let node_index = scene.graph[graph_node_index];
+                    let node = &world.nodes[node_index];
+                    if let Some(mesh_index) = node.mesh_index {
+                        let offset = (ubo_offset * gpu.alignment()) as wgpu::DynamicOffset;
+                        render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
+                        let mesh = &world.meshes[mesh_index];
 
-        let mut ubo_offset = 0;
-        world.scenes.iter().for_each(|scene| {
-            scene.graph.node_indices().for_each(|graph_node_index| {
-                let node_index = scene.graph[graph_node_index];
-                let node = &world.nodes[node_index];
-                if let Some(mesh_index) = node.mesh_index {
-                    let offset = (ubo_offset * gpu.alignment()) as wgpu::DynamicOffset;
-                    render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
-                    let mesh = &world.meshes[mesh_index];
+                        for primitive in mesh.primitives.iter() {
+                            let material_index = match primitive.material_index {
+                                Some(material_index) => material_index,
+                                None => 0, // TODO: use a default material here (prototyping texture)
+                            };
+                            let material = &world.materials[material_index];
 
-                    for primitive in mesh.primitives.iter() {
-                        let material_index = match primitive.material_index {
-                            Some(material_index) => material_index,
-                            None => 0, // TODO: use a default material here (prototyping texture)
-                        };
-                        let material = &world.materials[material_index];
-                        let shader_material = Material {
-                            base_texture_index: material.base_color_texture_index as _,
-                            ..Default::default()
-                        };
-                        render_pass.set_push_constants(
-                            wgpu::ShaderStages::VERTEX_FRAGMENT,
-                            0,
-                            bytemuck::cast_slice(&[shader_material]),
-                        );
-                        if primitive.number_of_indices > 0 {
-                            let index_offset = primitive.index_offset as u32;
-                            let number_of_indices =
-                                index_offset + primitive.number_of_indices as u32;
-                            render_pass.draw_indexed(
-                                index_offset..number_of_indices,
-                                primitive.vertex_offset as i32,
-                                0..1, // TODO: support multiple instances per primitive
+                            if material.alpha_mode != *alpha_mode {
+                                continue;
+                            }
+
+                            let shader_material = Material {
+                                base_color: material.base_color_factor,
+                                base_texture_index: material.base_color_texture_index as _,
+                                alpha_mode: material.alpha_mode as _,
+                                alpha_cutoff: material.alpha_cutoff.unwrap_or(0.5),
+                                ..Default::default()
+                            };
+                            render_pass.set_push_constants(
+                                wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                0,
+                                bytemuck::cast_slice(&[shader_material]),
                             );
-                        } else {
-                            let vertex_offset = primitive.vertex_offset as u32;
-                            let number_of_vertices =
-                                vertex_offset + primitive.number_of_vertices as u32;
-                            render_pass.draw(
-                                vertex_offset..number_of_vertices,
-                                0..1, // TODO: support multiple instances per primitive
-                            );
+                            if primitive.number_of_indices > 0 {
+                                let index_offset = primitive.index_offset as u32;
+                                let number_of_indices =
+                                    index_offset + primitive.number_of_indices as u32;
+                                render_pass.draw_indexed(
+                                    index_offset..number_of_indices,
+                                    primitive.vertex_offset as i32,
+                                    0..1, // TODO: support multiple instances per primitive
+                                );
+                            } else {
+                                let vertex_offset = primitive.vertex_offset as u32;
+                                let number_of_vertices =
+                                    vertex_offset + primitive.number_of_vertices as u32;
+                                render_pass.draw(
+                                    vertex_offset..number_of_vertices,
+                                    0..1, // TODO: support multiple instances per primitive
+                                );
+                            }
                         }
                     }
-                }
-                ubo_offset += 1;
+                    ubo_offset += 1;
+                });
             });
-        });
+        }
     }
 }
 
@@ -465,6 +499,7 @@ pub struct Texture {
 fn create_pipeline(
     gpu: &crate::gpu::Gpu,
     bind_group_layouts: &[&wgpu::BindGroupLayout],
+    blending_enabled: bool,
 ) -> wgpu::RenderPipeline {
     let shader_module = gpu
         .device
@@ -518,7 +553,11 @@ fn create_pipeline(
                 entry_point: "fragment_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: gpu.surface_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: if blending_enabled {
+                        Some(wgpu::BlendState::ALPHA_BLENDING)
+                    } else {
+                        None
+                    },
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -558,8 +597,10 @@ pub struct DynamicUniform {
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Material {
+    base_color: nalgebra_glm::Vec4,
     base_texture_index: u32,
-    padding: nalgebra_glm::Vec3,
+    alpha_mode: i32,
+    alpha_cutoff: f32,
 }
 
 const SHADER_SOURCE: &str = "
@@ -585,8 +626,10 @@ var texture_array: binding_array<texture_2d<f32>>;
 var sampler_array: binding_array<sampler>;
 
 struct Material {
+    base_color: vec4<f32>,
     base_texture_index: u32,
-    padding: vec3<u32>,
+    alpha_mode: i32,
+    alpha_cutoff: f32,
 }
 var<push_constant> material: Material;
 
@@ -620,14 +663,10 @@ fn vertex_main(vert: VertexInput) -> VertexOutput {
 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let object_color: vec4<f32> = vec4(in.color, 1.0);
-
-    let ambient_strength = 0.1;
-    let ambient_color = ambient_strength;
-
-    let result = (ambient_color) * object_color.rgb;
-
-    let offset = material.base_texture_index;
-    return textureSampleLevel(texture_array[offset], sampler_array[0], in.tex_coord, 0.0);
+    var color = textureSampleLevel(texture_array[material.base_texture_index], sampler_array[0], in.tex_coord, 0.0);
+    if material.alpha_mode == 1 && color.a < material.alpha_cutoff {
+        discard;
+    }
+    return color;
 }
 ";
