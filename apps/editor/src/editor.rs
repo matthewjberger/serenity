@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use serenity::{egui, nalgebra_glm, petgraph, winit};
 
 pub struct Editor {
@@ -41,6 +43,27 @@ impl Editor {
         );
     }
 
+    fn publish_new_world_command(&mut self) {
+        self.broker.publish(
+            &Topic::Command.to_string(),
+            Message::Command(Command::NewWorld),
+        );
+    }
+
+    fn publish_load_world_command(&mut self, path: &str) {
+        self.broker.publish(
+            &Topic::Command.to_string(),
+            Message::Command(Command::LoadWorld(path.to_string())),
+        );
+    }
+
+    fn publish_save_world_command(&mut self, path: &str) {
+        self.broker.publish(
+            &Topic::Command.to_string(),
+            Message::Command(Command::SaveWorld(path.to_string())),
+        );
+    }
+
     fn receive_messages(&mut self, context: &mut serenity::app::Context) {
         while let Some(message) = self.client.borrow().next_message() {
             match message {
@@ -49,8 +72,24 @@ impl Editor {
                         context.should_exit = true;
                     }
                     Command::ImportGltfFile(path) => {
-                        context.world = serenity::gltf::import_gltf(&path);
+                        let world = serenity::gltf::import_gltf(&path);
+                        context.world.merge_world(&world);
                         context.should_sync_renderer = true;
+                    }
+                    Command::NewWorld => {
+                        context.world = serenity::world::World::default();
+                        context.should_sync_renderer = true;
+                    }
+                    Command::LoadWorld(path) => {
+                        context.world =
+                            bincode::deserialize(&std::fs::read(&path).unwrap()).unwrap();
+                        context.should_sync_renderer = true;
+                    }
+                    Command::SaveWorld(path) => {
+                        std::fs::File::create(path)
+                            .unwrap()
+                            .write_all(&bincode::serialize(&context.world).unwrap())
+                            .unwrap();
                     }
                 },
                 Message::Toast(message) => {
@@ -68,21 +107,6 @@ impl Editor {
 }
 
 impl serenity::app::State for Editor {
-    fn initialize(&mut self, context: &mut serenity::app::Context) {
-        // TODO (matt) add materials to push constants
-
-        // has no textures
-        // context.world = serenity::gltf::import_gltf("resources/models/OrientationTest.glb");
-
-        // has a single texture
-        // context.world = serenity::gltf::import_gltf("resources/models/Lantern.glb");
-
-        // Has multiple textures
-        context.world = serenity::gltf::import_gltf("resources/models/DamagedHelmet.glb");
-
-        context.should_sync_renderer = true;
-    }
-
     fn receive_event(
         &mut self,
         _context: &mut serenity::app::Context,
@@ -122,6 +146,32 @@ impl serenity::app::State for Editor {
                 egui::menu::bar(ui, |ui| {
                     egui::global_dark_light_mode_switch(ui);
                     ui.menu_button("File", |ui| {
+                        if ui.button("New World...").clicked() {
+                            self.publish_new_world_command();
+                        }
+
+                        if ui.button("Load World...").clicked() {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("Serenity World", &["ser"])
+                                .pick_file()
+                            {
+                                self.publish_load_world_command(&path.display().to_string());
+                                ui.close_menu();
+                            }
+                        }
+
+                        if ui.button("Save World...").clicked() {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("Serenity World", &["ser"])
+                                .save_file()
+                            {
+                                self.publish_save_world_command(&path.display().to_string());
+                                ui.close_menu();
+                            }
+                        }
+
+                        ui.separator();
+
                         if ui.button("Import asset (gltf/glb)...").clicked() {
                             if let Some(path) = rfd::FileDialog::new()
                                 .add_filter("GLTF / GLB", &["gltf", "glb"])
@@ -188,7 +238,8 @@ impl serenity::app::State for Editor {
 
 fn camera_system(context: &mut serenity::app::Context) {
     let mut ubo_offset = 0;
-    context.world.scenes.iter().for_each(|scene| {
+    if let Some(scene_index) = context.world.default_scene_index {
+        let scene = &context.world.scenes[scene_index];
         scene.graph.node_indices().for_each(|graph_node_index| {
             let node_index = scene.graph[graph_node_index];
             let node = &context.world.nodes[node_index];
@@ -243,7 +294,7 @@ fn camera_system(context: &mut serenity::app::Context) {
             }
             ubo_offset += 1;
         });
-    });
+    }
 }
 
 #[derive(Default)]
@@ -326,6 +377,9 @@ impl std::fmt::Display for Topic {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Command {
     ImportGltfFile(String),
+    NewWorld,
+    LoadWorld(String),
+    SaveWorld(String),
     Exit,
 }
 

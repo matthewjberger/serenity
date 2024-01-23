@@ -162,7 +162,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         (meshes, vertices, indices)
     };
 
-    let (mut scenes, mut nodes, mut transforms) = {
+    let (scenes, nodes, transforms) = {
         let mut nodes = Vec::new();
         let mut transforms = Vec::new();
         let scenes = gltf
@@ -295,36 +295,13 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         })
         .collect::<Vec<_>>();
 
-    let mut cameras = gltf
+    let cameras = gltf
         .cameras()
         .map(crate::world::Camera::from)
         .collect::<Vec<_>>();
 
-    if scenes.is_empty() {
-        scenes.push(crate::world::Scene::default());
-    };
-
-    if cameras.is_empty() {
-        let transform_index = transforms.len();
-        transforms.push(crate::world::Transform::default());
-        let camera_index = cameras.len();
-        cameras.push(crate::world::Camera::default());
-        let node_index = nodes.len();
-        nodes.push(crate::world::Node {
-            transform_index,
-            camera_index: Some(camera_index),
-            mesh_index: None,
-            light_index: None,
-        });
-        let camera_graph_node_index = scenes[0].graph.add_node(node_index);
-        scenes[0].graph.add_edge(
-            petgraph::graph::NodeIndex::new(0),
-            camera_graph_node_index,
-            (),
-        );
-    }
-
     crate::world::World {
+        default_scene_index: if scenes.is_empty() { None } else { Some(0) },
         images,
         samplers,
         textures,

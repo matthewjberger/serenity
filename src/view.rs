@@ -205,14 +205,15 @@ impl WorldRender {
 
         let mut mesh_ubos = vec![DynamicUniform::default(); world.transforms.len()];
         let mut ubo_offset = 0;
-        world.scenes.iter().for_each(|scene| {
+        if let Some(scene_index) = world.default_scene_index {
+            let scene = &world.scenes[scene_index];
             scene.graph.node_indices().for_each(|graph_node_index| {
                 mesh_ubos[ubo_offset] = DynamicUniform {
                     model: world.global_transform(&scene.graph, graph_node_index),
                 };
                 ubo_offset += 1;
             });
-        });
+        }
         gpu.queue
             .write_buffer(&self.dynamic_uniform_buffer, 0, unsafe {
                 std::slice::from_raw_parts(
@@ -229,7 +230,8 @@ impl WorldRender {
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
         let mut ubo_offset = 0;
-        world.scenes.iter().for_each(|scene| {
+        if let Some(scene_index) = world.default_scene_index {
+            let scene = &world.scenes[scene_index];
             scene.graph.node_indices().for_each(|graph_node_index| {
                 let node_index = scene.graph[graph_node_index];
                 let node = &world.nodes[node_index];
@@ -275,7 +277,7 @@ impl WorldRender {
                 }
                 ubo_offset += 1;
             });
-        });
+        }
     }
 }
 

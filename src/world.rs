@@ -1,5 +1,6 @@
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct World {
+    pub default_scene_index: Option<usize>,
     pub animations: Vec<Animation>,
     pub cameras: Vec<Camera>,
     pub images: Vec<Image>,
@@ -15,7 +16,156 @@ pub struct World {
     pub vertices: Vec<Vertex>,
 }
 
+impl Default for World {
+    fn default() -> Self {
+        let mut world = Self {
+            default_scene_index: None,
+            animations: Vec::new(),
+            cameras: Vec::new(),
+            images: Vec::new(),
+            indices: Vec::new(),
+            materials: Vec::new(),
+            meshes: Vec::new(),
+            nodes: Vec::new(),
+            samplers: Vec::new(),
+            scenes: Vec::new(),
+            skins: Vec::new(),
+            textures: Vec::new(),
+            transforms: Vec::new(),
+            vertices: Vec::new(),
+        };
+
+        world.scenes.push(Scene::default());
+        world.default_scene_index = Some(0);
+
+        world.transforms.push(crate::world::Transform::default());
+        world.cameras.push(crate::world::Camera::default());
+        world.nodes.push(crate::world::Node {
+            transform_index: 0,
+            camera_index: Some(0),
+            mesh_index: None,
+            light_index: None,
+        });
+
+        let graph = &mut world.scenes[0].graph;
+        let camera_graph_node_index = graph.add_node(0);
+        graph.add_edge(
+            petgraph::graph::NodeIndex::new(0),
+            camera_graph_node_index,
+            (),
+        );
+
+        world.images.push(Image {
+            pixels: vec![1, 0, 0, 1],
+            format: ImageFormat::R8G8B8A8,
+            width: 1,
+            height: 1,
+        });
+        world.samplers.push(Sampler::default());
+        world.textures.push(Texture {
+            image_index: 0,
+            sampler_index: Some(0),
+        });
+
+        world
+    }
+}
+
 impl World {
+    pub fn merge_world(&mut self, world: &World) {
+        // let transform_offset = self.transforms.len();
+        // let mesh_offset = self.meshes.len();
+        // let material_offset = self.materials.len();
+        // let image_offset = self.images.len();
+        // let texture_offset = self.textures.len();
+        // let sampler_offset = self.samplers.len();
+        // let vertex_offset = self.vertices.len();
+        // let index_offset = self.indices.len();
+        // let camera_offset = self.cameras.len();
+        // let node_offset = self.nodes.len();
+
+        // world.animations.iter().cloned().for_each(|animation| {
+        //     let mut animation = animation.clone();
+        //     animation.channels.iter_mut().for_each(|channel| {
+        //         channel.target_node_index += node_offset;
+        //     });
+        //     self.animations.push(animation);
+        // });
+
+        // world.cameras.iter().cloned().for_each(|camera| {
+        //     self.cameras.push(camera);
+        // });
+
+        // world.images.iter().cloned().for_each(|image| {
+        //     self.images.push(image);
+        // });
+
+        // world
+        //     .indices
+        //     .iter()
+        //     .cloned()
+        //     .for_each(|index| self.indices.push(index + vertex_offset as u32));
+
+        // world.materials.iter().cloned().for_each(|material| {
+        //     let mut material = material.clone();
+        //     material.base_color_texture_index = material.base_color_texture_index + texture_offset;
+        //     self.materials.push(material);
+        // });
+
+        // world.meshes.iter().for_each(|mesh| {
+        //     let mut mesh = mesh.clone();
+        //     mesh.primitives.iter_mut().for_each(|primitive| {
+        //         primitive.vertex_offset += vertex_offset;
+        //         primitive.index_offset += index_offset;
+        //         primitive.material_index = primitive.material_index.map(|i| i + material_offset);
+        //     });
+        //     self.meshes.push(mesh);
+        // });
+
+        // world.nodes.iter().cloned().for_each(|node| {
+        //     let mut node = node.clone();
+        //     node.transform_index += transform_offset;
+        //     node.mesh_index = node.mesh_index.map(|i| i + mesh_offset);
+        //     node.camera_index = node.camera_index.map(|i| i + camera_offset);
+        //     self.nodes.push(node);
+        // });
+
+        // world.samplers.iter().cloned().for_each(|sampler| {
+        //     self.samplers.push(sampler);
+        // });
+
+        // world.scenes.iter().for_each(|scene| {
+        //     scene.graph.node_indices().for_each(|graph_node_index| {
+        //         let mut scene = scene.clone();
+        //         scene.graph[graph_node_index] += node_offset;
+        //         self.scenes.push(scene);
+        //     });
+        // });
+
+        // world.skins.iter().cloned().for_each(|skin| {
+        //     let mut skin = skin.clone();
+        //     skin.joints.iter_mut().for_each(|joint| {
+        //         joint.target_node_index += node_offset;
+        //     });
+        //     self.skins.push(skin);
+        // });
+
+        // world.textures.iter().for_each(|texture| {
+        //     let mut texture = texture.clone();
+        //     texture.image_index += image_offset;
+        //     texture.sampler_index = texture.sampler_index.map(|i| i + sampler_offset);
+        //     self.textures.push(texture);
+        // });
+
+        // world.transforms.iter().cloned().for_each(|transform| {
+        //     self.transforms.push(transform);
+        // });
+
+        // world.vertices.iter().cloned().for_each(|vertex| {
+        //     self.vertices.push(vertex);
+        // });
+    }
+
     pub fn global_transform(
         &self,
         scenegraph: &SceneGraph,
