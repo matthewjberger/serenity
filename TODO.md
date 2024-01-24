@@ -59,3 +59,27 @@
 ## Meshes
 
 - Mesh draw commands are looked up using a string that is just the name of the node, this should be something more unique
+
+* Editor commands for manipulating world objects
+* Ability to add meshes
+* skybox
+* infinite grid shader
+* 3D picking of objects
+  * simple collision shapes in world
+  * raycast queries can use the shapes in the world
+* add left panel scene tree
+* add inspector for current node
+* add debug instanced lines
+  * position and color
+* add bounding boxes
+* render bounding boxes with the debug instanced line renderer
+* add billboards
+* add gpu instancing, add Instance data to world and sync it with gpu when rendering
+* add framegraph
+* add shader editor to apply live shader changes
+* add ability to click and swap out textures
+* view textures in editor
+* allow swapping out meshes
+* allow dropping into the game at will like unity play button
+  * this will be a top-level state for the engine
+  * affects what is visible, enabled, and which cameras are used
