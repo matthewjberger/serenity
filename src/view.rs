@@ -20,7 +20,7 @@ impl WorldRender {
         let (dynamic_uniform_buffer, dynamic_uniform_bind_group_layout, dynamic_uniform_bind_group) =
             create_dynamic_uniform(gpu, world.transforms.len() as _);
 
-        let samplers = world
+        let mut samplers = world
             .samplers
             .iter()
             .map(|sampler| {
@@ -72,7 +72,7 @@ impl WorldRender {
             })
             .collect::<Vec<_>>();
 
-        let textures = world
+        let mut textures = world
             .textures
             .iter()
             .map(|texture| {
@@ -111,6 +111,55 @@ impl WorldRender {
                 texture
             })
             .collect::<Vec<_>>();
+
+        if textures.is_empty() {
+            let image = crate::world::Image {
+                width: 1,
+                height: 1,
+                pixels: vec![0x00, 0xFF, 0xFF, 0x00],
+                format: crate::world::ImageFormat::R8G8B8A8,
+            };
+            let size = wgpu::Extent3d {
+                width: image.width,
+                height: image.height,
+                depth_or_array_layers: 1,
+            };
+            let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                // TODO: map these formats
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            gpu.queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    aspect: wgpu::TextureAspect::All,
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                },
+                &image.pixels,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(image.width * 4),
+                    rows_per_image: Some(image.height),
+                },
+                size,
+            );
+            textures.push(texture);
+        }
+
+        if samplers.is_empty() {
+            samplers.push(
+                gpu.device
+                    .create_sampler(&wgpu::SamplerDescriptor::default()),
+            );
+        }
+
         let (texture_array_bind_group, texture_array_bind_group_layout) = {
             let texture_array_bind_group_layout =
                 gpu.device
@@ -264,28 +313,36 @@ impl WorldRender {
                         let mesh = &world.meshes[mesh_index];
 
                         for primitive in mesh.primitives.iter() {
-                            let material_index = match primitive.material_index {
-                                Some(material_index) => material_index,
-                                None => 0, // TODO: use a default material here (prototyping texture)
-                            };
-                            let material = &world.materials[material_index];
+                            let mut shader_material = Material::default();
 
-                            if material.alpha_mode != *alpha_mode {
-                                continue;
-                            }
-
-                            let shader_material = Material {
-                                base_color: material.base_color_factor,
-                                base_texture_index: material.base_color_texture_index as _,
-                                alpha_mode: material.alpha_mode as _,
-                                alpha_cutoff: material.alpha_cutoff.unwrap_or(0.5),
-                                ..Default::default()
+                            match primitive.material_index {
+                                Some(material_index) => {
+                                    let material = &world.materials[material_index];
+                                    if material.alpha_mode != *alpha_mode {
+                                        continue;
+                                    }
+                                    shader_material.base_color = material.base_color_factor;
+                                    shader_material.base_texture_index =
+                                        material.base_color_texture_index as _;
+                                    shader_material.alpha_mode = material.alpha_mode as _;
+                                    shader_material.alpha_cutoff =
+                                        material.alpha_cutoff.unwrap_or(0.5);
+                                }
+                                None => {
+                                    shader_material.base_color =
+                                        nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0);
+                                    shader_material.base_texture_index = -1;
+                                    shader_material.alpha_mode = 0;
+                                    shader_material.alpha_cutoff = 0.5;
+                                }
                             };
+
                             render_pass.set_push_constants(
                                 wgpu::ShaderStages::VERTEX_FRAGMENT,
                                 0,
                                 bytemuck::cast_slice(&[shader_material]),
                             );
+
                             if primitive.number_of_indices > 0 {
                                 let index_offset = primitive.index_offset as u32;
                                 let number_of_indices =
@@ -595,12 +652,25 @@ pub struct DynamicUniform {
 }
 
 #[repr(C)]
-#[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Material {
-    base_color: nalgebra_glm::Vec4,
-    base_texture_index: u32,
-    alpha_mode: i32,
-    alpha_cutoff: f32,
+    pub base_color: nalgebra_glm::Vec4,
+    pub base_texture_index: i32,
+    pub alpha_mode: i32,
+    pub alpha_cutoff: f32,
+    pub sampler_index: i32,
+}
+
+impl Default for Material {
+    fn default() -> Self {
+        Self {
+            base_color: nalgebra_glm::vec4(0.0, 1.0, 0.0, 1.0),
+            base_texture_index: -1,
+            alpha_mode: 0,
+            alpha_cutoff: 0.5,
+            sampler_index: 0,
+        }
+    }
 }
 
 const SHADER_SOURCE: &str = "
@@ -627,9 +697,10 @@ var sampler_array: binding_array<sampler>;
 
 struct Material {
     base_color: vec4<f32>,
-    base_texture_index: u32,
+    base_texture_index: i32,
     alpha_mode: i32,
     alpha_cutoff: f32,
+    sampler_index: i32,
 }
 var<push_constant> material: Material;
 
@@ -663,7 +734,10 @@ fn vertex_main(vert: VertexInput) -> VertexOutput {
 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var color = textureSampleLevel(texture_array[material.base_texture_index], sampler_array[0], in.tex_coord, 0.0);
+    var color = vec4(in.color, 1.0);
+    if material.base_texture_index > -1 {
+        color *= textureSampleLevel(texture_array[material.base_texture_index], sampler_array[material.sampler_index], in.tex_coord, 0.0);
+    } 
     if material.alpha_mode == 1 && color.a < material.alpha_cutoff {
         discard;
     }
