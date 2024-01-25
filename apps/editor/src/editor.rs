@@ -1,9 +1,9 @@
-use serenity::{egui, nalgebra_glm, petgraph, winit};
+use serenity::{egui, nalgebra_glm, petgraph, winit, world::NodeMetadata};
 
 pub struct Editor {
     broker: Broker,
     client: ClientHandle,
-    _selected: Option<petgraph::graph::NodeIndex>,
+    selected: Option<petgraph::graph::NodeIndex>,
     console_history: Vec<String>,
     console_command: String,
     toasts: egui_toast::Toasts,
@@ -19,7 +19,7 @@ impl Editor {
         Self {
             broker,
             client,
-            _selected: None,
+            selected: None,
             console_history: vec!["Welcome to the Serenity editor!".to_string()],
             console_command: "Type /help for more commands.".to_string(),
             toasts: egui_toast::Toasts::new()
@@ -115,7 +115,7 @@ impl serenity::app::State for Editor {
         camera_system(context);
     }
 
-    fn ui(&mut self, _context: &mut serenity::app::Context, ui_context: &mut egui::Context) {
+    fn ui(&mut self, context: &mut serenity::app::Context, ui_context: &mut egui::Context) {
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .show(ui_context, |ui| {
@@ -147,6 +147,29 @@ impl serenity::app::State for Editor {
                         }
                     });
                 });
+            });
+
+        egui::SidePanel::left("left_panel")
+            .resizable(true)
+            .show(ui_context, |ui| {
+                ui.set_width(ui.available_width());
+                ui.heading("Scene Tree");
+                if let Some(scene) = context.world.scenes.get(0) {
+                    ui.group(|ui| {
+                        egui::ScrollArea::vertical()
+                            .id_source(ui.next_auto_id())
+                            .show(ui, |ui| {
+                                node_ui(
+                                    &context.world,
+                                    ui,
+                                    &scene.graph,
+                                    0.into(),
+                                    &mut self.selected,
+                                );
+                            });
+                    });
+                    ui.allocate_space(ui.available_size());
+                }
             });
 
         egui::Window::new("Console")
@@ -333,4 +356,34 @@ pub enum Command {
 pub enum Message {
     Command(Command),
     Toast(String),
+}
+
+fn node_ui(
+    world: &serenity::world::World,
+    ui: &mut egui::Ui,
+    graph: &serenity::world::SceneGraph,
+    graph_node_index: petgraph::graph::NodeIndex,
+    selected_graph_node_index: &mut Option<petgraph::graph::NodeIndex>,
+) {
+    let id = ui.make_persistent_id(ui.next_auto_id());
+    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+        .show_header(ui, |ui| {
+            let node_index = graph[graph_node_index];
+            let NodeMetadata { name } = &world.metadata[node_index];
+            let selected = selected_graph_node_index
+                .as_ref()
+                .map(|index| *index == graph_node_index)
+                .unwrap_or_default();
+            let response = ui.selectable_label(selected, format!("🔴 {name}"));
+            if response.clicked() {
+                *selected_graph_node_index = Some(graph_node_index);
+            }
+        })
+        .body(|ui| {
+            graph
+                .neighbors_directed(graph_node_index, petgraph::Direction::Outgoing)
+                .for_each(|child_index| {
+                    node_ui(world, ui, graph, child_index, selected_graph_node_index);
+                });
+        });
 }

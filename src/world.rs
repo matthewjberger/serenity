@@ -8,6 +8,7 @@ pub struct World {
     pub materials: Vec<Material>,
     pub meshes: Vec<Mesh>,
     pub nodes: Vec<Node>,
+    pub metadata: Vec<NodeMetadata>,
     pub samplers: Vec<Sampler>,
     pub scenes: Vec<Scene>,
     pub skins: Vec<Skin>,
@@ -399,10 +400,16 @@ pub struct Primitive {
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Node {
+    pub metadata_index: usize,
     pub transform_index: usize,
     pub camera_index: Option<usize>,
     pub mesh_index: Option<usize>,
     pub light_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NodeMetadata {
+    pub name: String,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

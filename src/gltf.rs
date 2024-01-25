@@ -164,9 +164,10 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         (meshes, vertices, indices)
     };
 
-    let (mut scenes, mut nodes, mut transforms) = {
+    let (mut scenes, mut nodes, mut transforms, mut metadata) = {
         let mut nodes = Vec::new();
         let mut transforms = Vec::new();
+        let mut metadata = Vec::new();
         let scenes = gltf
             .scenes()
             .map(|gltf_scene| {
@@ -176,11 +177,19 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                     scene: &mut crate::world::Scene,
                     nodes: &mut Vec<crate::world::Node>,
                     transforms: &mut Vec<crate::world::Transform>,
+                    metadata: &mut Vec<crate::world::NodeMetadata>,
                 ) {
                     let transform_index = transforms.len();
                     transforms.push(crate::world::Transform::from(node.transform().decomposed()));
+
+                    let metadata_index = metadata.len();
+                    metadata.push(crate::world::NodeMetadata {
+                        name: node.name().unwrap_or("Node").to_string(),
+                    });
+
                     let node_index = nodes.len();
                     nodes.push(crate::world::Node {
+                        metadata_index,
                         transform_index,
                         camera_index: node.camera().map(|camera| camera.index()),
                         mesh_index: node.mesh().map(|mesh| mesh.index()),
@@ -195,20 +204,32 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                         }
                     }
                     node.children().for_each(|child| {
-                        visit_node(Some(graph_node_index), &child, scene, nodes, transforms);
+                        visit_node(
+                            Some(graph_node_index),
+                            &child,
+                            scene,
+                            nodes,
+                            transforms,
+                            metadata,
+                        );
                     });
                 }
 
                 let mut scene = crate::world::Scene::default();
-
                 gltf_scene.nodes().for_each(|root_node| {
-                    visit_node(None, &root_node, &mut scene, &mut nodes, &mut transforms);
+                    visit_node(
+                        None,
+                        &root_node,
+                        &mut scene,
+                        &mut nodes,
+                        &mut transforms,
+                        &mut metadata,
+                    );
                 });
-
                 scene
             })
             .collect::<Vec<_>>();
-        (scenes, nodes, transforms)
+        (scenes, nodes, transforms, metadata)
     };
 
     let skins = gltf
@@ -314,15 +335,24 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     if cameras.is_empty() {
         let transform_index = transforms.len();
         transforms.push(crate::world::Transform::default());
+
+        let metadata_index = transforms.len();
+        metadata.push(crate::world::NodeMetadata {
+            name: "Default Camera".to_string(),
+        });
+
         let camera_index = cameras.len();
         cameras.push(crate::world::Camera::default());
+
         let node_index = nodes.len();
         nodes.push(crate::world::Node {
             transform_index,
+            metadata_index,
             camera_index: Some(camera_index),
             mesh_index: None,
             light_index: None,
         });
+
         let camera_graph_node_index = scenes[0].graph.add_node(node_index);
         scenes[0].graph.add_edge(
             petgraph::graph::NodeIndex::new(0),
@@ -340,6 +370,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         materials,
         meshes,
         nodes,
+        metadata,
         samplers,
         scenes,
         skins,
