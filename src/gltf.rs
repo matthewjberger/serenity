@@ -297,6 +297,11 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         })
         .collect::<Vec<_>>();
 
+    let lights = match gltf.lights() {
+        Some(lights) => lights.into_iter().map(crate::world::Light::from).collect(),
+        None => vec![],
+    };
+
     let mut cameras = gltf
         .cameras()
         .map(crate::world::Camera::from)
@@ -327,19 +332,20 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     }
 
     crate::world::World {
-        images,
-        samplers,
-        textures,
-        materials,
-        meshes,
-        vertices,
-        indices,
         animations,
         cameras,
+        images,
+        indices,
+        lights,
+        materials,
+        meshes,
         nodes,
+        samplers,
         scenes,
         skins,
+        textures,
         transforms,
+        vertices,
     }
 }
 

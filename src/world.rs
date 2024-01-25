@@ -4,6 +4,7 @@ pub struct World {
     pub cameras: Vec<Camera>,
     pub images: Vec<Image>,
     pub indices: Vec<u32>,
+    pub lights: Vec<Light>,
     pub materials: Vec<Material>,
     pub meshes: Vec<Mesh>,
     pub nodes: Vec<Node>,
