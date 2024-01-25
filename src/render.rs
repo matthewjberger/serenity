@@ -2,6 +2,7 @@ pub struct Renderer {
     pub gpu: crate::gpu::Gpu,
     pub gui: crate::gui::Gui,
     pub view: Option<crate::view::WorldRender>,
+    pub debug: crate::debug::DebugRender,
     pub depth_texture_view: wgpu::TextureView,
 }
 
@@ -18,10 +19,12 @@ impl Renderer {
         let depth_texture_view =
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
         let gui = crate::gui::Gui::new(&window, &gpu, scale_factor);
+        let quad = crate::debug::DebugRender::new(&gpu);
         Self {
             gpu,
             gui,
             view: None,
+            debug: quad,
             depth_texture_view,
         }
     }
@@ -114,6 +117,9 @@ impl Renderer {
                     stencil_ops: None,
                 }),
             });
+
+            self.debug
+                .render(&mut render_pass, &self.gpu, &context.world);
 
             if let Some(view) = self.view.as_mut() {
                 view.render(&mut render_pass, &self.gpu, &context.world);

@@ -1,4 +1,5 @@
 pub mod app;
+pub mod debug;
 pub mod gltf;
 pub mod gpu;
 pub mod gui;
