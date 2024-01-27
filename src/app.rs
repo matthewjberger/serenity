@@ -7,6 +7,7 @@ pub struct Context {
     pub should_exit: bool,
     pub should_reload_view: bool,
     pub physics_enabled: bool,
+    pub gui_visible: bool,
 }
 
 pub fn window_aspect_ratio(window: &winit::window::Window) -> f32 {
@@ -54,6 +55,7 @@ impl App {
             should_exit: false,
             should_reload_view: false,
             physics_enabled: false,
+            gui_visible: true,
         };
 
         Self {
@@ -141,7 +143,9 @@ impl App {
                     context.world.step_physics(context.delta_time as f32);
                 }
                 renderer.render_frame(&mut context, |context, ui| {
-                    state.ui(context, ui);
+                    if context.gui_visible {
+                        state.ui(context, ui);
+                    }
                 });
             }
         });

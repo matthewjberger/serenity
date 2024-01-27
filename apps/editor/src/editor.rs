@@ -341,6 +341,11 @@ impl serenity::app::State for Editor {
                     self.redo_stack.push(command);
                 }
             }
+            if let (winit::event::VirtualKeyCode::H, winit::event::ElementState::Pressed, true) =
+                (keycode, state, left_ctrl_down)
+            {
+                context.gui_visible = !context.gui_visible;
+            }
         }
     }
 
@@ -585,10 +590,6 @@ fn camera_system(context: &mut serenity::app::Context) {
                         .pan(&(context.io.mouse.position_delta * context.delta_time as f32));
                 }
                 transform.translation = camera.orientation.position();
-                if context.io.is_key_pressed(winit::event::VirtualKeyCode::H) {
-                    transform.translation = nalgebra_glm::Vec3::new(1.0, 1.0, 1.0) * 4.0;
-                    camera.orientation.offset = nalgebra_glm::Vec3::new(0.0, 0.0, 0.0);
-                }
                 if context.io.mouse.is_right_clicked {
                     let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
                     delta.x *= -1.0;
