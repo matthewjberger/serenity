@@ -123,7 +123,7 @@ impl DebugRender {
         world: &crate::world::World,
     ) {
         let (camera_position, projection, view) =
-            crate::view::create_camera_matrices(world, &world.scenes[0], gpu.aspect_ratio())
+            crate::world::create_camera_matrices(world, &world.scenes[0], gpu.aspect_ratio())
                 .unwrap_or_default();
         gpu.queue.write_buffer(
             &self.uniform_buffer,

@@ -255,7 +255,8 @@ impl WorldRender {
         world: &crate::world::World,
     ) {
         let (camera_position, projection, view) =
-            create_camera_matrices(world, &world.scenes[0], gpu.aspect_ratio()).unwrap_or_default();
+            crate::world::create_camera_matrices(world, &world.scenes[0], gpu.aspect_ratio())
+                .unwrap_or_default();
         gpu.queue.write_buffer(
             &self.uniform_buffer,
             0,
@@ -268,14 +269,15 @@ impl WorldRender {
 
         let mut mesh_ubos = vec![DynamicUniform::default(); world.transforms.len()];
         let mut ubo_offset = 0;
-        world.scenes.iter().for_each(|scene| {
+        if let Some(scene_index) = world.default_scene_index {
+            let scene = &world.scenes[scene_index];
             scene.graph.node_indices().for_each(|graph_node_index| {
                 mesh_ubos[ubo_offset] = DynamicUniform {
                     model: world.global_transform(&scene.graph, graph_node_index),
                 };
                 ubo_offset += 1;
             });
-        });
+        }
         gpu.queue
             .write_buffer(&self.dynamic_uniform_buffer, 0, unsafe {
                 std::slice::from_raw_parts(
@@ -303,7 +305,8 @@ impl WorldRender {
                 crate::world::AlphaMode::Blend => render_pass.set_pipeline(&self.blend_pipeline),
             }
             let mut ubo_offset = 0;
-            world.scenes.iter().for_each(|scene| {
+            if let Some(scene_index) = world.default_scene_index {
+                let scene = &world.scenes[scene_index];
                 scene.graph.node_indices().for_each(|graph_node_index| {
                     let node_index = scene.graph[graph_node_index];
                     let node = &world.nodes[node_index];
@@ -365,7 +368,7 @@ impl WorldRender {
                     }
                     ubo_offset += 1;
                 });
-            });
+            }
         }
     }
 }
@@ -459,43 +462,6 @@ fn create_uniform(gpu: &crate::gpu::Gpu) -> (wgpu::Buffer, wgpu::BindGroupLayout
         uniform_bind_group_layout,
         uniform_bind_group,
     )
-}
-
-pub fn create_camera_matrices(
-    world: &crate::world::World,
-    scene: &crate::world::Scene,
-    aspect_ratio: f32,
-) -> Option<(nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4)> {
-    let mut result = None;
-
-    for graph_node_index in scene.graph.node_indices() {
-        let node_index = scene.graph[graph_node_index];
-        let node = &world.nodes[node_index];
-        if let Some(camera_index) = node.camera_index {
-            let transform = &world.transforms[node.transform_index];
-            let camera = &world.cameras[camera_index];
-            result = Some((
-                // TODO: later this will need to be the translation of the global transform,
-                //       need to be able to aggregate transforms without turning them in to glm::Mat4 first
-                transform.translation,
-                camera.projection_matrix(aspect_ratio),
-                {
-                    let eye = transform.translation;
-                    let target = eye
-                        + nalgebra_glm::quat_rotate_vec3(
-                            &transform.rotation.normalize(),
-                            &(-nalgebra_glm::Vec3::z()),
-                        );
-                    let up = nalgebra_glm::quat_rotate_vec3(
-                        &transform.rotation.normalize(),
-                        &nalgebra_glm::Vec3::y(),
-                    );
-                    nalgebra_glm::look_at(&eye, &target, &up)
-                },
-            ));
-        }
-    }
-    result
 }
 
 fn create_geometry_buffers(
@@ -734,13 +700,18 @@ fn vertex_main(vert: VertexInput) -> VertexOutput {
 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var color = vec4(in.color, 1.0);
+    var base_color = material.base_color;
+
     if material.base_texture_index > -1 {
-        color *= textureSampleLevel(texture_array[material.base_texture_index], sampler_array[material.sampler_index], in.tex_coord, 0.0);
+        base_color *= textureSampleLevel(texture_array[material.base_texture_index], sampler_array[material.sampler_index], in.tex_coord, 0.0);
     } 
-    if material.alpha_mode == 1 && color.a < material.alpha_cutoff {
+
+    if material.alpha_mode == 1 && base_color.a < material.alpha_cutoff {
         discard;
     }
-    return color;
+
+    var color = base_color.rgb * in.color;
+
+    return vec4(color, base_color.a);
 }
 ";

@@ -1,4 +1,8 @@
-use serenity::{egui, nalgebra_glm, petgraph, winit, world::NodeMetadata};
+use serenity::{
+    egui, nalgebra_glm, petgraph,
+    winit::{self, dpi::PhysicalSize},
+    world::NodeMetadata,
+};
 
 pub struct Editor {
     broker: Broker,
@@ -8,6 +12,9 @@ pub struct Editor {
     console_command: String,
     toasts: egui_toast::Toasts,
     gizmo_mode: egui_gizmo::GizmoMode,
+    command_history: std::collections::VecDeque<Command>,
+    redo_stack: Vec<Command>,
+    uniform_scaling: bool,
 }
 
 impl Editor {
@@ -26,7 +33,15 @@ impl Editor {
                 .anchor(egui::Align2::RIGHT_BOTTOM, (-10.0, -10.0))
                 .direction(egui::Direction::BottomUp),
             gizmo_mode: egui_gizmo::GizmoMode::Translate,
+            command_history: std::collections::VecDeque::new(),
+            redo_stack: Vec::new(),
+            uniform_scaling: true,
         }
+    }
+
+    fn publish_undo_message(&mut self, command: Command) {
+        self.broker
+            .publish(&Topic::Command.to_string(), Message::Undo(command));
     }
 
     fn publish_exit_command(&mut self) {
@@ -41,18 +56,80 @@ impl Editor {
         );
     }
 
+    fn publish_command(&mut self, command: Command) {
+        self.broker
+            .publish(&Topic::Command.to_string(), Message::Command(command));
+    }
+
+    fn publish_translate_command(&mut self, node_index: usize, x: f32, y: f32, z: f32) {
+        self.broker.publish(
+            &Topic::Command.to_string(),
+            Message::Command(Command::Translate(node_index, x, y, z)),
+        );
+    }
+
+    #[allow(dead_code)]
+    fn publish_rotate_command(&mut self, node_index: usize, pitch: f32, yaw: f32, roll: f32) {
+        self.broker.publish(
+            &Topic::Command.to_string(),
+            Message::Command(Command::Rotate(node_index, pitch, yaw, roll)),
+        );
+    }
+
+    fn publish_scale_command(&mut self, node_index: usize, x: f32, y: f32, z: f32) {
+        self.broker.publish(
+            &Topic::Command.to_string(),
+            Message::Command(Command::Scale(node_index, x, y, z)),
+        );
+    }
+
     fn receive_messages(&mut self, context: &mut serenity::app::Context) {
         while let Some(message) = self.client.borrow().next_message() {
             match message {
-                Message::Command(command) => match command {
-                    Command::Exit => {
-                        context.should_exit = true;
+                Message::Command(command) => {
+                    self.command_history.push_back(command.clone());
+                    // arbitrary command history capacity
+                    if self.command_history.len() == 10_000 {
+                        self.command_history.pop_front(); // Remove the oldest element
                     }
-                    Command::ImportGltfFile(path) => {
-                        context.world = serenity::gltf::import_gltf(&path);
-                        context.should_sync_renderer = true;
+                    match command {
+                        Command::Exit => {
+                            context.should_exit = true;
+                        }
+                        Command::ImportGltfFile(path) => {
+                            context.world = serenity::gltf::import_gltf(&path);
+                            context.should_reload_view = true;
+                            self.selected = None;
+                            self.redo_stack = Vec::new();
+                            self.command_history = std::collections::VecDeque::new();
+
+                            add_rigid_body_to_first_node(context);
+                        }
+                        Command::Translate(node_index, x, y, z) => {
+                            translate_node(context, node_index, x, y, z);
+                        }
+                        Command::Rotate(node_index, pitch, yaw, roll) => {
+                            rotate_node(context, node_index, pitch, yaw, roll);
+                        }
+                        Command::Scale(node_index, x, y, z) => {
+                            scale_node(context, node_index, x, y, z);
+                        }
                     }
+                }
+
+                Message::Undo(command) => match command {
+                    Command::Translate(node_index, x, y, z) => {
+                        translate_node(context, node_index, -x, -y, -z);
+                    }
+                    Command::Rotate(node_index, pitch, yaw, roll) => {
+                        rotate_node(context, node_index, -pitch, -yaw, -roll);
+                    }
+                    Command::Scale(node_index, x, y, z) => {
+                        scale_node(context, node_index, -x, -y, -z);
+                    }
+                    _ => {}
                 },
+
                 Message::Toast(message) => {
                     self.toasts.add(egui_toast::Toast {
                         text: message.into(),
@@ -65,27 +142,148 @@ impl Editor {
             }
         }
     }
+
+    fn inspector_transform_grid_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        transform: &serenity::world::Transform,
+        node_index: usize,
+    ) {
+        ui.label("Translation");
+        ui.label("X");
+        ui.label("Y");
+        ui.label("Z");
+        ui.end_row();
+
+        let (mut translation_x, mut translation_y, mut translation_z) = (
+            transform.translation.x,
+            transform.translation.y,
+            transform.translation.z,
+        );
+        ui.label("");
+        ui.add(egui::DragValue::new(&mut translation_x).speed(0.1));
+        ui.add(egui::DragValue::new(&mut translation_y).speed(0.1));
+        ui.add(egui::DragValue::new(&mut translation_z).speed(0.1));
+        ui.end_row();
+        if translation_x != transform.translation.x
+            || translation_y != transform.translation.y
+            || translation_z != transform.translation.z
+        {
+            self.publish_translate_command(
+                node_index,
+                translation_x - transform.translation.x,
+                translation_y - transform.translation.y,
+                translation_z - transform.translation.z,
+            );
+        }
+
+        ui.label("Scale");
+        ui.label("X");
+        ui.label("Y");
+        ui.label("Z");
+        ui.checkbox(&mut self.uniform_scaling, "Uniform");
+        ui.end_row();
+        let (mut scale_x, mut scale_y, mut scale_z) =
+            (transform.scale.x, transform.scale.y, transform.scale.z);
+        ui.label("");
+        let mut uniform_scale = 0.0;
+        if ui
+            .add(egui::DragValue::new(&mut scale_x).speed(0.1))
+            .changed()
+        {
+            uniform_scale = scale_x - transform.scale.x;
+        }
+        if ui
+            .add(egui::DragValue::new(&mut scale_y).speed(0.1))
+            .changed()
+        {
+            uniform_scale = scale_y - transform.scale.y;
+        }
+        if ui
+            .add(egui::DragValue::new(&mut scale_z).speed(0.1))
+            .changed()
+        {
+            uniform_scale = scale_z - transform.scale.z;
+        }
+        ui.end_row();
+
+        if scale_x != transform.scale.x
+            || scale_y != transform.scale.y
+            || scale_z != transform.scale.z
+        {
+            if self.uniform_scaling {
+                self.publish_scale_command(node_index, uniform_scale, uniform_scale, uniform_scale);
+            } else {
+                self.publish_scale_command(
+                    node_index,
+                    scale_x - transform.scale.x,
+                    scale_y - transform.scale.y,
+                    scale_z - transform.scale.z,
+                );
+            }
+        }
+    }
+}
+
+// TODO: remove this, it's for testing purposes
+fn add_rigid_body_to_first_node(context: &mut serenity::app::Context) {
+    // TODO: remove this
+    // Add physics to first available node
+    if let Some(scene_index) = context.world.default_scene_index {
+        let scene = &context.world.scenes[scene_index];
+        if let Some(graph_node_index) = scene.graph.node_indices().next() {
+            let node_index = scene.graph[graph_node_index];
+            let node = &mut context.world.nodes[node_index];
+            let rigid_body_index = context
+                .world
+                .physics
+                .add_rigid_body(nalgebra_glm::Vec3::new(0.0, 0.0, 0.0));
+            node.rigid_body_index = Some(rigid_body_index);
+        }
+    }
+}
+
+fn translate_node(context: &mut serenity::app::Context, node_index: usize, x: f32, y: f32, z: f32) {
+    let transform_index = context.world.nodes[node_index].transform_index;
+    let transform = &mut context.world.transforms[transform_index];
+    transform.translation.x += x;
+    transform.translation.y += y;
+    transform.translation.z += z;
+}
+
+fn rotate_node(
+    context: &mut serenity::app::Context,
+    node_index: usize,
+    pitch: f32,
+    yaw: f32,
+    roll: f32,
+) {
+    let transform_index = context.world.nodes[node_index].transform_index;
+    let transform = &mut context.world.transforms[transform_index];
+    let x_quat = nalgebra_glm::quat_angle_axis(pitch, &nalgebra_glm::Vec3::x_axis());
+    let y_quat = nalgebra_glm::quat_angle_axis(yaw, &nalgebra_glm::Vec3::y_axis());
+    let z_quat = nalgebra_glm::quat_angle_axis(roll, &nalgebra_glm::Vec3::z_axis());
+    transform.rotation = x_quat * y_quat * z_quat * transform.rotation;
+}
+
+fn scale_node(context: &mut serenity::app::Context, node_index: usize, x: f32, y: f32, z: f32) {
+    let transform_index = context.world.nodes[node_index].transform_index;
+    let transform = &mut context.world.transforms[transform_index];
+    transform.scale.x += x;
+    transform.scale.y += y;
+    transform.scale.z += z;
 }
 
 impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        // TODO (matt) add materials to push constants
-
-        // has no textures
-        // context.world = serenity::gltf::import_gltf("resources/models/OrientationTest.glb");
-
-        // has a single texture
-        // context.world = serenity::gltf::import_gltf("resources/models/Lantern.glb");
-
-        // Has multiple textures
-        context.world = serenity::gltf::import_gltf("resources/models/DamagedHelmet.glb");
-
-        context.should_sync_renderer = true;
+        context.world = serenity::gltf::import_gltf("resources/models/Lantern.glb");
+        context.should_reload_view = true;
+        add_rigid_body_to_first_node(context);
     }
 
     fn receive_event(
         &mut self,
-        _context: &mut serenity::app::Context,
+        context: &mut serenity::app::Context,
         event: &winit::event::Event<()>,
     ) {
         if let winit::event::Event::WindowEvent {
@@ -107,6 +305,25 @@ impl serenity::app::State for Editor {
             {
                 self.publish_exit_command();
             }
+
+            let left_ctrl_down = context
+                .io
+                .is_key_pressed(serenity::winit::event::VirtualKeyCode::LControl);
+            if let (winit::event::VirtualKeyCode::R, winit::event::ElementState::Pressed, true) =
+                (keycode, state, left_ctrl_down)
+            {
+                if let Some(command) = self.redo_stack.pop() {
+                    self.publish_command(command);
+                }
+            }
+            if let (winit::event::VirtualKeyCode::Z, winit::event::ElementState::Pressed, true) =
+                (keycode, state, left_ctrl_down)
+            {
+                if let Some(command) = self.command_history.pop_back() {
+                    self.publish_undo_message(command.clone());
+                    self.redo_stack.push(command);
+                }
+            }
         }
     }
 
@@ -116,6 +333,61 @@ impl serenity::app::State for Editor {
     }
 
     fn ui(&mut self, context: &mut serenity::app::Context, ui_context: &mut egui::Context) {
+        egui::Area::new("viewport").show(ui_context, |ui| {
+            ui.with_layer_id(egui::LayerId::background(), |ui| {
+                if let Some(selected) = self.selected {
+                    if let Some(scene_index) = context.world.default_scene_index {
+                        let scene = &context.world.scenes[scene_index];
+                        let node_index = scene.graph[selected];
+                        let node = &context.world.nodes[node_index];
+                        let transform = &context.world.transforms[node.transform_index];
+                        ui.group(|ui| {
+                            let PhysicalSize { width, height } = context.window.inner_size();
+                            let aspect_ratio = width as f32 / height.max(1) as f32;
+                            let (_camera_position, projection, view) =
+                                serenity::world::create_camera_matrices(
+                                    &context.world,
+                                    &scene,
+                                    aspect_ratio,
+                                )
+                                .unwrap_or_default();
+                            let model_matrix = transform.matrix();
+
+                            let gizmo = egui_gizmo::Gizmo::new("My gizmo")
+                                .view_matrix(view)
+                                .projection_matrix(projection)
+                                .model_matrix(model_matrix)
+                                .mode(self.gizmo_mode);
+
+                            if let Some(response) = gizmo.interact(ui) {
+                                match self.gizmo_mode {
+                                    egui_gizmo::GizmoMode::Translate => {
+                                        self.publish_translate_command(
+                                            node_index,
+                                            response.translation.x - transform.translation.x,
+                                            response.translation.y - transform.translation.y,
+                                            response.translation.z - transform.translation.z,
+                                        );
+                                    }
+
+                                    egui_gizmo::GizmoMode::Scale => {
+                                        self.publish_scale_command(
+                                            node_index,
+                                            response.scale.x - transform.scale.x,
+                                            response.scale.y - transform.scale.y,
+                                            response.scale.z - transform.scale.z,
+                                        );
+                                    }
+
+                                    _ => {}
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+        });
+
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .show(ui_context, |ui| {
@@ -154,7 +426,8 @@ impl serenity::app::State for Editor {
             .show(ui_context, |ui| {
                 ui.set_width(ui.available_width());
                 ui.heading("Scene Tree");
-                if let Some(scene) = context.world.scenes.get(0) {
+                if let Some(scene_index) = context.world.default_scene_index {
+                    let scene = &context.world.scenes[scene_index];
                     ui.group(|ui| {
                         egui::ScrollArea::vertical()
                             .id_source(ui.next_auto_id())
@@ -168,7 +441,36 @@ impl serenity::app::State for Editor {
                                 );
                             });
                     });
-                    ui.allocate_space(ui.available_size());
+                }
+
+                ui.allocate_space(ui.available_size());
+            });
+
+        egui::SidePanel::right("right_panel")
+            .resizable(true)
+            .show(ui_context, |ui| {
+                ui.set_width(ui.available_width());
+                ui.heading("Inspector");
+                if let Some(selected_graph_node_index) = self.selected {
+                    if let Some(scene_index) = context.world.default_scene_index {
+                        let scene = &context.world.scenes[scene_index];
+                        let node_index = scene.graph[selected_graph_node_index];
+                        let node = &context.world.nodes[node_index];
+                        egui::ScrollArea::vertical()
+                            .id_source(ui.next_auto_id())
+                            .show(ui, |ui| {
+                                let transform_index = node.transform_index;
+                                let transform = &context.world.transforms[transform_index];
+                                ui.heading("Transform");
+                                egui::Grid::new("node_transform_grid").striped(true).show(
+                                    ui,
+                                    |ui| {
+                                        self.inspector_transform_grid_ui(ui, transform, node_index);
+                                    },
+                                );
+                            });
+                        ui.allocate_space(ui.available_size());
+                    }
                 }
             });
 
@@ -211,7 +513,8 @@ impl serenity::app::State for Editor {
 
 fn camera_system(context: &mut serenity::app::Context) {
     let mut ubo_offset = 0;
-    context.world.scenes.iter().for_each(|scene| {
+    if let Some(scene_index) = context.world.default_scene_index {
+        let scene = &context.world.scenes[scene_index];
         scene.graph.node_indices().for_each(|graph_node_index| {
             let node_index = scene.graph[graph_node_index];
             let node = &context.world.nodes[node_index];
@@ -266,7 +569,7 @@ fn camera_system(context: &mut serenity::app::Context) {
             }
             ubo_offset += 1;
         });
-    });
+    }
 }
 
 #[derive(Default)]
@@ -349,12 +652,16 @@ impl std::fmt::Display for Topic {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Command {
     ImportGltfFile(String),
+    Translate(usize, f32, f32, f32),
+    Rotate(usize, f32, f32, f32),
+    Scale(usize, f32, f32, f32),
     Exit,
 }
 
 #[derive(Clone, Debug)]
 pub enum Message {
     Command(Command),
+    Undo(Command),
     Toast(String),
 }
 

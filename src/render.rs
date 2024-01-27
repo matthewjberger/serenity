@@ -30,7 +30,10 @@ impl Renderer {
     }
 
     pub fn assign_world(&mut self, world: &crate::world::World) {
-        self.view = Some(crate::view::WorldRender::new(&self.gpu, &world));
+        let _ = std::mem::replace(
+            &mut self.view,
+            Some(crate::view::WorldRender::new(&self.gpu, &world)),
+        );
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
