@@ -19,12 +19,12 @@ impl Renderer {
         let depth_texture_view =
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
         let gui = crate::gui::Gui::new(&window, &gpu, scale_factor);
-        let quad = crate::debug::DebugRender::new(&gpu);
+        let debug = crate::debug::DebugRender::new(&gpu);
         Self {
             gpu,
             gui,
             view: None,
-            debug: quad,
+            debug,
             depth_texture_view,
         }
     }
@@ -121,8 +121,10 @@ impl Renderer {
                 }),
             });
 
-            self.debug
-                .render(&mut render_pass, &self.gpu, &context.world);
+            if context.debug_visible {
+                self.debug
+                    .render(&mut render_pass, &self.gpu, &context.world);
+            }
 
             if let Some(view) = self.view.as_mut() {
                 view.render(&mut render_pass, &self.gpu, &context.world);

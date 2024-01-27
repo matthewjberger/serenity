@@ -8,8 +8,12 @@ pub struct WorldRender {
     pub texture_array_bind_group: wgpu::BindGroup,
     pub samplers: Vec<wgpu::Sampler>,
     pub textures: Vec<wgpu::Texture>,
-    pub opaque_pipeline: wgpu::RenderPipeline,
-    pub blend_pipeline: wgpu::RenderPipeline,
+    pub triangle_filled_pipeline: wgpu::RenderPipeline,
+    pub triangle_blended_pipeline: wgpu::RenderPipeline,
+    pub line_pipeline: wgpu::RenderPipeline,
+    pub line_strip_pipeline: wgpu::RenderPipeline,
+    pub triangle_strip_pipeline: wgpu::RenderPipeline,
+    pub point_pipeline: wgpu::RenderPipeline,
 }
 
 impl WorldRender {
@@ -213,7 +217,7 @@ impl WorldRender {
             (texture_array_bind_group, texture_array_bind_group_layout)
         };
 
-        let opaque_pipeline = create_pipeline(
+        let point_pipeline = create_pipeline(
             gpu,
             &[
                 &uniform_bind_group_layout,
@@ -221,9 +225,47 @@ impl WorldRender {
                 &texture_array_bind_group_layout,
             ],
             false,
+            wgpu::PrimitiveTopology::PointList,
+            wgpu::PolygonMode::Point,
         );
 
-        let blend_pipeline = create_pipeline(
+        let line_pipeline = create_pipeline(
+            gpu,
+            &[
+                &uniform_bind_group_layout,
+                &dynamic_uniform_bind_group_layout,
+                &texture_array_bind_group_layout,
+            ],
+            false,
+            wgpu::PrimitiveTopology::LineList,
+            wgpu::PolygonMode::Fill,
+        );
+
+        let line_strip_pipeline = create_pipeline(
+            gpu,
+            &[
+                &uniform_bind_group_layout,
+                &dynamic_uniform_bind_group_layout,
+                &texture_array_bind_group_layout,
+            ],
+            false,
+            wgpu::PrimitiveTopology::LineStrip,
+            wgpu::PolygonMode::Fill,
+        );
+
+        let triangle_filled_pipeline = create_pipeline(
+            gpu,
+            &[
+                &uniform_bind_group_layout,
+                &dynamic_uniform_bind_group_layout,
+                &texture_array_bind_group_layout,
+            ],
+            false,
+            wgpu::PrimitiveTopology::TriangleList,
+            wgpu::PolygonMode::Fill,
+        );
+
+        let triangle_blended_pipeline = create_pipeline(
             gpu,
             &[
                 &uniform_bind_group_layout,
@@ -231,6 +273,20 @@ impl WorldRender {
                 &texture_array_bind_group_layout,
             ],
             true,
+            wgpu::PrimitiveTopology::TriangleList,
+            wgpu::PolygonMode::Fill,
+        );
+
+        let triangle_strip_pipeline = create_pipeline(
+            gpu,
+            &[
+                &uniform_bind_group_layout,
+                &dynamic_uniform_bind_group_layout,
+                &texture_array_bind_group_layout,
+            ],
+            true,
+            wgpu::PrimitiveTopology::TriangleStrip,
+            wgpu::PolygonMode::Fill,
         );
 
         Self {
@@ -241,10 +297,14 @@ impl WorldRender {
             dynamic_uniform_buffer,
             dynamic_uniform_bind_group,
             texture_array_bind_group,
-            opaque_pipeline,
-            blend_pipeline,
+            triangle_filled_pipeline,
+            triangle_blended_pipeline,
             textures,
             samplers,
+            point_pipeline,
+            line_pipeline,
+            line_strip_pipeline,
+            triangle_strip_pipeline,
         }
     }
 
@@ -298,12 +358,6 @@ impl WorldRender {
         ]
         .iter()
         {
-            match alpha_mode {
-                crate::world::AlphaMode::Opaque | crate::world::AlphaMode::Mask => {
-                    render_pass.set_pipeline(&self.opaque_pipeline)
-                }
-                crate::world::AlphaMode::Blend => render_pass.set_pipeline(&self.blend_pipeline),
-            }
             let mut ubo_offset = 0;
             if let Some(scene_index) = world.default_scene_index {
                 let scene = &world.scenes[scene_index];
@@ -316,6 +370,31 @@ impl WorldRender {
                         let mesh = &world.meshes[mesh_index];
 
                         for primitive in mesh.primitives.iter() {
+                            match primitive.topology {
+                                crate::world::PrimitiveTopology::Points => {
+                                    render_pass.set_pipeline(&self.point_pipeline);
+                                }
+                                crate::world::PrimitiveTopology::Lines => {
+                                    render_pass.set_pipeline(&self.line_pipeline);
+                                }
+                                crate::world::PrimitiveTopology::LineStrip => {
+                                    render_pass.set_pipeline(&self.line_strip_pipeline);
+                                }
+                                crate::world::PrimitiveTopology::Triangles => match alpha_mode {
+                                    crate::world::AlphaMode::Opaque
+                                    | crate::world::AlphaMode::Mask => {
+                                        render_pass.set_pipeline(&self.triangle_filled_pipeline);
+                                    }
+                                    crate::world::AlphaMode::Blend => {
+                                        render_pass.set_pipeline(&self.triangle_blended_pipeline);
+                                    }
+                                },
+                                crate::world::PrimitiveTopology::TriangleStrip => {
+                                    render_pass.set_pipeline(&self.triangle_strip_pipeline);
+                                }
+                                _ => continue, // wgpu does not support line loops or triangle fans
+                            }
+
                             let mut shader_material = Material::default();
 
                             match primitive.material_index {
@@ -333,7 +412,7 @@ impl WorldRender {
                                 }
                                 None => {
                                     shader_material.base_color =
-                                        nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0);
+                                        nalgebra_glm::vec4(0.5, 0.5, 0.5, 1.0);
                                     shader_material.base_texture_index = -1;
                                     shader_material.alpha_mode = 0;
                                     shader_material.alpha_cutoff = 0.5;
@@ -523,6 +602,8 @@ fn create_pipeline(
     gpu: &crate::gpu::Gpu,
     bind_group_layouts: &[&wgpu::BindGroupLayout],
     blending_enabled: bool,
+    topology: wgpu::PrimitiveTopology,
+    polygon_mode: wgpu::PolygonMode,
 ) -> wgpu::RenderPipeline {
     let shader_module = gpu
         .device
@@ -556,7 +637,13 @@ fn create_pipeline(
             primitive: wgpu::PrimitiveState {
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
+                polygon_mode,
+                topology,
+                strip_index_format: matches!(
+                    topology,
+                    wgpu::PrimitiveTopology::TriangleStrip | wgpu::PrimitiveTopology::LineStrip
+                )
+                .then(|| wgpu::IndexFormat::Uint32),
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -715,3 +802,15 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4(color, base_color.a);
 }
 ";
+
+impl From<wgpu::PrimitiveTopology> for crate::world::PrimitiveTopology {
+    fn from(value: wgpu::PrimitiveTopology) -> Self {
+        match value {
+            wgpu::PrimitiveTopology::PointList => Self::Points,
+            wgpu::PrimitiveTopology::LineList => Self::Lines,
+            wgpu::PrimitiveTopology::LineStrip => Self::LineStrip,
+            wgpu::PrimitiveTopology::TriangleList => Self::Triangles,
+            wgpu::PrimitiveTopology::TriangleStrip => Self::TriangleStrip,
+        }
+    }
+}

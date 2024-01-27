@@ -149,7 +149,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                                 .unwrap_or_default();
 
                             let primitive = crate::world::Primitive {
-                                mode: primitive.mode().into(),
+                                topology: primitive.mode().into(),
                                 material_index: primitive.material().index(),
                                 vertex_offset: vertices.len(),
                                 index_offset: indices.len(),
@@ -511,16 +511,16 @@ impl From<gltf::image::Data> for crate::world::Image {
 impl From<gltf::image::Format> for crate::world::ImageFormat {
     fn from(value: gltf::image::Format) -> Self {
         match value {
-            gltf::image::Format::R8 => crate::world::ImageFormat::R8,
-            gltf::image::Format::R8G8 => crate::world::ImageFormat::R8G8,
-            gltf::image::Format::R8G8B8 => crate::world::ImageFormat::R8G8B8,
-            gltf::image::Format::R8G8B8A8 => crate::world::ImageFormat::R8G8B8A8,
-            gltf::image::Format::R16 => crate::world::ImageFormat::R16,
-            gltf::image::Format::R16G16 => crate::world::ImageFormat::R16G16,
-            gltf::image::Format::R16G16B16 => crate::world::ImageFormat::R16G16B16,
-            gltf::image::Format::R16G16B16A16 => crate::world::ImageFormat::R16G16B16A16,
-            gltf::image::Format::R32G32B32FLOAT => crate::world::ImageFormat::R32G32B32,
-            gltf::image::Format::R32G32B32A32FLOAT => crate::world::ImageFormat::R32G32B32A32,
+            gltf::image::Format::R8 => Self::R8,
+            gltf::image::Format::R8G8 => Self::R8G8,
+            gltf::image::Format::R8G8B8 => Self::R8G8B8,
+            gltf::image::Format::R8G8B8A8 => Self::R8G8B8A8,
+            gltf::image::Format::R16 => Self::R16,
+            gltf::image::Format::R16G16 => Self::R16G16,
+            gltf::image::Format::R16G16B16 => Self::R16G16B16,
+            gltf::image::Format::R16G16B16A16 => Self::R16G16B16A16,
+            gltf::image::Format::R32G32B32FLOAT => Self::R32G32B32,
+            gltf::image::Format::R32G32B32A32FLOAT => Self::R32G32B32A32,
         }
     }
 }
@@ -565,8 +565,8 @@ impl From<gltf::khr_lights_punctual::Light<'_>> for crate::world::Light {
 impl From<gltf::khr_lights_punctual::Kind> for crate::world::LightKind {
     fn from(kind: gltf::khr_lights_punctual::Kind) -> Self {
         match kind {
-            gltf::khr_lights_punctual::Kind::Directional => crate::world::LightKind::Directional,
-            gltf::khr_lights_punctual::Kind::Point => crate::world::LightKind::Point,
+            gltf::khr_lights_punctual::Kind::Directional => Self::Directional,
+            gltf::khr_lights_punctual::Kind::Point => Self::Point,
             gltf::khr_lights_punctual::Kind::Spot {
                 inner_cone_angle,
                 outer_cone_angle,
@@ -578,16 +578,16 @@ impl From<gltf::khr_lights_punctual::Kind> for crate::world::LightKind {
     }
 }
 
-impl From<gltf::mesh::Mode> for crate::world::PrimitiveMode {
+impl From<gltf::mesh::Mode> for crate::world::PrimitiveTopology {
     fn from(mode: gltf::mesh::Mode) -> Self {
         match mode {
-            gltf::mesh::Mode::Points => crate::world::PrimitiveMode::Points,
-            gltf::mesh::Mode::Lines => crate::world::PrimitiveMode::Lines,
-            gltf::mesh::Mode::LineLoop => crate::world::PrimitiveMode::LineLoop,
-            gltf::mesh::Mode::LineStrip => crate::world::PrimitiveMode::LineStrip,
-            gltf::mesh::Mode::Triangles => crate::world::PrimitiveMode::Triangles,
-            gltf::mesh::Mode::TriangleStrip => crate::world::PrimitiveMode::TriangleStrip,
-            gltf::mesh::Mode::TriangleFan => crate::world::PrimitiveMode::TriangleFan,
+            gltf::mesh::Mode::Points => Self::Points,
+            gltf::mesh::Mode::Lines => Self::Lines,
+            gltf::mesh::Mode::LineStrip => Self::LineStrip,
+            gltf::mesh::Mode::TriangleStrip => Self::TriangleStrip,
+            gltf::mesh::Mode::LineLoop => Self::LineLoop,
+            gltf::mesh::Mode::TriangleFan => Self::TriangleFan,
+            gltf::mesh::Mode::Triangles => Self::Triangles,
         }
     }
 }

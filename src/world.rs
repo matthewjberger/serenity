@@ -504,7 +504,7 @@ impl Orientation {
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum PrimitiveMode {
+pub enum PrimitiveTopology {
     Points,
     Lines,
     LineLoop,
@@ -559,7 +559,7 @@ pub struct Primitive {
     pub index_offset: usize,
     pub number_of_vertices: usize,
     pub number_of_indices: usize,
-    pub mode: PrimitiveMode,
+    pub topology: PrimitiveTopology,
     pub material_index: Option<usize>,
 }
 

@@ -8,6 +8,7 @@ pub struct Context {
     pub should_reload_view: bool,
     pub physics_enabled: bool,
     pub gui_visible: bool,
+    pub debug_visible: bool,
 }
 
 pub fn window_aspect_ratio(window: &winit::window::Window) -> f32 {
@@ -56,6 +57,7 @@ impl App {
             should_reload_view: false,
             physics_enabled: false,
             gui_visible: true,
+            debug_visible: false,
         };
 
         Self {

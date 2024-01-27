@@ -32,12 +32,6 @@ impl DebugRender {
 
         let instances = vec![
             Instance {
-                position: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                rotation: nalgebra_glm::quat_identity(),
-                scale: nalgebra_glm::vec4(0.0, 10.0, 0.0, 1.0),
-                color: nalgebra_glm::vec4(0.0, 1.0, 0.0, 1.0),
-            },
-            Instance {
                 position: nalgebra_glm::vec3(4.0, 0.0, 0.0),
                 rotation: nalgebra_glm::quat_identity(),
                 scale: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),

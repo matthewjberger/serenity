@@ -323,9 +323,16 @@ impl serenity::app::State for Editor {
                 self.publish_exit_command();
             }
 
+            if let (winit::event::VirtualKeyCode::F3, winit::event::ElementState::Pressed) =
+                (keycode, state)
+            {
+                context.debug_visible = !context.debug_visible;
+            }
+
             let left_ctrl_down = context
                 .io
                 .is_key_pressed(serenity::winit::event::VirtualKeyCode::LControl);
+
             if let (winit::event::VirtualKeyCode::R, winit::event::ElementState::Pressed, true) =
                 (keycode, state, left_ctrl_down)
             {
@@ -333,6 +340,7 @@ impl serenity::app::State for Editor {
                     self.publish_command(command);
                 }
             }
+
             if let (winit::event::VirtualKeyCode::Z, winit::event::ElementState::Pressed, true) =
                 (keycode, state, left_ctrl_down)
             {
@@ -341,6 +349,7 @@ impl serenity::app::State for Editor {
                     self.redo_stack.push(command);
                 }
             }
+
             if let (winit::event::VirtualKeyCode::H, winit::event::ElementState::Pressed, true) =
                 (keycode, state, left_ctrl_down)
             {
