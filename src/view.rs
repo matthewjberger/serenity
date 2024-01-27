@@ -254,18 +254,24 @@ impl WorldRender {
         gpu: &crate::gpu::Gpu,
         world: &crate::world::World,
     ) {
-        let (camera_position, projection, view) =
-            crate::world::create_camera_matrices(world, &world.scenes[0], gpu.aspect_ratio())
-                .unwrap_or_default();
-        gpu.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[Uniform {
-                view,
-                projection,
-                camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
-            }]),
-        );
+        let scene_index = match world.default_scene_index {
+            Some(scene) => scene,
+            None => return,
+        };
+        let scene = &world.scenes[scene_index];
+        if let Some((camera_position, projection, view)) =
+            crate::world::create_camera_matrices(world, &scene, gpu.aspect_ratio())
+        {
+            gpu.queue.write_buffer(
+                &self.uniform_buffer,
+                0,
+                bytemuck::cast_slice(&[Uniform {
+                    view,
+                    projection,
+                    camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
+                }]),
+            );
+        }
 
         let mut mesh_ubos = vec![DynamicUniform::default(); world.transforms.len()];
         let mut ubo_offset = 0;
@@ -273,7 +279,7 @@ impl WorldRender {
             let scene = &world.scenes[scene_index];
             scene.graph.node_indices().for_each(|graph_node_index| {
                 mesh_ubos[ubo_offset] = DynamicUniform {
-                    model: world.global_transform(&scene.graph, graph_node_index),
+                    model: world.global_transform_matrix(&scene.graph, graph_node_index),
                 };
                 ubo_offset += 1;
             });

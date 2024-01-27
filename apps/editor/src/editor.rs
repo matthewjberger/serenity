@@ -1,8 +1,4 @@
-use serenity::{
-    egui, nalgebra_glm, petgraph,
-    winit::{self, dpi::PhysicalSize},
-    world::NodeMetadata,
-};
+use serenity::{app::window_aspect_ratio, egui, nalgebra_glm, petgraph, world::NodeMetadata};
 
 pub struct Editor {
     broker: Broker,
@@ -44,50 +40,6 @@ impl Editor {
         }
     }
 
-    fn publish_undo_message(&mut self, command: Command) {
-        self.broker
-            .publish(&Topic::Command.to_string(), Message::Undo(command));
-    }
-
-    fn publish_exit_command(&mut self) {
-        self.broker
-            .publish(&Topic::Command.to_string(), Message::Command(Command::Exit));
-    }
-
-    fn publish_import_gltf_command(&mut self, path: &str) {
-        self.broker.publish(
-            &Topic::Command.to_string(),
-            Message::Command(Command::ImportGltfFile(path.to_string())),
-        );
-    }
-
-    fn publish_command(&mut self, command: Command) {
-        self.broker
-            .publish(&Topic::Command.to_string(), Message::Command(command));
-    }
-
-    fn publish_translate_command(&mut self, node_index: usize, x: f32, y: f32, z: f32) {
-        self.broker.publish(
-            &Topic::Command.to_string(),
-            Message::Command(Command::Translate(node_index, x, y, z)),
-        );
-    }
-
-    #[allow(dead_code)]
-    fn publish_rotate_command(&mut self, node_index: usize, pitch: f32, yaw: f32, roll: f32) {
-        self.broker.publish(
-            &Topic::Command.to_string(),
-            Message::Command(Command::Rotate(node_index, pitch, yaw, roll)),
-        );
-    }
-
-    fn publish_scale_command(&mut self, node_index: usize, x: f32, y: f32, z: f32) {
-        self.broker.publish(
-            &Topic::Command.to_string(),
-            Message::Command(Command::Scale(node_index, x, y, z)),
-        );
-    }
-
     fn receive_messages(&mut self, context: &mut serenity::app::Context) {
         while let Some(message) = self.client.borrow().next_message() {
             match message {
@@ -108,7 +60,7 @@ impl Editor {
                             self.redo_stack = Vec::new();
                             self.command_history = std::collections::VecDeque::new();
 
-                            add_rigid_body_to_first_node(context);
+                            add_rigid_bodies_to_all_nodes(context);
                         }
                         Command::Translate(node_index, x, y, z) => {
                             translate_node(context, node_index, x, y, z);
@@ -118,6 +70,12 @@ impl Editor {
                         }
                         Command::Scale(node_index, x, y, z) => {
                             scale_node(context, node_index, x, y, z);
+                        }
+                        Command::SetDefaultCamera {
+                            scene_index,
+                            camera_graph_node_index,
+                        } => {
+                            set_default_scene_camera(context, scene_index, camera_graph_node_index);
                         }
                     }
                 }
@@ -174,12 +132,16 @@ impl Editor {
             || translation_y != transform.translation.y
             || translation_z != transform.translation.z
         {
-            self.publish_translate_command(
-                node_index,
-                translation_x - transform.translation.x,
-                translation_y - transform.translation.y,
-                translation_z - transform.translation.z,
-            );
+            {
+                let this = &mut *self;
+                let x = translation_x - transform.translation.x;
+                let y = translation_y - transform.translation.y;
+                let z = translation_z - transform.translation.z;
+                this.broker.publish(
+                    &Topic::Command.to_string(),
+                    Message::Command(Command::Translate(node_index, x, y, z)),
+                );
+            };
         }
 
         ui.label("Scale");
@@ -217,14 +179,29 @@ impl Editor {
             || scale_z != transform.scale.z
         {
             if self.uniform_scaling {
-                self.publish_scale_command(node_index, uniform_scale, uniform_scale, uniform_scale);
+                {
+                    let this = &mut *self;
+                    this.broker.publish(
+                        &Topic::Command.to_string(),
+                        Message::Command(Command::Scale(
+                            node_index,
+                            uniform_scale,
+                            uniform_scale,
+                            uniform_scale,
+                        )),
+                    );
+                };
             } else {
-                self.publish_scale_command(
-                    node_index,
-                    scale_x - transform.scale.x,
-                    scale_y - transform.scale.y,
-                    scale_z - transform.scale.z,
-                );
+                {
+                    let this = &mut *self;
+                    let x = scale_x - transform.scale.x;
+                    let y = scale_y - transform.scale.y;
+                    let z = scale_z - transform.scale.z;
+                    this.broker.publish(
+                        &Topic::Command.to_string(),
+                        Message::Command(Command::Scale(node_index, x, y, z)),
+                    );
+                };
             }
         }
     }
@@ -244,19 +221,34 @@ impl Editor {
     }
 }
 
-// TODO: remove this, it's for testing purposes
-fn add_rigid_body_to_first_node(context: &mut serenity::app::Context) {
+fn set_default_scene_camera(
+    context: &mut serenity::app::Context,
+    scene_index: usize,
+    camera_graph_node_index: petgraph::prelude::NodeIndex,
+) {
+    println!(
+        "Setting default scene camera to Scene {scene_index} - Camera {camera_graph_node_index:?}"
+    );
+    if let Some(scene) = context.world.scenes.get_mut(scene_index) {
+        scene.default_camera_graph_node_index = Some(camera_graph_node_index);
+    }
+}
+
+fn add_rigid_bodies_to_all_nodes(context: &mut serenity::app::Context) {
     if let Some(scene_index) = context.world.default_scene_index {
         let scene = &context.world.scenes[scene_index];
-        if let Some(graph_node_index) = scene.graph.node_indices().next() {
+        scene.graph.node_indices().for_each(|graph_node_index| {
             let node_index = scene.graph[graph_node_index];
             let node = &mut context.world.nodes[node_index];
+            if node.camera_index.is_some() {
+                return;
+            }
             let rigid_body_index = context
                 .world
                 .physics
                 .add_rigid_body(nalgebra_glm::Vec3::new(0.0, 0.0, 0.0));
             node.rigid_body_index = Some(rigid_body_index);
-        }
+        });
     }
 }
 
@@ -295,7 +287,7 @@ impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
         context.world = serenity::gltf::import_gltf("resources/models/Lantern.glb");
         context.should_reload_view = true;
-        add_rigid_body_to_first_node(context);
+        add_rigid_bodies_to_all_nodes(context);
     }
 
     fn receive_event(
@@ -320,7 +312,11 @@ impl serenity::app::State for Editor {
             if let (winit::event::VirtualKeyCode::Escape, winit::event::ElementState::Pressed) =
                 (keycode, state)
             {
-                self.publish_exit_command();
+                {
+                    let this = &mut *self;
+                    this.broker
+                        .publish(&Topic::Command.to_string(), Message::Command(Command::Exit));
+                };
             }
 
             let left_ctrl_down = context
@@ -330,14 +326,23 @@ impl serenity::app::State for Editor {
                 (keycode, state, left_ctrl_down)
             {
                 if let Some(command) = self.redo_stack.pop() {
-                    self.publish_command(command);
+                    {
+                        let this = &mut *self;
+                        this.broker
+                            .publish(&Topic::Command.to_string(), Message::Command(command));
+                    };
                 }
             }
             if let (winit::event::VirtualKeyCode::Z, winit::event::ElementState::Pressed, true) =
                 (keycode, state, left_ctrl_down)
             {
                 if let Some(command) = self.command_history.pop_back() {
-                    self.publish_undo_message(command.clone());
+                    {
+                        let this = &mut *self;
+                        let command = command.clone();
+                        this.broker
+                            .publish(&Topic::Command.to_string(), Message::Undo(command));
+                    };
                     self.redo_stack.push(command);
                 }
             }
@@ -359,44 +364,56 @@ impl serenity::app::State for Editor {
                         let node = &context.world.nodes[node_index];
                         let transform = &context.world.transforms[node.transform_index];
                         ui.group(|ui| {
-                            let PhysicalSize { width, height } = context.window.inner_size();
-                            let aspect_ratio = width as f32 / height.max(1) as f32;
-                            let (_camera_position, projection, view) =
+                            if let Some((_camera_position, projection, view)) =
                                 serenity::world::create_camera_matrices(
                                     &context.world,
                                     &scene,
-                                    aspect_ratio,
+                                    window_aspect_ratio(&context.window),
                                 )
-                                .unwrap_or_default();
-                            let model_matrix = transform.matrix();
+                            {
+                                let model_matrix = transform.matrix();
+                                let gizmo = egui_gizmo::Gizmo::new("My gizmo")
+                                    .view_matrix(view)
+                                    .projection_matrix(projection)
+                                    .model_matrix(model_matrix)
+                                    .mode(self.gizmo_mode);
+                                if let Some(response) = gizmo.interact(ui) {
+                                    match self.gizmo_mode {
+                                        egui_gizmo::GizmoMode::Translate => {
+                                            {
+                                                let this = &mut *self;
+                                                let x = response.translation.x
+                                                    - transform.translation.x;
+                                                let y = response.translation.y
+                                                    - transform.translation.y;
+                                                let z = response.translation.z
+                                                    - transform.translation.z;
+                                                this.broker.publish(
+                                                    &Topic::Command.to_string(),
+                                                    Message::Command(Command::Translate(
+                                                        node_index, x, y, z,
+                                                    )),
+                                                );
+                                            };
+                                        }
 
-                            let gizmo = egui_gizmo::Gizmo::new("My gizmo")
-                                .view_matrix(view)
-                                .projection_matrix(projection)
-                                .model_matrix(model_matrix)
-                                .mode(self.gizmo_mode);
+                                        egui_gizmo::GizmoMode::Scale => {
+                                            {
+                                                let this = &mut *self;
+                                                let x = response.scale.x - transform.scale.x;
+                                                let y = response.scale.y - transform.scale.y;
+                                                let z = response.scale.z - transform.scale.z;
+                                                this.broker.publish(
+                                                    &Topic::Command.to_string(),
+                                                    Message::Command(Command::Scale(
+                                                        node_index, x, y, z,
+                                                    )),
+                                                );
+                                            };
+                                        }
 
-                            if let Some(response) = gizmo.interact(ui) {
-                                match self.gizmo_mode {
-                                    egui_gizmo::GizmoMode::Translate => {
-                                        self.publish_translate_command(
-                                            node_index,
-                                            response.translation.x - transform.translation.x,
-                                            response.translation.y - transform.translation.y,
-                                            response.translation.z - transform.translation.z,
-                                        );
+                                        _ => {}
                                     }
-
-                                    egui_gizmo::GizmoMode::Scale => {
-                                        self.publish_scale_command(
-                                            node_index,
-                                            response.scale.x - transform.scale.x,
-                                            response.scale.y - transform.scale.y,
-                                            response.scale.z - transform.scale.z,
-                                        );
-                                    }
-
-                                    _ => {}
                                 }
                             }
                         });
@@ -416,7 +433,12 @@ impl serenity::app::State for Editor {
                                 .add_filter("GLTF / GLB", &["gltf", "glb"])
                                 .pick_file()
                             {
-                                self.publish_import_gltf_command(&path.display().to_string());
+                                self.broker.publish(
+                                    &Topic::Command.to_string(),
+                                    Message::Command(Command::ImportGltfFile(
+                                        path.display().to_string(),
+                                    )),
+                                );
                                 ui.close_menu();
                             }
                         }
@@ -457,6 +479,11 @@ impl serenity::app::State for Editor {
                 ui.set_width(ui.available_width());
                 ui.heading("Scene Tree");
                 if let Some(scene_index) = context.world.default_scene_index {
+                    if ui.button("Add camera").clicked() {
+                        context.world.add_camera_node(scene_index);
+                        context.should_reload_view = true;
+                    }
+
                     let scene = &context.world.scenes[scene_index];
                     ui.group(|ui| {
                         egui::ScrollArea::vertical()
@@ -464,6 +491,8 @@ impl serenity::app::State for Editor {
                             .show(ui, |ui| {
                                 node_ui(
                                     &context.world,
+                                    scene_index,
+                                    &mut self.broker,
                                     ui,
                                     &scene.graph,
                                     0.into(),
@@ -542,10 +571,9 @@ impl serenity::app::State for Editor {
 }
 
 fn camera_system(context: &mut serenity::app::Context) {
-    let mut ubo_offset = 0;
     if let Some(scene_index) = context.world.default_scene_index {
         let scene = &context.world.scenes[scene_index];
-        scene.graph.node_indices().for_each(|graph_node_index| {
+        if let Some(graph_node_index) = scene.default_camera_graph_node_index {
             let node_index = scene.graph[graph_node_index];
             let node = &context.world.nodes[node_index];
             if let Some(camera_index) = node.camera_index {
@@ -597,8 +625,7 @@ fn camera_system(context: &mut serenity::app::Context) {
                 }
                 transform.rotation = camera.orientation.look_at_offset();
             }
-            ubo_offset += 1;
-        });
+        }
     }
 }
 
@@ -685,6 +712,10 @@ pub enum Command {
     Translate(usize, f32, f32, f32),
     Rotate(usize, f32, f32, f32),
     Scale(usize, f32, f32, f32),
+    SetDefaultCamera {
+        scene_index: usize,
+        camera_graph_node_index: petgraph::graph::NodeIndex,
+    },
     Exit,
 }
 
@@ -697,6 +728,8 @@ pub enum Message {
 
 fn node_ui(
     world: &serenity::world::World,
+    scene_index: usize,
+    broker: &mut Broker,
     ui: &mut egui::Ui,
     graph: &serenity::world::SceneGraph,
     graph_node_index: petgraph::graph::NodeIndex,
@@ -706,6 +739,7 @@ fn node_ui(
     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
         .show_header(ui, |ui| {
             let node_index = graph[graph_node_index];
+            let node = &world.nodes[node_index];
             let NodeMetadata { name } = &world.metadata[node_index];
             let selected = selected_graph_node_index
                 .as_ref()
@@ -715,12 +749,38 @@ fn node_ui(
             if response.clicked() {
                 *selected_graph_node_index = Some(graph_node_index);
             }
+
+            if node.camera_index.is_some() {
+                let popup_id = ui.make_persistent_id(ui.next_auto_id());
+                if response.secondary_clicked() {
+                    ui.memory_mut(|memory| memory.toggle_popup(popup_id));
+                }
+                egui::popup_below_widget(ui, popup_id, &response, |ui| {
+                    if ui.button("Make default camera").clicked() {
+                        broker.publish(
+                            &Topic::Command.to_string(),
+                            Message::Command(Command::SetDefaultCamera {
+                                scene_index: 0, // TODO use correct scene indices
+                                camera_graph_node_index: graph_node_index,
+                            }),
+                        );
+                    }
+                });
+            }
         })
         .body(|ui| {
             graph
                 .neighbors_directed(graph_node_index, petgraph::Direction::Outgoing)
                 .for_each(|child_index| {
-                    node_ui(world, ui, graph, child_index, selected_graph_node_index);
+                    node_ui(
+                        world,
+                        scene_index,
+                        broker,
+                        ui,
+                        graph,
+                        child_index,
+                        selected_graph_node_index,
+                    );
                 });
         });
 }

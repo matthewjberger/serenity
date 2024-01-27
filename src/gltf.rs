@@ -169,7 +169,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         (meshes, vertices, indices)
     };
 
-    let (mut scenes, mut nodes, mut transforms, mut metadata) = {
+    let (scenes, nodes, transforms, metadata) = {
         let mut nodes = Vec::new();
         let mut transforms = Vec::new();
         let mut metadata = Vec::new();
@@ -349,48 +349,12 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         None => vec![],
     };
 
-    if scenes.is_empty() {
-        scenes.push(crate::world::Scene::default());
-    };
-
-    let mut cameras = gltf
+    let cameras = gltf
         .cameras()
         .map(crate::world::Camera::from)
         .collect::<Vec<_>>();
 
-    if cameras.is_empty() {
-        let transform_index = transforms.len();
-        transforms.push(crate::world::Transform::default());
-
-        let metadata_index = transforms.len();
-        metadata.push(crate::world::NodeMetadata {
-            name: "Default Camera".to_string(),
-        });
-
-        let camera_index = cameras.len();
-        cameras.push(crate::world::Camera::default());
-
-        let node_index = nodes.len();
-        nodes.push(crate::world::Node {
-            transform_index,
-            metadata_index,
-            camera_index: Some(camera_index),
-            mesh_index: None,
-            light_index: None,
-            rigid_body_index: None,
-        });
-
-        let camera_graph_node_index = scenes[0].graph.add_node(node_index);
-        scenes[0].graph.add_edge(
-            petgraph::graph::NodeIndex::new(0),
-            camera_graph_node_index,
-            (),
-        );
-    }
-
-    let physics = crate::physics::PhysicsWorld::default();
-
-    crate::world::World {
+    let mut world = crate::world::World {
         default_scene_index: Some(0),
         animations,
         cameras,
@@ -407,8 +371,27 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         textures,
         transforms,
         vertices,
-        physics,
+        physics: crate::physics::PhysicsWorld::default(),
+    };
+
+    if world.scenes.is_empty() {
+        world.scenes.push(crate::world::Scene::default());
+        world.add_camera_node(0);
     }
+
+    if let Some(default_scene_index) = world.default_scene_index {
+        let scene = &mut world.scenes[default_scene_index];
+        scene.graph.node_indices().for_each(|graph_node_index| {
+            let node_index = scene.graph[graph_node_index];
+            let node = &world.nodes[node_index];
+            if node.camera_index.is_some() {
+                println!("Assigning default camera to first camera node in first available scene");
+                scene.default_camera_graph_node_index = Some(graph_node_index);
+            }
+        });
+    }
+
+    world
 }
 
 impl From<gltf::material::AlphaMode> for crate::world::AlphaMode {

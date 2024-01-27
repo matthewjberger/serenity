@@ -20,6 +20,40 @@ pub struct World {
 }
 
 impl World {
+    pub fn add_camera_node(&mut self, scene_index: usize) -> usize {
+        let scene = &mut self.scenes[scene_index];
+
+        let transform_index = self.transforms.len();
+        self.transforms.push(crate::world::Transform::default());
+
+        let metadata_index = self.metadata.len();
+        self.metadata.push(crate::world::NodeMetadata {
+            name: "Camera".to_string(),
+        });
+
+        let camera_index = self.cameras.len();
+        self.cameras.push(crate::world::Camera::default());
+
+        let node_index = self.nodes.len();
+        self.nodes.push(crate::world::Node {
+            transform_index,
+            metadata_index,
+            camera_index: Some(camera_index),
+            mesh_index: None,
+            light_index: None,
+            rigid_body_index: None,
+        });
+
+        let camera_graph_node_index = scene.graph.add_node(node_index);
+        scene.graph.add_edge(
+            petgraph::graph::NodeIndex::new(0),
+            camera_graph_node_index,
+            (),
+        );
+
+        node_index
+    }
+
     pub fn step_physics(&mut self, delta_time: f32) {
         self.physics.step(delta_time);
         self.assign_physics_render_transforms();
@@ -146,7 +180,7 @@ impl World {
         });
     }
 
-    pub fn global_transform(
+    pub fn global_transform_matrix(
         &self,
         scenegraph: &SceneGraph,
         graph_node_index: petgraph::graph::NodeIndex,
@@ -159,7 +193,7 @@ impl World {
             .next()
         {
             Some(parent_node_index) => {
-                self.global_transform(scenegraph, parent_node_index) * transform
+                self.global_transform_matrix(scenegraph, parent_node_index) * transform
             }
             None => transform,
         }
@@ -198,6 +232,7 @@ pub type SceneGraph = petgraph::Graph<usize, ()>;
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Scene {
+    pub default_camera_graph_node_index: Option<petgraph::graph::NodeIndex>,
     pub graph: SceneGraph,
 }
 
@@ -219,6 +254,18 @@ impl Default for Transform {
             translation: nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
             rotation: nalgebra_glm::Quat::identity(),
             scale: nalgebra_glm::Vec3::new(1.0, 1.0, 1.0),
+        }
+    }
+}
+
+impl std::ops::Mul<Transform> for Transform {
+    type Output = Transform;
+
+    fn mul(self, rhs: Transform) -> Self::Output {
+        Self {
+            translation: self.translation + rhs.translation,
+            rotation: self.rotation * rhs.rotation,
+            scale: self.scale,
         }
     }
 }
@@ -342,36 +389,20 @@ pub fn create_camera_matrices(
     scene: &crate::world::Scene,
     aspect_ratio: f32,
 ) -> Option<(nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4)> {
-    let mut result = None;
-
-    for graph_node_index in scene.graph.node_indices() {
-        let node_index = scene.graph[graph_node_index];
-        let node = &world.nodes[node_index];
-        if let Some(camera_index) = node.camera_index {
-            let transform = &world.transforms[node.transform_index];
-            let camera = &world.cameras[camera_index];
-            result = Some((
-                // TODO: later this will need to be the translation of the global transform,
-                //       need to be able to aggregate transforms without turning them in to glm::Mat4 first
-                transform.translation,
-                camera.projection_matrix(aspect_ratio),
-                {
-                    let eye = transform.translation;
-                    let target = eye
-                        + nalgebra_glm::quat_rotate_vec3(
-                            &transform.rotation.normalize(),
-                            &(-nalgebra_glm::Vec3::z()),
-                        );
-                    let up = nalgebra_glm::quat_rotate_vec3(
-                        &transform.rotation.normalize(),
-                        &nalgebra_glm::Vec3::y(),
-                    );
-                    nalgebra_glm::look_at(&eye, &target, &up)
-                },
-            ));
+    match scene.default_camera_graph_node_index {
+        Some(graph_node_index) => {
+            let node_index = scene.graph[graph_node_index];
+            let camera_node = &world.nodes[node_index];
+            let camera = &world.cameras[camera_node.camera_index.unwrap()];
+            let projection = camera.projection_matrix(aspect_ratio);
+            let global_transform_matrix =
+                world.global_transform_matrix(&scene.graph, graph_node_index);
+            let camera_position = global_transform_matrix.column(3).xyz();
+            let view = nalgebra_glm::inverse(&global_transform_matrix);
+            Some((camera_position, projection, view))
         }
+        _ => None,
     }
-    result
 }
 
 #[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]

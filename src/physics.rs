@@ -104,5 +104,5 @@ pub struct Collider {
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
 pub enum CollisionShape {
     /// Axis-Aligned Bounding Box
-    AABB(f32, f32, f32, f32),
+    AABB(nalgebra_glm::Vec3, nalgebra_glm::Vec3),
 }

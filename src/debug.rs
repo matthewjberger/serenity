@@ -122,18 +122,24 @@ impl DebugRender {
         gpu: &crate::gpu::Gpu,
         world: &crate::world::World,
     ) {
-        let (camera_position, projection, view) =
-            crate::world::create_camera_matrices(world, &world.scenes[0], gpu.aspect_ratio())
-                .unwrap_or_default();
-        gpu.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[Uniform {
-                view,
-                projection,
-                camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
-            }]),
-        );
+        let scene_index = match world.default_scene_index {
+            Some(scene) => scene,
+            None => return,
+        };
+        let scene = &world.scenes[scene_index];
+        if let Some((camera_position, projection, view)) =
+            crate::world::create_camera_matrices(world, &scene, gpu.aspect_ratio())
+        {
+            gpu.queue.write_buffer(
+                &self.uniform_buffer,
+                0,
+                bytemuck::cast_slice(&[Uniform {
+                    view,
+                    projection,
+                    camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
+                }]),
+            );
+        }
 
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
