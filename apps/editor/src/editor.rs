@@ -15,6 +15,10 @@ pub struct Editor {
     command_history: std::collections::VecDeque<Command>,
     redo_stack: Vec<Command>,
     uniform_scaling: bool,
+    physics_world_backup: Option<(
+        serenity::physics::PhysicsWorld,
+        Vec<serenity::world::Transform>,
+    )>,
 }
 
 impl Editor {
@@ -36,6 +40,7 @@ impl Editor {
             command_history: std::collections::VecDeque::new(),
             redo_stack: Vec::new(),
             uniform_scaling: true,
+            physics_world_backup: None,
         }
     }
 
@@ -223,12 +228,24 @@ impl Editor {
             }
         }
     }
+
+    fn backup_physics_world(&mut self, context: &mut serenity::app::Context) {
+        self.physics_world_backup = Some((
+            context.world.physics.clone(),
+            context.world.transforms.clone(),
+        ))
+    }
+
+    fn restore_physics_world(&mut self, context: &mut serenity::app::Context) {
+        if let Some((physics_world, transforms)) = self.physics_world_backup.take() {
+            context.world.physics = physics_world;
+            context.world.transforms = transforms;
+        }
+    }
 }
 
 // TODO: remove this, it's for testing purposes
 fn add_rigid_body_to_first_node(context: &mut serenity::app::Context) {
-    // TODO: remove this
-    // Add physics to first available node
     if let Some(scene_index) = context.world.default_scene_index {
         let scene = &context.world.scenes[scene_index];
         if let Some(graph_node_index) = scene.graph.node_indices().next() {
@@ -416,6 +433,19 @@ impl serenity::app::State for Editor {
 
                         if ui.button("Scale").clicked() {
                             self.gizmo_mode = egui_gizmo::GizmoMode::Scale;
+                        }
+                    });
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui
+                            .checkbox(&mut context.physics_enabled, "Enable Physics")
+                            .clicked()
+                        {
+                            if context.physics_enabled {
+                                self.backup_physics_world(context);
+                            } else {
+                                self.restore_physics_world(context);
+                            }
                         }
                     });
                 });

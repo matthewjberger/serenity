@@ -6,6 +6,7 @@ pub struct Context {
     pub world: crate::world::World,
     pub should_exit: bool,
     pub should_reload_view: bool,
+    pub physics_enabled: bool,
 }
 
 pub fn window_aspect_ratio(window: &winit::window::Window) -> f32 {
@@ -52,6 +53,7 @@ impl App {
             world: crate::world::World::default(),
             should_exit: false,
             should_reload_view: false,
+            physics_enabled: false,
         };
 
         Self {
@@ -135,7 +137,9 @@ impl App {
                     renderer.assign_world(&context.world);
                     context.should_reload_view = false;
                 }
-                context.world.update(context.delta_time as f32);
+                if context.physics_enabled {
+                    context.world.step_physics(context.delta_time as f32);
+                }
                 renderer.render_frame(&mut context, |context, ui| {
                     state.ui(context, ui);
                 });

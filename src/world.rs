@@ -20,8 +20,12 @@ pub struct World {
 }
 
 impl World {
-    pub fn update(&mut self, delta_time: f32) {
+    pub fn step_physics(&mut self, delta_time: f32) {
         self.physics.step(delta_time);
+        self.assign_physics_render_transforms();
+    }
+
+    fn assign_physics_render_transforms(&mut self) {
         if let Some(scene_index) = self.default_scene_index {
             let scene = &self.scenes[scene_index];
             scene.graph.node_indices().for_each(|graph_node_index| {
