@@ -19,6 +19,64 @@ pub struct World {
 }
 
 impl World {
+    pub fn animate(&mut self, animation_index: usize, step: f32) {
+        let animation = &mut self.animations[animation_index];
+        animation.time += step;
+        if animation.time > animation.max_animation_time {
+            animation.time = 0.0;
+        }
+        if animation.time < 0.0 {
+            animation.time = animation.max_animation_time;
+        }
+
+        animation.channels.iter_mut().for_each(|channel| {
+            let mut input_iter = channel.inputs.iter().enumerate().peekable();
+
+            while let Some((previous_key, previous_time)) = input_iter.next() {
+                if let Some((next_key, next_time)) = input_iter.peek() {
+                    let next_key = *next_key;
+                    let next_time = **next_time;
+                    let previous_time = *previous_time;
+                    if animation.time < previous_time || animation.time > next_time {
+                        continue;
+                    }
+
+                    // TODO: support non-linear interpolation
+                    let interpolation = match channel.interpolation {
+                        Interpolation::Linear | _ => {
+                            (animation.time - previous_time) / (next_time - previous_time)
+                        }
+                    };
+
+                    let node = &self.nodes[channel.target_node_index];
+                    let transform_index = node.transform_index;
+
+                    match &channel.transformations {
+                        TransformationSet::Translations(translations) => {
+                            let start = translations[previous_key];
+                            let end = translations[next_key];
+                            let translation = nalgebra_glm::mix(&start, &end, interpolation);
+                            self.transforms[transform_index].translation = translation;
+                        }
+                        TransformationSet::Rotations(rotations) => {
+                            let start = nalgebra_glm::make_quat(rotations[previous_key].as_slice());
+                            let end = nalgebra_glm::make_quat(rotations[next_key].as_slice());
+                            let rotation = nalgebra_glm::quat_slerp(&start, &end, interpolation);
+                            self.transforms[transform_index].rotation = rotation;
+                        }
+                        TransformationSet::Scales(scales) => {
+                            let start = scales[previous_key];
+                            let end = scales[next_key];
+                            let scale = nalgebra_glm::mix(&start, &end, interpolation);
+                            self.transforms[transform_index].scale = scale;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        });
+    }
+
     pub fn merge_world(&mut self, world: &World) {
         let camera_offset = self.cameras.len();
         let image_offset = self.images.len();
@@ -643,6 +701,7 @@ pub enum AlphaMode {
     Blend,
 }
 
+// TODO: rewrite this to use data orientation
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Animation {
     pub time: f32,

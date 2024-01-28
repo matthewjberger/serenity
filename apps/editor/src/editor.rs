@@ -360,6 +360,10 @@ impl serenity::app::State for Editor {
     }
 
     fn update(&mut self, context: &mut serenity::app::Context) {
+        if !context.world.animations.is_empty() {
+            context.world.animate(0, 0.75 * context.delta_time as f32);
+        }
+
         self.receive_messages(context);
         if let Some(active_scene_index) = context.active_scene_index {
             let scene = &context.world.scenes[active_scene_index];
@@ -539,6 +543,19 @@ impl serenity::app::State for Editor {
                                 );
                             });
                     });
+
+                    ui.separator();
+
+                    ui.group(|ui| {
+                        egui::ScrollArea::vertical()
+                            .id_source(ui.next_auto_id())
+                            .show(ui, |ui| {
+                                ui.label(format!(
+                                    "Loaded {} animations",
+                                    context.world.animations.len()
+                                ));
+                            });
+                    });
                 }
 
                 ui.allocate_space(ui.available_size());
@@ -713,6 +730,7 @@ fn node_ui(
     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
         .show_header(ui, |ui| {
             let node_index = graph[graph_node_index];
+            let node = &world.nodes[node_index];
             let NodeMetadata { name } = &world.metadata[node_index];
             let selected = selected_graph_node_index
                 .as_ref()
