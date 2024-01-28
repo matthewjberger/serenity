@@ -9,6 +9,7 @@ pub struct Context {
     pub physics_enabled: bool,
     pub gui_visible: bool,
     pub debug_visible: bool,
+    pub active_scene_index: Option<usize>,
 }
 
 pub fn window_aspect_ratio(window: &winit::window::Window) -> f32 {
@@ -58,6 +59,7 @@ impl App {
             physics_enabled: false,
             gui_visible: true,
             debug_visible: false,
+            active_scene_index: None,
         };
 
         Self {
@@ -140,10 +142,29 @@ impl App {
                 if context.should_reload_view {
                     renderer.assign_world(&context.world);
                     context.should_reload_view = false;
+                    return;
                 }
+
                 if context.physics_enabled {
-                    context.world.step_physics(context.delta_time as f32);
+                    context.world.physics.step(context.delta_time as _);
+                    if let Some(scene_index) = context.active_scene_index {
+                        let scene = &mut context.world.scenes[scene_index];
+                        scene.graph.node_indices().for_each(|graph_node_index| {
+                            let node_index = scene.graph[graph_node_index];
+                            if let Some(rigid_body_index) =
+                                context.world.nodes[node_index].rigid_body_index
+                            {
+                                let transform_index =
+                                    context.world.nodes[node_index].transform_index;
+                                let transform = &mut context.world.transforms[transform_index];
+                                let rigid_body = &context.world.physics.bodies[rigid_body_index];
+                                transform.translation =
+                                    context.world.physics.positions[rigid_body.position_index];
+                            }
+                        });
+                    }
                 }
+
                 renderer.render_frame(&mut context, |context, ui| {
                     if context.gui_visible {
                         state.ui(context, ui);

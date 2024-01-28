@@ -391,7 +391,6 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     let physics = crate::physics::PhysicsWorld::default();
 
     crate::world::World {
-        default_scene_index: Some(0),
         animations,
         cameras,
         images,

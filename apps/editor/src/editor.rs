@@ -246,7 +246,7 @@ impl Editor {
 
 // TODO: remove this, it's for testing purposes
 fn add_rigid_body_to_first_node(context: &mut serenity::app::Context) {
-    if let Some(scene_index) = context.world.default_scene_index {
+    if let Some(scene_index) = context.active_scene_index {
         let scene = &context.world.scenes[scene_index];
         if let Some(graph_node_index) = scene.graph.node_indices().next() {
             let node_index = scene.graph[graph_node_index];
@@ -294,6 +294,7 @@ fn scale_node(context: &mut serenity::app::Context, node_index: usize, x: f32, y
 impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
         context.world = serenity::gltf::import_gltf("resources/models/Lantern.glb");
+        context.active_scene_index = Some(0);
         context.should_reload_view = true;
         add_rigid_body_to_first_node(context);
     }
@@ -360,14 +361,67 @@ impl serenity::app::State for Editor {
 
     fn update(&mut self, context: &mut serenity::app::Context) {
         self.receive_messages(context);
-        camera_system(context);
+        if let Some(active_scene_index) = context.active_scene_index {
+            let scene = &context.world.scenes[active_scene_index];
+            let mut ubo_offset = 0;
+            scene.graph.node_indices().for_each(|graph_node_index| {
+                let node_index = scene.graph[graph_node_index];
+                let node = &context.world.nodes[node_index];
+                if let Some(camera_index) = node.camera_index {
+                    let transform = &mut context.world.transforms[node.transform_index];
+                    let camera = &mut context.world.cameras[camera_index];
+                    let speed = 10.0 * context.delta_time as f32;
+                    if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
+                        camera.orientation.offset -= camera.orientation.direction() * speed;
+                    }
+                    if context.io.is_key_pressed(winit::event::VirtualKeyCode::A) {
+                        camera.orientation.offset += camera.orientation.right() * speed;
+                    }
+                    if context.io.is_key_pressed(winit::event::VirtualKeyCode::S) {
+                        camera.orientation.offset += camera.orientation.direction() * speed;
+                    }
+                    if context.io.is_key_pressed(winit::event::VirtualKeyCode::D) {
+                        camera.orientation.offset -= camera.orientation.right() * speed;
+                    }
+                    if context
+                        .io
+                        .is_key_pressed(winit::event::VirtualKeyCode::Space)
+                    {
+                        camera.orientation.offset += camera.orientation.up() * speed;
+                    }
+                    if context
+                        .io
+                        .is_key_pressed(winit::event::VirtualKeyCode::LShift)
+                    {
+                        camera.orientation.offset -= camera.orientation.up() * speed;
+                    }
+                    camera
+                        .orientation
+                        .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
+                    if context.io.mouse.is_middle_clicked {
+                        camera
+                            .orientation
+                            .pan(&(context.io.mouse.position_delta * context.delta_time as f32));
+                    }
+                    transform.translation = camera.orientation.position();
+                    if context.io.mouse.is_right_clicked {
+                        let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
+                        delta.x *= -1.0;
+                        delta.y *= -1.0;
+                        camera.orientation.rotate(&delta);
+                    }
+                    transform.rotation = camera.orientation.look_at_offset();
+                }
+                ubo_offset += 1;
+            });
+        }
     }
 
     fn ui(&mut self, context: &mut serenity::app::Context, ui_context: &mut egui::Context) {
         egui::Area::new("viewport").show(ui_context, |ui| {
             ui.with_layer_id(egui::LayerId::background(), |ui| {
                 if let Some(selected) = self.selected {
-                    if let Some(scene_index) = context.world.default_scene_index {
+                    if let Some(scene_index) = context.active_scene_index {
                         let scene = &context.world.scenes[scene_index];
                         let node_index = scene.graph[selected];
                         let node = &context.world.nodes[node_index];
@@ -470,7 +524,7 @@ impl serenity::app::State for Editor {
             .show(ui_context, |ui| {
                 ui.set_width(ui.available_width());
                 ui.heading("Scene Tree");
-                if let Some(scene_index) = context.world.default_scene_index {
+                if let Some(scene_index) = context.active_scene_index {
                     let scene = &context.world.scenes[scene_index];
                     ui.group(|ui| {
                         egui::ScrollArea::vertical()
@@ -496,7 +550,7 @@ impl serenity::app::State for Editor {
                 ui.set_width(ui.available_width());
                 ui.heading("Inspector");
                 if let Some(selected_graph_node_index) = self.selected {
-                    if let Some(scene_index) = context.world.default_scene_index {
+                    if let Some(scene_index) = context.active_scene_index {
                         let scene = &context.world.scenes[scene_index];
                         let node_index = scene.graph[selected_graph_node_index];
                         let node = &context.world.nodes[node_index];
@@ -552,63 +606,6 @@ impl serenity::app::State for Editor {
             });
 
         self.toasts.show(ui_context);
-    }
-}
-
-fn camera_system(context: &mut serenity::app::Context) {
-    let mut ubo_offset = 0;
-    if let Some(scene_index) = context.world.default_scene_index {
-        let scene = &context.world.scenes[scene_index];
-        scene.graph.node_indices().for_each(|graph_node_index| {
-            let node_index = scene.graph[graph_node_index];
-            let node = &context.world.nodes[node_index];
-            if let Some(camera_index) = node.camera_index {
-                let transform = &mut context.world.transforms[node.transform_index];
-                let camera = &mut context.world.cameras[camera_index];
-                let speed = 10.0 * context.delta_time as f32;
-                if context.io.is_key_pressed(winit::event::VirtualKeyCode::W) {
-                    camera.orientation.offset -= camera.orientation.direction() * speed;
-                }
-                if context.io.is_key_pressed(winit::event::VirtualKeyCode::A) {
-                    camera.orientation.offset += camera.orientation.right() * speed;
-                }
-                if context.io.is_key_pressed(winit::event::VirtualKeyCode::S) {
-                    camera.orientation.offset += camera.orientation.direction() * speed;
-                }
-                if context.io.is_key_pressed(winit::event::VirtualKeyCode::D) {
-                    camera.orientation.offset -= camera.orientation.right() * speed;
-                }
-                if context
-                    .io
-                    .is_key_pressed(winit::event::VirtualKeyCode::Space)
-                {
-                    camera.orientation.offset += camera.orientation.up() * speed;
-                }
-                if context
-                    .io
-                    .is_key_pressed(winit::event::VirtualKeyCode::LShift)
-                {
-                    camera.orientation.offset -= camera.orientation.up() * speed;
-                }
-                camera
-                    .orientation
-                    .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
-                if context.io.mouse.is_middle_clicked {
-                    camera
-                        .orientation
-                        .pan(&(context.io.mouse.position_delta * context.delta_time as f32));
-                }
-                transform.translation = camera.orientation.position();
-                if context.io.mouse.is_right_clicked {
-                    let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
-                    delta.x *= -1.0;
-                    delta.y *= -1.0;
-                    camera.orientation.rotate(&delta);
-                }
-                transform.rotation = camera.orientation.look_at_offset();
-            }
-            ubo_offset += 1;
-        });
     }
 }
 

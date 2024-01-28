@@ -126,8 +126,11 @@ impl Renderer {
                     .render(&mut render_pass, &self.gpu, &context.world);
             }
 
-            if let Some(view) = self.view.as_mut() {
-                view.render(&mut render_pass, &self.gpu, &context.world);
+            if let Some(scene_index) = context.active_scene_index {
+                let scene = &context.world.scenes[scene_index];
+                if let Some(view) = self.view.as_mut() {
+                    view.render(&mut render_pass, &self.gpu, &context.world, scene);
+                }
             }
 
             self.gui

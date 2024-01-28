@@ -1,6 +1,5 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct World {
-    pub default_scene_index: Option<usize>,
     pub animations: Vec<Animation>,
     pub cameras: Vec<Camera>,
     pub images: Vec<Image>,
@@ -20,26 +19,6 @@ pub struct World {
 }
 
 impl World {
-    pub fn step_physics(&mut self, delta_time: f32) {
-        self.physics.step(delta_time);
-        self.assign_physics_render_transforms();
-    }
-
-    fn assign_physics_render_transforms(&mut self) {
-        if let Some(scene_index) = self.default_scene_index {
-            let scene = &self.scenes[scene_index];
-            scene.graph.node_indices().for_each(|graph_node_index| {
-                let node_index = scene.graph[graph_node_index];
-                if let Some(rigid_body_index) = self.nodes[node_index].rigid_body_index {
-                    let transform_index = self.nodes[node_index].transform_index;
-                    let transform = &mut self.transforms[transform_index];
-                    let rigid_body = &self.physics.bodies[rigid_body_index];
-                    transform.translation = self.physics.positions[rigid_body.position_index];
-                }
-            });
-        }
-    }
-
     pub fn merge_world(&mut self, world: &World) {
         let camera_offset = self.cameras.len();
         let image_offset = self.images.len();
