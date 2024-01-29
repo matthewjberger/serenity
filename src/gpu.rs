@@ -84,9 +84,10 @@ impl Gpu {
             .await
             .expect("Failed to request adapter!");
 
-        let required_features =
-            wgpu::Features::PUSH_CONSTANTS | wgpu::Features::TEXTURE_BINDING_ARRAY;
-        let optional_features = wgpu::Features::all();
+        let required_features = wgpu::Features::PUSH_CONSTANTS
+            | wgpu::Features::TEXTURE_BINDING_ARRAY
+            | wgpu::Features::POLYGON_MODE_LINE;
+        let optional_features = wgpu::Features::POLYGON_MODE_POINT;
 
         let (device, queue) = {
             log::info!("WGPU Adapter Features: {:#?}", adapter.features());

@@ -13,7 +13,6 @@ pub struct WorldRender {
     pub line_pipeline: wgpu::RenderPipeline,
     pub line_strip_pipeline: wgpu::RenderPipeline,
     pub triangle_strip_pipeline: wgpu::RenderPipeline,
-    pub point_pipeline: wgpu::RenderPipeline,
 }
 
 impl WorldRender {
@@ -217,18 +216,6 @@ impl WorldRender {
             (texture_array_bind_group, texture_array_bind_group_layout)
         };
 
-        let point_pipeline = create_pipeline(
-            gpu,
-            &[
-                &uniform_bind_group_layout,
-                &dynamic_uniform_bind_group_layout,
-                &texture_array_bind_group_layout,
-            ],
-            false,
-            wgpu::PrimitiveTopology::PointList,
-            wgpu::PolygonMode::Point,
-        );
-
         let line_pipeline = create_pipeline(
             gpu,
             &[
@@ -301,7 +288,6 @@ impl WorldRender {
             triangle_blended_pipeline,
             textures,
             samplers,
-            point_pipeline,
             line_pipeline,
             line_strip_pipeline,
             triangle_strip_pipeline,
@@ -367,9 +353,6 @@ impl WorldRender {
 
                     for primitive in mesh.primitives.iter() {
                         match primitive.topology {
-                            crate::world::PrimitiveTopology::Points => {
-                                render_pass.set_pipeline(&self.point_pipeline);
-                            }
                             crate::world::PrimitiveTopology::Lines => {
                                 render_pass.set_pipeline(&self.line_pipeline);
                             }
@@ -387,7 +370,10 @@ impl WorldRender {
                             crate::world::PrimitiveTopology::TriangleStrip => {
                                 render_pass.set_pipeline(&self.triangle_strip_pipeline);
                             }
-                            _ => continue, // wgpu does not support line loops or triangle fans
+
+                            // wgpu does not support line loops or triangle fans
+                            // and Point primitive topology is unsupported on Metal so it is omitted here
+                            _ => continue,
                         }
 
                         let mut shader_material = Material::default();
