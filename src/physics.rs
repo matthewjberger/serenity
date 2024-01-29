@@ -13,7 +13,7 @@ pub struct PhysicsWorld {
 impl Default for PhysicsWorld {
     fn default() -> Self {
         Self {
-            gravity: nalgebra_glm::vec3(0.0, -2.8, 0.0),
+            gravity: nalgebra_glm::vec3(0.0, -9.8, 0.0),
             positions: Vec::new(),
             velocities: Vec::new(),
             forces: Vec::new(),

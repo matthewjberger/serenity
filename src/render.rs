@@ -30,6 +30,36 @@ impl Renderer {
     }
 
     pub fn assign_world(&mut self, world: &crate::world::World) {
+        let mut debug_instances = Vec::new();
+        world.scenes.iter().for_each(|scene| {
+            scene.graph.node_indices().for_each(|graph_node_index| {
+                let node_index = scene.graph[graph_node_index];
+                let node = &world.nodes[node_index];
+                if let Some(mesh_index) = node.mesh_index {
+                    let mesh = &world.meshes[mesh_index];
+
+                    mesh.primitives.iter().for_each(|primitive| {
+                        let mut aabb = crate::world::AABB::new(
+                            nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
+                            nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
+                        );
+                        let vertices = &world.vertices[primitive.vertex_offset
+                            ..(primitive.vertex_offset + primitive.number_of_vertices)];
+                        aabb.expand_to_include(&crate::world::AABB::from_vertices(&vertices));
+                        let (global_translation, global_rotation, _global_scale) =
+                            world.global_transform_data(&scene.graph, graph_node_index);
+                        debug_instances.push(crate::debug::DebugInstance {
+                            translation: global_translation - aabb.center(),
+                            rotation: global_rotation,
+                            color: nalgebra_glm::Vec4::new(0.0, 1.0, 0.0, 1.0),
+                            scale: aabb.extents(),
+                        });
+                    });
+                }
+            });
+        });
+        self.debug.assign_instances(&self.gpu, &debug_instances);
+
         let _ = std::mem::replace(
             &mut self.view,
             Some(crate::view::WorldRender::new(&self.gpu, &world)),

@@ -293,7 +293,7 @@ fn scale_node(context: &mut serenity::app::Context, node_index: usize, x: f32, y
 
 impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        context.world = serenity::gltf::import_gltf("resources/models/Lantern.glb");
+        context.world = serenity::gltf::import_gltf("resources/models/DamagedHelmet.glb");
         context.active_scene_index = Some(0);
         context.should_reload_view = true;
         add_rigid_body_to_first_node(context);

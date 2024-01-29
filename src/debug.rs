@@ -1,14 +1,11 @@
-// TODO: add other shapes for instanced debug display
-//       line, cube, sphere, capsule
-
 pub struct DebugRender {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub instance_buffer: wgpu::Buffer,
-    pub instances: Vec<Instance>,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
     pub cube_pipeline: wgpu::RenderPipeline,
+    pub number_of_instances: u32,
 }
 
 impl DebugRender {
@@ -30,36 +27,12 @@ impl DebugRender {
             },
         );
 
-        let instances = vec![
-            Instance {
-                position: nalgebra_glm::vec3(4.0, 0.0, 0.0),
-                rotation: nalgebra_glm::quat_identity(),
-                scale: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
-                color: nalgebra_glm::vec4(0.0, 1.0, 0.0, 1.0),
-            },
-            Instance {
-                position: nalgebra_glm::vec3(8.0, 0.0, 0.0),
-                rotation: nalgebra_glm::quat_identity(),
-                scale: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
-                color: nalgebra_glm::vec4(0.0, 0.0, 1.0, 1.0),
-            },
-        ];
-        let instance_data = instances
-            .iter()
-            .map(|instance| InstanceBinding {
-                model: (nalgebra_glm::translation(&instance.position)
-                    * nalgebra_glm::quat_to_mat4(&instance.rotation)
-                    * nalgebra_glm::scaling(&instance.scale.xyz()))
-                .into(),
-                color: instance.color,
-            })
-            .collect::<Vec<_>>();
         let instance_buffer = wgpu::util::DeviceExt::create_buffer_init(
             &gpu.device,
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Instance Buffer"),
-                contents: bytemuck::cast_slice(&instance_data),
-                usage: wgpu::BufferUsages::VERTEX,
+                contents: &[],
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             },
         );
 
@@ -102,11 +75,38 @@ impl DebugRender {
         Self {
             vertex_buffer,
             index_buffer,
-            instances,
             instance_buffer,
             uniform_buffer,
             uniform_bind_group,
             cube_pipeline,
+            number_of_instances: 0,
+        }
+    }
+
+    pub fn assign_instances(&mut self, gpu: &crate::gpu::Gpu, instances: &[DebugInstance]) {
+        self.number_of_instances = instances.len() as _;
+
+        if (self.instance_buffer.size() as usize)
+            < std::mem::size_of::<InstanceBinding>() * instances.len()
+        {
+            let instance_bindings = instances
+                .iter()
+                .map(|instance| InstanceBinding {
+                    model: (nalgebra_glm::translation(&instance.translation)
+                        * nalgebra_glm::quat_to_mat4(&instance.rotation)
+                        * nalgebra_glm::scaling(&instance.scale.xyz()))
+                    .into(),
+                    color: instance.color,
+                })
+                .collect::<Vec<_>>();
+            self.instance_buffer = wgpu::util::DeviceExt::create_buffer_init(
+                &gpu.device,
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Instance Buffer"),
+                    contents: bytemuck::cast_slice(&instance_bindings),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                },
+            );
         }
     }
 
@@ -136,7 +136,7 @@ impl DebugRender {
         // Draw a cube
         render_pass.set_pipeline(&self.cube_pipeline);
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.draw_indexed(0..(INDICES.len() as _), 0, 0..(self.instances.len() as _));
+        render_pass.draw_indexed(0..(INDICES.len() as _), 0, 0..self.number_of_instances);
     }
 }
 
@@ -232,28 +232,28 @@ impl Vertex {
 }
 const VERTICES: [Vertex; 8] = [
     Vertex {
-        position: nalgebra_glm::Vec3::new(-1.0, -1.0, -1.0),
+        position: nalgebra_glm::Vec3::new(-0.5, -0.5, -0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(1.0, -1.0, -1.0),
+        position: nalgebra_glm::Vec3::new(0.5, -0.5, -0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(1.0, 1.0, -1.0),
+        position: nalgebra_glm::Vec3::new(0.5, 0.5, -0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(-1.0, 1.0, -1.0),
+        position: nalgebra_glm::Vec3::new(-0.5, 0.5, -0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(-1.0, -1.0, 1.0),
+        position: nalgebra_glm::Vec3::new(-0.5, -0.5, 0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(1.0, -1.0, 1.0),
+        position: nalgebra_glm::Vec3::new(0.5, -0.5, 0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(1.0, 1.0, 1.0),
+        position: nalgebra_glm::Vec3::new(0.5, 0.5, 0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(-1.0, 1.0, 1.0),
+        position: nalgebra_glm::Vec3::new(-0.5, 0.5, 0.5),
     },
 ];
 
@@ -267,12 +267,13 @@ const INDICES: [u32; 36] = [
     3, 7, 6, 6, 2, 3,
 ];
 
+// TODO: allow other shapes than cubes
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Instance {
-    pub position: nalgebra_glm::Vec3,
+#[derive(Default, Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct DebugInstance {
+    pub translation: nalgebra_glm::Vec3,
     pub rotation: nalgebra_glm::Quat,
-    pub scale: nalgebra_glm::Vec4,
+    pub scale: nalgebra_glm::Vec3,
     pub color: nalgebra_glm::Vec4,
 }
 

@@ -331,8 +331,15 @@ impl WorldRender {
         let mut mesh_ubos = vec![DynamicUniform::default(); world.transforms.len()];
         let mut ubo_offset = 0;
         scene.graph.node_indices().for_each(|graph_node_index| {
+            let (translation, rotation, scale) =
+                world.global_transform_data(&scene.graph, graph_node_index);
+            let transform = crate::world::Transform {
+                translation,
+                rotation,
+                scale,
+            };
             mesh_ubos[ubo_offset] = DynamicUniform {
-                model: world.global_transform(&scene.graph, graph_node_index),
+                model: transform.matrix(),
             };
             ubo_offset += 1;
         });
