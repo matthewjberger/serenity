@@ -284,6 +284,8 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         })
         .collect::<Vec<_>>();
 
+    let mut animation_channels = Vec::new();
+    let mut animation_translation_lists = Vec::new();
     let animations = gltf
         .animations()
         .map(|animation| {
@@ -299,47 +301,68 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                     let outputs = reader
                         .read_outputs()
                         .expect("Failed to read animation channel outputs!");
-                    let transformations = match outputs {
+
+                    match outputs {
                         gltf::animation::util::ReadOutputs::Translations(translations) => {
-                            let translations = translations
-                                .map(nalgebra_glm::Vec3::from)
-                                .collect::<Vec<_>>();
-                            crate::world::TransformationSet::Translations(translations)
+                            for translation in translations {
+                                let translation = nalgebra_glm::Vec3::from(translation);
+                                let animation_translation_index = animation_translation_lists.len();
+                                animation_translation_lists.push(translation);
+                            }
                         }
                         gltf::animation::util::ReadOutputs::Rotations(rotations) => {
                             let rotations = rotations
                                 .into_f32()
                                 .map(nalgebra_glm::Vec4::from)
                                 .collect::<Vec<_>>();
-                            crate::world::TransformationSet::Rotations(rotations)
                         }
                         gltf::animation::util::ReadOutputs::Scales(scales) => {
                             let scales = scales.map(nalgebra_glm::Vec3::from).collect::<Vec<_>>();
-                            crate::world::TransformationSet::Scales(scales)
                         }
                         gltf::animation::util::ReadOutputs::MorphTargetWeights(weights) => {
-                            let morph_target_weights = weights.into_f32().collect::<Vec<_>>();
-                            crate::world::TransformationSet::MorphTargetWeights(
-                                morph_target_weights,
-                            )
+                            let _morph_target_weights = weights.into_f32().collect::<Vec<_>>();
+                            // TODO: animate morph weights
                         }
-                    };
-                    crate::world::Channel {
-                        target_node_index,
-                        inputs,
-                        transformations,
-                        interpolation: crate::world::Interpolation::default(),
                     }
+
+                    let channel_index = animation_channels.len();
+                    let channel = crate::world::AnimationChannel {
+                        target_node_index,
+                        ..Default::default()
+                    };
+                    animation_channels.push(channel);
+                    channel_index
                 })
                 .collect::<Vec<_>>();
-            let max_animation_time = channels
-                .iter()
-                .flat_map(|channel| channel.inputs.iter().copied())
-                .fold(0.0, f32::max);
+
+            let samplers = animation
+                .samplers()
+                .map(|sampler| {
+                    // let interpolation = match sampler.interpolation() {
+                    //     gltf::animation::Interpolation::Linear => {
+                    //         crate::world::Interpolation::Linear
+                    //     }
+                    //     gltf::animation::Interpolation::Step => crate::world::Interpolation::Step,
+                    //     gltf::animation::Interpolation::CubicSpline => {
+                    //         crate::world::Interpolation::CubicSpline
+                    //     }
+                    // };
+                    // let input_index = sampler.input().index();
+                    // let output_index = sampler.output().index();
+                    // let sampler_index = animation_samplers.len();
+                    // let sampler = crate::world::AnimationSampler {
+                    //     interpolation,
+                    //     input_index,
+                    //     output_index,
+                    // };
+                    // animation_samplers.push(sampler);
+                    // sampler_index
+                })
+                .collect::<Vec<_>>();
+
             crate::world::Animation {
                 channels,
-                time: 0.0,
-                max_animation_time,
+                samplers: vec![],
             }
         })
         .collect::<Vec<_>>();
@@ -391,7 +414,12 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     let physics = crate::physics::PhysicsWorld::default();
 
     crate::world::World {
-        animations,
+        animations: vec![],
+        animation_samplers: vec![],
+        animation_channels: vec![],
+        animation_translations: vec![],
+        animation_rotations: vec![],
+        animation_scales: vec![],
         cameras,
         images,
         indices,

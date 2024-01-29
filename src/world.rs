@@ -1,6 +1,11 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct World {
     pub animations: Vec<Animation>,
+    pub animation_channels: Vec<AnimationChannel>,
+    pub animation_samplers: Vec<AnimationSampler>,
+    pub animation_translations: Vec<nalgebra_glm::Vec3>,
+    pub animation_rotations: Vec<nalgebra_glm::Quat>,
+    pub animation_scales: Vec<nalgebra_glm::Vec3>,
     pub cameras: Vec<Camera>,
     pub images: Vec<Image>,
     pub indices: Vec<u32>,
@@ -21,57 +26,74 @@ pub struct World {
 impl World {
     pub fn animate(&mut self, animation_index: usize, step: f32) {
         let animation = &mut self.animations[animation_index];
-        animation.time += step;
-        if animation.time > animation.max_animation_time {
-            animation.time = 0.0;
-        }
-        if animation.time < 0.0 {
-            animation.time = animation.max_animation_time;
-        }
 
-        animation.channels.iter_mut().for_each(|channel| {
-            let mut input_iter = channel.inputs.iter().enumerate().peekable();
+        // animation.time += step;
+        // if animation.time > animation.max_animation_time {
+        //     animation.time = 0.0;
+        // }
+        // if animation.time < 0.0 {
+        //     animation.time = animation.max_animation_time;
+        // }
 
-            while let Some((previous_key, previous_time)) = input_iter.next() {
-                if let Some((next_key, next_time)) = input_iter.peek() {
-                    let next_key = *next_key;
-                    let next_time = **next_time;
-                    let previous_time = *previous_time;
-                    if animation.time < previous_time || animation.time > next_time {
-                        continue;
-                    }
+        animation.channels.iter_mut().for_each(|channel_index| {
+            let channel = &self.animation_channels[*channel_index];
+            let target_node = &self.nodes[channel.target_node_index];
+            let sampler = &mut self.animation_samplers[channel.sampler_index];
 
-                    // TODO: support non-linear interpolation
-                    let interpolation = match channel.interpolation {
-                        Interpolation::Linear | _ => {
-                            (animation.time - previous_time) / (next_time - previous_time)
-                        }
-                    };
+            let mut sampler_inputs = sampler.inputs.iter().enumerate().peekable();
 
-                    let node = &self.nodes[channel.target_node_index];
-                    let transform_index = node.transform_index;
+            while let Some((previous_key, previous_time)) = sampler_inputs.next() {
+                if let Some((next_key, next_time)) = sampler_inputs.peek() {
+                    // let next_key = *next_key;
+                    // let next_time = **next_time;
+                    // let previous_time = *previous_time;
+                    // // if animation.time < previous_time || animation.time > next_time {
+                    // //     continue;
+                    // // }
 
-                    match &channel.transformations {
-                        TransformationSet::Translations(translations) => {
-                            let start = translations[previous_key];
-                            let end = translations[next_key];
-                            let translation = nalgebra_glm::mix(&start, &end, interpolation);
-                            self.transforms[transform_index].translation = translation;
-                        }
-                        TransformationSet::Rotations(rotations) => {
-                            let start = nalgebra_glm::make_quat(rotations[previous_key].as_slice());
-                            let end = nalgebra_glm::make_quat(rotations[next_key].as_slice());
-                            let rotation = nalgebra_glm::quat_slerp(&start, &end, interpolation);
-                            self.transforms[transform_index].rotation = rotation;
-                        }
-                        TransformationSet::Scales(scales) => {
-                            let start = scales[previous_key];
-                            let end = scales[next_key];
-                            let scale = nalgebra_glm::mix(&start, &end, interpolation);
-                            self.transforms[transform_index].scale = scale;
-                        }
-                        _ => {}
-                    }
+                    // // TODO: support non-linear interpolation
+                    // let interpolation = match sampler.interpolation {
+                    //     AnimationInterpolation::Linear | _ => {
+                    //         (sampler.current_time - previous_time) / (next_time - previous_time)
+                    //     }
+                    // };
+
+                    // let node = &self.nodes[channel.target_node_index];
+                    // let transform_index = node.transform_index;
+
+                    // for translation_list_index in sampler.outputs.translation_indices.iter() {
+                    //     let translations =
+                    //         &self.animation_translation_lists[*translation_list_index];
+                    //     let start = translations[previous_key];
+                    //     let end = translations[next_key];
+                    //     let translation = nalgebra_glm::mix(&start, &end, interpolation);
+                    //     self.transforms[transform_index].translation = translation;
+                    // }
+
+                    // for scale_list_index in sampler.outputs.scale_indices.iter() {
+                    //     let scales = &self.animation_scale_lists[*scale_list_index];
+                    //     let start = scales[previous_key];
+                    //     let end = scales[next_key];
+                    //     let scale = nalgebra_glm::mix(&start, &end, interpolation);
+                    //     self.transforms[transform_index].scale = scale;
+                    // }
+
+                    // // match &sampler.outputs {
+                    // //     TransformationSet::Translations(translations) => {}
+                    // //     TransformationSet::Rotations(rotations) => {
+                    // //         let start = nalgebra_glm::make_quat(rotations[previous_key].as_slice());
+                    // //         let end = nalgebra_glm::make_quat(rotations[next_key].as_slice());
+                    // //         let rotation = nalgebra_glm::quat_slerp(&start, &end, interpolation);
+                    // //         self.transforms[transform_index].rotation = rotation;
+                    // //     }
+                    // //     TransformationSet::Scales(scales) => {
+                    // //         let start = scales[previous_key];
+                    // //         let end = scales[next_key];
+                    // //         let scale = nalgebra_glm::mix(&start, &end, interpolation);
+                    // //         self.transforms[transform_index].scale = scale;
+                    // //     }
+                    // //     _ => {}
+                    // // }
                 }
             }
         });
@@ -90,14 +112,6 @@ impl World {
         let texture_offset = self.textures.len();
         let transform_offset = self.transforms.len();
         let vertex_offset = self.vertices.len();
-
-        world.animations.iter().cloned().for_each(|animation| {
-            let mut animation = animation.clone();
-            animation.channels.iter_mut().for_each(|channel| {
-                channel.target_node_index += node_offset;
-            });
-            self.animations.push(animation);
-        });
 
         world.cameras.iter().cloned().for_each(|camera| {
             self.cameras.push(camera);
@@ -701,32 +715,49 @@ pub enum AlphaMode {
     Blend,
 }
 
-// TODO: rewrite this to use data orientation
-#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct Animation {
-    pub time: f32,
-    pub channels: Vec<Channel>,
-    pub max_animation_time: f32,
-}
-
+/// A keyframe animation
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct Channel {
-    pub target_node_index: usize,
+pub struct Animation {
+    pub channels: Vec<usize>,
+    pub samplers: Vec<AnimationSampler>,
+}
+
+/// Defines a keyframe graph
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct AnimationSampler {
     pub inputs: Vec<f32>,
-    pub transformations: TransformationSet,
-    pub interpolation: Interpolation,
+    pub outputs: AnimationSamplerOutput,
+    pub interpolation: AnimationInterpolation,
+}
+
+/// Animation output sampler values.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum AnimationSamplerOutput {
+    Translations(Vec<usize>),
+    Rotations(Vec<usize>),
+    Scales(Vec<usize>),
+    MorphTargetWeights(Vec<usize>),
+}
+
+/// Targets an animation's sampler at a node, linking the animation to the node
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct AnimationChannel {
+    pub target_node_index: usize,
+    pub sampler_index: usize, // local to the animation
 }
 
 #[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub enum Interpolation {
+pub enum AnimationInterpolation {
     #[default]
     Linear,
     Step,
     CubicSpline,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TransformationSet {
+    #[default]
+    None,
     Translations(Vec<nalgebra_glm::Vec3>),
     Rotations(Vec<nalgebra_glm::Vec4>),
     Scales(Vec<nalgebra_glm::Vec3>),
@@ -741,5 +772,6 @@ pub struct Skin {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Joint {
     pub target_node_index: usize,
+    // TODO: store this in the world in a flat vec
     pub inverse_bind_matrix: nalgebra_glm::Mat4,
 }
