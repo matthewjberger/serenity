@@ -363,7 +363,6 @@ impl serenity::app::State for Editor {
         self.receive_messages(context);
         if let Some(active_scene_index) = context.active_scene_index {
             let scene = &context.world.scenes[active_scene_index];
-            let mut ubo_offset = 0;
             scene.graph.node_indices().for_each(|graph_node_index| {
                 let node_index = scene.graph[graph_node_index];
                 let node = &context.world.nodes[node_index];
@@ -412,7 +411,6 @@ impl serenity::app::State for Editor {
                     }
                     transform.rotation = camera.orientation.look_at_offset();
                 }
-                ubo_offset += 1;
             });
         }
     }
