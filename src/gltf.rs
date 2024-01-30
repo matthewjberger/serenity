@@ -226,7 +226,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                 let transform_index = transforms.len();
                 transforms.push(crate::world::Transform::default());
 
-                let metadata_index = transforms.len();
+                let metadata_index = metadata.len();
                 metadata.push(crate::world::NodeMetadata {
                     name: "Scene Root".to_string(),
                 });

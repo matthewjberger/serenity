@@ -24,10 +24,6 @@ impl World {
         scenegraph: &SceneGraph,
         graph_node_index: petgraph::graph::NodeIndex,
     ) -> nalgebra_glm::Mat4 {
-        if graph_node_index == petgraph::graph::NodeIndex::default() {
-            return nalgebra_glm::Mat4::identity();
-        }
-
         let node_index = scenegraph[graph_node_index];
         let transform_index = self.nodes[node_index].transform_index;
         let transform = self.transforms[transform_index].matrix();
