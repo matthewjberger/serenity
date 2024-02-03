@@ -239,6 +239,8 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                     mesh_index: None,
                     light_index: None,
                     rigid_body_index: None,
+                    primitive_mesh_index: None,
+                    aabb_index: None,
                 });
 
                 let root_node_index = scene.graph.add_node(node_index);
@@ -378,6 +380,8 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
             mesh_index: None,
             light_index: None,
             rigid_body_index: None,
+            primitive_mesh_index: None,
+            aabb_index: None,
         });
 
         let camera_graph_node_index = scenes[0].graph.add_node(node_index);
@@ -389,6 +393,30 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     }
 
     let physics = crate::physics::PhysicsWorld::default();
+
+    let mut aabbs = Vec::new();
+    scenes.iter().for_each(|scene| {
+        scene.graph.node_indices().for_each(|graph_node_index| {
+            let node_index = scene.graph[graph_node_index];
+            let node = &mut nodes[node_index];
+            if let Some(mesh_index) = node.mesh_index {
+                let mesh = &meshes[mesh_index];
+                let mut aabb = crate::world::AxisAlignedBoundingBox::new(
+                    nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
+                    nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
+                );
+                mesh.primitives.iter().for_each(|primitive| {
+                    let vertices = &vertices[primitive.vertex_offset
+                        ..(primitive.vertex_offset + primitive.number_of_vertices)];
+                    aabb.expand_to_include(&crate::world::AxisAlignedBoundingBox::from_vertices(
+                        &vertices,
+                    ));
+                });
+                node.aabb_index = Some(aabbs.len());
+                aabbs.push(aabb);
+            }
+        });
+    });
 
     crate::world::World {
         animations,
@@ -407,6 +435,8 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         transforms,
         vertices,
         physics,
+        primitive_meshes: vec![],
+        aabbs,
     }
 }
 

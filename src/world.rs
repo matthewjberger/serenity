@@ -15,10 +15,27 @@ pub struct World {
     pub textures: Vec<Texture>,
     pub transforms: Vec<Transform>,
     pub vertices: Vec<Vertex>,
+    pub primitive_meshes: Vec<PrimitiveMesh>,
+    pub aabbs: Vec<AxisAlignedBoundingBox>,
     pub physics: crate::physics::PhysicsWorld,
 }
 
 impl World {
+    pub fn add_rigid_body_to_node(&mut self, node_index: usize) {
+        let node = &mut self.nodes[node_index];
+        let rigid_body_index = self
+            .physics
+            .add_rigid_body(nalgebra_glm::Vec3::new(0.0, 0.0, 0.0));
+        node.rigid_body_index = Some(rigid_body_index);
+    }
+
+    pub fn add_primitive_mesh_to_node(&mut self, node_index: usize, primitive_mesh: PrimitiveMesh) {
+        let node = &mut self.nodes[node_index];
+        let primitive_mesh_index = self.primitive_meshes.len();
+        self.primitive_meshes.push(primitive_mesh);
+        node.primitive_mesh_index = Some(primitive_mesh_index);
+    }
+
     pub fn global_transform(
         &self,
         scenegraph: &SceneGraph,
@@ -37,6 +54,25 @@ impl World {
             None => transform,
         }
     }
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PrimitiveMesh {
+    pub shape: Shape,
+    pub color: nalgebra_glm::Vec4,
+}
+
+#[repr(C)]
+#[derive(
+    Default, Copy, Clone, Debug, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+pub enum Shape {
+    // Includes diagonal lines
+    #[default]
+    Cube,
+
+    // Does not include diagonal lines
+    CubeExtents,
 }
 
 #[repr(C)]
@@ -444,6 +480,8 @@ pub struct Node {
     pub mesh_index: Option<usize>,
     pub light_index: Option<usize>,
     pub rigid_body_index: Option<usize>,
+    pub primitive_mesh_index: Option<usize>,
+    pub aabb_index: Option<usize>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -577,4 +615,41 @@ pub struct Skin {
 pub struct Joint {
     pub target_node_index: usize,
     pub inverse_bind_matrix: nalgebra_glm::Mat4,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct AxisAlignedBoundingBox {
+    pub min: nalgebra_glm::Vec3,
+    pub max: nalgebra_glm::Vec3,
+}
+
+impl AxisAlignedBoundingBox {
+    pub fn new(min: nalgebra_glm::Vec3, max: nalgebra_glm::Vec3) -> Self {
+        Self { min, max }
+    }
+
+    pub fn extents(&self) -> nalgebra_glm::Vec3 {
+        self.max - self.min
+    }
+
+    pub fn center(&self) -> nalgebra_glm::Vec3 {
+        (self.min + self.max) / 2.0
+    }
+
+    pub fn from_vertices(vertices: &[Vertex]) -> Self {
+        let mut min = vertices[0].position;
+        let mut max = vertices[0].position;
+
+        for point in vertices.iter().skip(1) {
+            min = nalgebra_glm::min2(&min, &point.position);
+            max = nalgebra_glm::max2(&max, &point.position);
+        }
+
+        Self { min, max }
+    }
+
+    pub fn expand_to_include(&mut self, other: &AxisAlignedBoundingBox) {
+        self.min = nalgebra_glm::min2(&self.min, &other.min);
+        self.max = nalgebra_glm::max2(&self.max, &other.max);
+    }
 }

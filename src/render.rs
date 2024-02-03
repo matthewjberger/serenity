@@ -29,11 +29,12 @@ impl Renderer {
         }
     }
 
-    pub fn assign_world(&mut self, world: &crate::world::World) {
+    pub fn sync_context(&mut self, context: &crate::app::Context) {
         let _ = std::mem::replace(
             &mut self.view,
-            Some(crate::view::WorldRender::new(&self.gpu, &world)),
+            Some(crate::view::WorldRender::new(&self.gpu, &context.world)),
         );
+        self.debug.sync_context(&context, &self.gpu);
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -122,15 +123,11 @@ impl Renderer {
             });
 
             if context.debug_visible {
-                self.debug
-                    .render(&mut render_pass, &self.gpu, &context.world);
+                self.debug.render(&mut render_pass, &self.gpu, context);
             }
 
-            if let Some(scene_index) = context.active_scene_index {
-                let scene = &context.world.scenes[scene_index];
-                if let Some(view) = self.view.as_mut() {
-                    view.render(&mut render_pass, &self.gpu, &context.world, scene);
-                }
+            if let Some(view) = self.view.as_mut() {
+                view.render(&mut render_pass, &self.gpu, context);
             }
 
             self.gui

@@ -102,13 +102,10 @@ impl Editor {
                             context.should_exit = true;
                         }
                         Command::ImportGltfFile(path) => {
-                            context.world = serenity::gltf::import_gltf(&path);
-                            context.should_reload_view = true;
                             self.selected = None;
                             self.redo_stack = Vec::new();
                             self.command_history = std::collections::VecDeque::new();
-
-                            add_rigid_body_to_first_node(context);
+                            context.import_file(&path);
                         }
                         Command::Translate(node_index, x, y, z) => {
                             translate_node(context, node_index, x, y, z);
@@ -166,9 +163,9 @@ impl Editor {
             transform.translation.z,
         );
         ui.label("");
-        ui.add(egui::DragValue::new(&mut translation_x).speed(0.1));
-        ui.add(egui::DragValue::new(&mut translation_y).speed(0.1));
-        ui.add(egui::DragValue::new(&mut translation_z).speed(0.1));
+        ui.add(egui::DragValue::new(&mut translation_x).speed(1.0));
+        ui.add(egui::DragValue::new(&mut translation_y).speed(1.0));
+        ui.add(egui::DragValue::new(&mut translation_z).speed(1.0));
         ui.end_row();
         if translation_x != transform.translation.x
             || translation_y != transform.translation.y
@@ -193,13 +190,13 @@ impl Editor {
         ui.label("");
         let mut uniform_scale = 0.0;
         if ui
-            .add(egui::DragValue::new(&mut scale_x).speed(0.1))
+            .add(egui::DragValue::new(&mut scale_x).speed(0.05))
             .changed()
         {
             uniform_scale = scale_x - transform.scale.x;
         }
         if ui
-            .add(egui::DragValue::new(&mut scale_y).speed(0.1))
+            .add(egui::DragValue::new(&mut scale_y).speed(0.05))
             .changed()
         {
             uniform_scale = scale_y - transform.scale.y;
@@ -244,22 +241,6 @@ impl Editor {
     }
 }
 
-// TODO: remove this, it's for testing purposes
-fn add_rigid_body_to_first_node(context: &mut serenity::app::Context) {
-    if let Some(scene_index) = context.active_scene_index {
-        let scene = &context.world.scenes[scene_index];
-        if let Some(graph_node_index) = scene.graph.node_indices().next() {
-            let node_index = scene.graph[graph_node_index];
-            let node = &mut context.world.nodes[node_index];
-            let rigid_body_index = context
-                .world
-                .physics
-                .add_rigid_body(nalgebra_glm::Vec3::new(0.0, 0.0, 0.0));
-            node.rigid_body_index = Some(rigid_body_index);
-        }
-    }
-}
-
 fn translate_node(context: &mut serenity::app::Context, node_index: usize, x: f32, y: f32, z: f32) {
     let transform_index = context.world.nodes[node_index].transform_index;
     let transform = &mut context.world.transforms[transform_index];
@@ -293,10 +274,7 @@ fn scale_node(context: &mut serenity::app::Context, node_index: usize, x: f32, y
 
 impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        context.world = serenity::gltf::import_gltf("resources/models/Lantern.glb");
-        context.active_scene_index = Some(0);
-        context.should_reload_view = true;
-        add_rigid_body_to_first_node(context);
+        context.import_file(&"resources/models/DamagedHelmet.glb");
     }
 
     fn receive_event(
@@ -430,7 +408,7 @@ impl serenity::app::State for Editor {
                             let (_camera_position, projection, view) =
                                 serenity::world::create_camera_matrices(
                                     &context.world,
-                                    &scene,
+                                    scene,
                                     aspect_ratio,
                                 )
                                 .unwrap_or_default();

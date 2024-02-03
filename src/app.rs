@@ -12,6 +12,39 @@ pub struct Context {
     pub active_scene_index: Option<usize>,
 }
 
+impl Context {
+    pub fn import_file(&mut self, path: &str) {
+        self.world = crate::gltf::import_gltf(&path);
+
+        if self.world.scenes.is_empty() {
+            self.world.scenes.push(crate::world::Scene::default());
+        }
+        self.active_scene_index = Some(0);
+
+        if let Some(scene_index) = self.active_scene_index {
+            self.add_bounding_boxes(scene_index);
+        }
+
+        self.should_reload_view = true;
+    }
+
+    fn add_bounding_boxes(&mut self, scene_index: usize) {
+        self.world.scenes[scene_index]
+            .graph
+            .node_indices()
+            .into_iter()
+            .for_each(|graph_node_index| {
+                let node_index = self.world.scenes[scene_index].graph[graph_node_index];
+                let primitive_mesh = crate::world::PrimitiveMesh {
+                    shape: crate::world::Shape::CubeExtents,
+                    color: nalgebra_glm::vec4(0.0, 1.0, 0.0, 1.0),
+                };
+                self.world
+                    .add_primitive_mesh_to_node(node_index, primitive_mesh);
+            });
+    }
+}
+
 pub fn window_aspect_ratio(window: &winit::window::Window) -> f32 {
     let winit::dpi::PhysicalSize { width, height } = window.inner_size();
     width as f32 / height.max(1) as f32
@@ -140,7 +173,7 @@ impl App {
 
             if let winit::event::Event::MainEventsCleared = event {
                 if context.should_reload_view {
-                    renderer.assign_world(&context.world);
+                    renderer.sync_context(&context);
                     context.should_reload_view = false;
                     return;
                 }
