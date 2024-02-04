@@ -303,14 +303,8 @@ impl WorldRender {
         if let Some(scene_index) = context.active_scene_index {
             let scene = &context.world.scenes[scene_index];
 
-            let (camera_position, projection, view) = match crate::world::create_camera_matrices(
-                &context.world,
-                scene,
-                gpu.aspect_ratio(),
-            ) {
-                Some((camera_position, projection, view)) => (camera_position, projection, view),
-                None => return,
-            };
+            let (camera_position, projection, view) =
+                crate::world::create_camera_matrices(&context.world, scene, gpu.aspect_ratio());
 
             gpu.queue.write_buffer(
                 &self.uniform_buffer,

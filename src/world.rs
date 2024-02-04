@@ -107,6 +107,7 @@ pub type SceneGraph = petgraph::Graph<usize, ()>;
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Scene {
+    pub camera_graph_node_index: petgraph::graph::NodeIndex,
     pub graph: SceneGraph,
 }
 
@@ -198,31 +199,10 @@ impl Transform {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
     pub projection: Projection,
     pub orientation: Orientation,
-}
-
-impl Default for Camera {
-    fn default() -> Self {
-        Self {
-            projection: crate::world::Projection::Perspective(crate::world::PerspectiveCamera {
-                aspect_ratio: None,
-                y_fov_rad: 90_f32.to_radians(),
-                z_far: None,
-                z_near: 0.01,
-            }),
-            orientation: Orientation {
-                min_radius: 1.0,
-                max_radius: 100.0,
-                radius: 5.0,
-                offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                sensitivity: nalgebra_glm::vec2(1.0, 1.0),
-                direction: nalgebra_glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
-            },
-        }
-    }
 }
 
 impl Camera {
@@ -250,45 +230,49 @@ pub fn create_camera_matrices(
     world: &crate::world::World,
     scene: &crate::world::Scene,
     aspect_ratio: f32,
-) -> Option<(nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4)> {
-    let mut result = None;
-
-    for graph_node_index in scene.graph.node_indices() {
-        let node_index = scene.graph[graph_node_index];
-        let node = &world.nodes[node_index];
-        if let Some(camera_index) = node.camera_index {
-            let transform = &world.transforms[node.transform_index];
-            let camera = &world.cameras[camera_index];
-            result = Some((
-                // TODO: later this will need to be the translation of the global transform,
-                //       need to be able to aggregate transforms without turning them in to glm::Mat4 first
-                transform.translation,
-                camera.projection_matrix(aspect_ratio),
-                {
-                    let eye = transform.translation;
-                    let target = eye
-                        + nalgebra_glm::quat_rotate_vec3(
-                            &transform.rotation.normalize(),
-                            &(-nalgebra_glm::Vec3::z()),
-                        );
-                    let up = nalgebra_glm::quat_rotate_vec3(
-                        &transform.rotation.normalize(),
-                        &nalgebra_glm::Vec3::y(),
-                    );
-                    nalgebra_glm::look_at(&eye, &target, &up)
-                },
-            ));
-        }
-    }
-    result
+) -> (nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4) {
+    let camera_graph_node_index = scene.camera_graph_node_index;
+    let camera_node_index = scene.graph[camera_graph_node_index];
+    let camera_node = &world.nodes[camera_node_index];
+    let camera = &world.cameras[camera_node
+        .camera_index
+        .expect("Every scene requires a camera")];
+    let transform = Transform::from(world.global_transform(&scene.graph, camera_graph_node_index));
+    (
+        transform.translation,
+        camera.projection_matrix(aspect_ratio),
+        {
+            let eye = transform.translation;
+            let target = eye
+                + nalgebra_glm::quat_rotate_vec3(
+                    &transform.rotation.normalize(),
+                    &(-nalgebra_glm::Vec3::z()),
+                );
+            let up = nalgebra_glm::quat_rotate_vec3(
+                &transform.rotation.normalize(),
+                &nalgebra_glm::Vec3::y(),
+            );
+            nalgebra_glm::look_at(&eye, &target, &up)
+        },
+    )
 }
 
-#[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct PerspectiveCamera {
     pub aspect_ratio: Option<f32>,
     pub y_fov_rad: f32,
     pub z_far: Option<f32>,
     pub z_near: f32,
+}
+impl Default for PerspectiveCamera {
+    fn default() -> Self {
+        Self {
+            aspect_ratio: None,
+            y_fov_rad: 90_f32.to_radians(),
+            z_far: None,
+            z_near: 0.01,
+        }
+    }
 }
 
 impl PerspectiveCamera {
@@ -340,7 +324,7 @@ impl OrthographicCamera {
     }
 }
 
-#[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Orientation {
     pub min_radius: f32,
     pub max_radius: f32,
@@ -409,6 +393,19 @@ impl Orientation {
             &point,
             &nalgebra_glm::Vec3::y(),
         ))
+    }
+}
+
+impl Default for Orientation {
+    fn default() -> Self {
+        Self {
+            min_radius: 1.0,
+            max_radius: 100.0,
+            radius: 5.0,
+            offset: nalgebra_glm::vec3(0.0, 0.0, 0.0),
+            sensitivity: nalgebra_glm::vec2(1.0, 1.0),
+            direction: nalgebra_glm::Vec2::new(0.0, 1.0),
+        }
     }
 }
 

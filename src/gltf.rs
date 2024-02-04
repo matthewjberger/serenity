@@ -196,7 +196,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                     nodes.push(crate::world::Node {
                         metadata_index,
                         transform_index,
-                        camera_index: node.camera().map(|camera| camera.index()),
+                        camera_index: node.camera().map(|camera| camera.index() + 1), // + 1 because the first camera slot is reserved for the main camera
                         mesh_index: node.mesh().map(|mesh| mesh.index()),
                         light_index: node.light().map(|light| light.index()),
                         ..Default::default()
@@ -355,42 +355,46 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         scenes.push(crate::world::Scene::default());
     };
 
-    let mut cameras = gltf
+    let camera = crate::world::Camera::default();
+
+    let transform_index = transforms.len();
+    let mut transform = crate::world::Transform::default();
+    transform.translation = camera.orientation.position();
+    transform.rotation = camera.orientation.look_at_offset();
+    transforms.push(transform);
+
+    let metadata_index = metadata.len();
+    metadata.push(crate::world::NodeMetadata {
+        name: "Main Camera".to_string(),
+    });
+
+    let mut cameras = vec![camera];
+
+    let node_index = nodes.len();
+    nodes.push(crate::world::Node {
+        transform_index,
+        metadata_index,
+        camera_index: Some(0),
+        mesh_index: None,
+        light_index: None,
+        rigid_body_index: None,
+        primitive_mesh_index: None,
+        aabb_index: None,
+    });
+
+    let camera_graph_node_index = scenes[0].graph.add_node(node_index);
+    scenes[0].graph.add_edge(
+        petgraph::graph::NodeIndex::new(0),
+        camera_graph_node_index,
+        (),
+    );
+    scenes[0].camera_graph_node_index = camera_graph_node_index;
+
+    let gltf_cameras = gltf
         .cameras()
         .map(crate::world::Camera::from)
         .collect::<Vec<_>>();
-
-    if cameras.is_empty() {
-        let transform_index = transforms.len();
-        transforms.push(crate::world::Transform::default());
-
-        let metadata_index = transforms.len();
-        metadata.push(crate::world::NodeMetadata {
-            name: "Default Camera".to_string(),
-        });
-
-        let camera_index = cameras.len();
-        cameras.push(crate::world::Camera::default());
-
-        let node_index = nodes.len();
-        nodes.push(crate::world::Node {
-            transform_index,
-            metadata_index,
-            camera_index: Some(camera_index),
-            mesh_index: None,
-            light_index: None,
-            rigid_body_index: None,
-            primitive_mesh_index: None,
-            aabb_index: None,
-        });
-
-        let camera_graph_node_index = scenes[0].graph.add_node(node_index);
-        scenes[0].graph.add_edge(
-            petgraph::graph::NodeIndex::new(0),
-            camera_graph_node_index,
-            (),
-        );
-    }
+    cameras.extend_from_slice(&gltf_cameras);
 
     let physics = crate::physics::PhysicsWorld::default();
 
