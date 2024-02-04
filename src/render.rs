@@ -30,11 +30,14 @@ impl Renderer {
     }
 
     pub fn sync_context(&mut self, context: &crate::app::Context) {
+        self.debug.sync_context(&context, &self.gpu);
+    }
+
+    pub fn sync_world(&mut self, world: &crate::world::World) {
         let _ = std::mem::replace(
             &mut self.view,
-            Some(crate::view::WorldRender::new(&self.gpu, &context.world)),
+            Some(crate::view::WorldRender::new(&self.gpu, world)),
         );
-        self.debug.sync_context(&context, &self.gpu);
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {

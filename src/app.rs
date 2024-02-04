@@ -6,6 +6,7 @@ pub struct Context {
     pub world: crate::world::World,
     pub should_exit: bool,
     pub should_reload_view: bool,
+    pub should_sync_context: bool,
     pub physics_enabled: bool,
     pub gui_visible: bool,
     pub debug_visible: bool,
@@ -89,6 +90,7 @@ impl App {
             world: crate::world::World::default(),
             should_exit: false,
             should_reload_view: false,
+            should_sync_context: false,
             physics_enabled: false,
             gui_visible: true,
             debug_visible: false,
@@ -173,8 +175,15 @@ impl App {
 
             if let winit::event::Event::MainEventsCleared = event {
                 if context.should_reload_view {
-                    renderer.sync_context(&context);
+                    context.should_sync_context = true; // maybe remove this
+                    renderer.sync_world(&context.world);
                     context.should_reload_view = false;
+                    return;
+                }
+
+                if context.should_sync_context {
+                    renderer.sync_context(&context);
+                    context.should_sync_context = false;
                     return;
                 }
 

@@ -109,12 +109,15 @@ impl Editor {
                         }
                         Command::Translate(node_index, x, y, z) => {
                             translate_node(context, node_index, x, y, z);
+                            context.should_sync_context = true;
                         }
                         Command::Rotate(node_index, pitch, yaw, roll) => {
                             rotate_node(context, node_index, pitch, yaw, roll);
+                            context.should_sync_context = true;
                         }
                         Command::Scale(node_index, x, y, z) => {
                             scale_node(context, node_index, x, y, z);
+                            context.should_sync_context = true;
                         }
                     }
                 }
@@ -122,12 +125,15 @@ impl Editor {
                 Message::Undo(command) => match command {
                     Command::Translate(node_index, x, y, z) => {
                         translate_node(context, node_index, -x, -y, -z);
+                        context.should_sync_context = true;
                     }
                     Command::Rotate(node_index, pitch, yaw, roll) => {
                         rotate_node(context, node_index, -pitch, -yaw, -roll);
+                        context.should_sync_context = true;
                     }
                     Command::Scale(node_index, x, y, z) => {
                         scale_node(context, node_index, -x, -y, -z);
+                        context.should_sync_context = true;
                     }
                     _ => {}
                 },
