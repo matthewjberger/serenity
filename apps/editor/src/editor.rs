@@ -11,6 +11,7 @@ pub struct Editor {
     console_history: Vec<String>,
     console_command: String,
     toasts: egui_toast::Toasts,
+    gizmo_orientation: egui_gizmo::GizmoOrientation,
     gizmo_mode: egui_gizmo::GizmoMode,
     command_history: std::collections::VecDeque<Command>,
     redo_stack: Vec<Command>,
@@ -36,6 +37,7 @@ impl Editor {
             toasts: egui_toast::Toasts::new()
                 .anchor(egui::Align2::RIGHT_BOTTOM, (-10.0, -10.0))
                 .direction(egui::Direction::BottomUp),
+            gizmo_orientation: egui_gizmo::GizmoOrientation::Global,
             gizmo_mode: egui_gizmo::GizmoMode::Translate,
             command_history: std::collections::VecDeque::new(),
             redo_stack: Vec::new(),
@@ -280,7 +282,7 @@ fn scale_node(context: &mut serenity::app::Context, node_index: usize, x: f32, y
 
 impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        context.import_file(&"resources/models/DamagedHelmet.glb");
+        context.import_file("resources/models/Lantern.glb");
     }
 
     fn receive_event(
@@ -402,53 +404,44 @@ impl serenity::app::State for Editor {
     fn ui(&mut self, context: &mut serenity::app::Context, ui_context: &mut egui::Context) {
         egui::Area::new("viewport").show(ui_context, |ui| {
             ui.with_layer_id(egui::LayerId::background(), |ui| {
-                if let Some(selected) = self.selected {
+                if let Some(selected_graph_node_index) = self.selected {
                     if let Some(scene_index) = context.active_scene_index {
                         let scene = &context.world.scenes[scene_index];
-                        let node_index = scene.graph[selected];
-                        let node = &context.world.nodes[node_index];
-                        let transform = &context.world.transforms[node.transform_index];
-                        ui.group(|ui| {
-                            let PhysicalSize { width, height } = context.window.inner_size();
-                            let aspect_ratio = width as f32 / height.max(1) as f32;
-                            let (_camera_position, projection, view) =
-                                serenity::world::create_camera_matrices(
-                                    &context.world,
-                                    scene,
-                                    aspect_ratio,
-                                )
-                                .unwrap_or_default();
-                            let model_matrix = transform.matrix();
 
-                            let gizmo = egui_gizmo::Gizmo::new("My gizmo")
-                                .view_matrix(view)
-                                .projection_matrix(projection)
-                                .model_matrix(model_matrix)
-                                .mode(self.gizmo_mode);
-
-                            if let Some(response) = gizmo.interact(ui) {
-                                match self.gizmo_mode {
-                                    egui_gizmo::GizmoMode::Translate => {
-                                        self.publish_translate_command(
-                                            node_index,
-                                            response.translation.x - transform.translation.x,
-                                            response.translation.y - transform.translation.y,
-                                            response.translation.z - transform.translation.z,
-                                        );
-                                    }
-
-                                    egui_gizmo::GizmoMode::Scale => {
-                                        self.publish_scale_command(
-                                            node_index,
-                                            response.scale.x - transform.scale.x,
-                                            response.scale.y - transform.scale.y,
-                                            response.scale.z - transform.scale.z,
-                                        );
-                                    }
-
-                                    _ => {}
-                                }
+                        scene.graph.node_indices().for_each(|graph_node_index| {
+                            if graph_node_index != selected_graph_node_index {
+                                return;
                             }
+
+                            let node_index = scene.graph[graph_node_index];
+                            let node = &context.world.nodes[node_index];
+
+                            let model_matrix = context
+                                .world
+                                .global_transform(&scene.graph, graph_node_index);
+
+                            ui.group(|ui| {
+                                let PhysicalSize { width, height } = context.window.inner_size();
+                                let aspect_ratio = width as f32 / height.max(1) as f32;
+                                let (_camera_position, projection, view) =
+                                    serenity::world::create_camera_matrices(
+                                        &context.world,
+                                        scene,
+                                        aspect_ratio,
+                                    )
+                                    .unwrap();
+
+                                let gizmo = egui_gizmo::Gizmo::new(ui.next_auto_id())
+                                    .view_matrix(view)
+                                    .projection_matrix(projection)
+                                    .model_matrix(model_matrix)
+                                    .orientation(self.gizmo_orientation)
+                                    .mode(self.gizmo_mode);
+
+                                if let Some(_gizmo_result) = gizmo.interact(ui) {
+                                    // TODO: add gizmo controls back
+                                }
+                            });
                         });
                     }
                 }
@@ -471,21 +464,48 @@ impl serenity::app::State for Editor {
                             }
                         }
                     });
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        if ui.button("Translate").clicked() {
-                            self.gizmo_mode = egui_gizmo::GizmoMode::Translate;
-                        }
 
-                        if ui.button("Rotate").clicked() {
-                            self.gizmo_mode = egui_gizmo::GizmoMode::Rotate;
-                        }
-
-                        if ui.button("Scale").clicked() {
-                            self.gizmo_mode = egui_gizmo::GizmoMode::Scale;
-                        }
-                    });
                     ui.separator();
+
+                    egui::ComboBox::from_label("Mode")
+                        .selected_text(format!("{:?}", self.gizmo_mode))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.gizmo_mode,
+                                egui_gizmo::GizmoMode::Rotate,
+                                "Rotate",
+                            );
+                            ui.selectable_value(
+                                &mut self.gizmo_mode,
+                                egui_gizmo::GizmoMode::Translate,
+                                "Translate",
+                            );
+                            ui.selectable_value(
+                                &mut self.gizmo_mode,
+                                egui_gizmo::GizmoMode::Scale,
+                                "Scale",
+                            );
+                        });
+
+                    ui.separator();
+
+                    egui::ComboBox::from_label("Orientation")
+                        .selected_text(format!("{:?}", self.gizmo_orientation))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.gizmo_orientation,
+                                egui_gizmo::GizmoOrientation::Global,
+                                "Global",
+                            );
+                            ui.selectable_value(
+                                &mut self.gizmo_orientation,
+                                egui_gizmo::GizmoOrientation::Local,
+                                "Local",
+                            );
+                        });
+
+                    ui.separator();
+
                     ui.horizontal(|ui| {
                         if ui
                             .checkbox(&mut context.physics_enabled, "Enable Physics")

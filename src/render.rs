@@ -30,7 +30,7 @@ impl Renderer {
     }
 
     pub fn sync_context(&mut self, context: &crate::app::Context) {
-        self.debug.sync_context(&context, &self.gpu);
+        self.debug.sync_context(context, &self.gpu);
     }
 
     pub fn sync_world(&mut self, world: &crate::world::World) {

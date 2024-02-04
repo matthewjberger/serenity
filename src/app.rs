@@ -15,7 +15,7 @@ pub struct Context {
 
 impl Context {
     pub fn import_file(&mut self, path: &str) {
-        self.world = crate::gltf::import_gltf(&path);
+        self.world = crate::gltf::import_gltf(path);
 
         if self.world.scenes.is_empty() {
             self.world.scenes.push(crate::world::Scene::default());
@@ -33,7 +33,6 @@ impl Context {
         self.world.scenes[scene_index]
             .graph
             .node_indices()
-            .into_iter()
             .for_each(|graph_node_index| {
                 let node_index = self.world.scenes[scene_index].graph[graph_node_index];
                 let primitive_mesh = crate::world::PrimitiveMesh {
@@ -175,7 +174,7 @@ impl App {
 
             if let winit::event::Event::MainEventsCleared = event {
                 if context.should_reload_view {
-                    context.should_sync_context = true; // maybe remove this
+                    context.should_sync_context = true;
                     renderer.sync_world(&context.world);
                     context.should_reload_view = false;
                     return;

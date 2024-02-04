@@ -181,18 +181,17 @@ impl DebugRender {
                             let instance_binding = InstanceBinding {
                                 model: (transform
                                     * nalgebra_glm::translation(&aabb.center())
-                                    * nalgebra_glm::scaling(&(aabb.extents() / 2.0)))
-                                .into(),
+                                    * nalgebra_glm::scaling(&(aabb.extents() / 2.0))),
                                 color: primitive_mesh.color,
                             };
                             instance_bindings.push(instance_binding);
                         }
                         None => {
-                            let transform = context
+                            let model = context
                                 .world
                                 .global_transform(&scene.graph, graph_node_index);
                             let instance_binding = InstanceBinding {
-                                model: transform.into(),
+                                model,
                                 color: primitive_mesh.color,
                             };
                             instance_bindings.push(instance_binding);
@@ -202,14 +201,24 @@ impl DebugRender {
             });
         }
 
-        self.instance_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            &gpu.device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Instance Buffer"),
-                contents: bytemuck::cast_slice(&instance_bindings),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            },
-        );
+        if (self.instance_buffer.size() as usize)
+            < instance_bindings.len() * std::mem::size_of::<InstanceBinding>()
+        {
+            self.instance_buffer = wgpu::util::DeviceExt::create_buffer_init(
+                &gpu.device,
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Instance Buffer"),
+                    contents: bytemuck::cast_slice(&instance_bindings),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                },
+            );
+        } else {
+            gpu.queue.write_buffer(
+                &self.instance_buffer,
+                0,
+                bytemuck::cast_slice(&instance_bindings),
+            );
+        }
     }
 }
 

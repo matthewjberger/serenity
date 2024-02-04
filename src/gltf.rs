@@ -409,7 +409,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                     let vertices = &vertices[primitive.vertex_offset
                         ..(primitive.vertex_offset + primitive.number_of_vertices)];
                     aabb.expand_to_include(&crate::world::AxisAlignedBoundingBox::from_vertices(
-                        &vertices,
+                        vertices,
                     ));
                 });
                 node.aabb_index = Some(aabbs.len());
