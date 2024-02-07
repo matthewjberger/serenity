@@ -1,8 +1,4 @@
-use serenity::{
-    egui, nalgebra_glm, petgraph,
-    winit::{self, dpi::PhysicalSize},
-    world::NodeMetadata,
-};
+use serenity::{egui, nalgebra_glm, petgraph, winit};
 
 pub struct Editor {
     broker: Broker,
@@ -120,6 +116,15 @@ impl Editor {
                         Command::Scale(node_index, x, y, z) => {
                             scale_node(context, node_index, x, y, z);
                             context.should_sync_context = true;
+                        }
+                        Command::AddChildNode(scene_index, parent_graph_node_index) => {
+                            let node_index = context.world.add_node();
+                            context.world.add_child_node(
+                                scene_index,
+                                parent_graph_node_index,
+                                node_index,
+                            );
+                            context.should_reload_view = true;
                         }
                     }
                 }
@@ -350,12 +355,15 @@ impl serenity::app::State for Editor {
 
         if let Some(active_scene_index) = context.active_scene_index {
             let scene = &context.world.scenes[active_scene_index];
-            let camera_node_index = scene.graph[scene.default_camera_graph_node_index];
+            let camera_node_index = scene.graph[scene
+                .default_camera_graph_node_index
+                .expect("No camera is available in the active scene!")];
 
             let camera_node = &mut context.world.nodes[camera_node_index];
+            let metadata = &context.world.metadata[camera_node.metadata_index];
 
             // Only control the main camera with keyboard and mouse
-            if !matches!(camera_node.camera_index, Some(0)) {
+            if metadata.name != "Main Camera" {
                 return;
             }
 
@@ -445,7 +453,8 @@ impl serenity::app::State for Editor {
                                 .global_transform(&scene.graph, graph_node_index);
 
                             ui.group(|ui| {
-                                let PhysicalSize { width, height } = context.window.inner_size();
+                                let winit::dpi::PhysicalSize { width, height } =
+                                    context.window.inner_size();
                                 let aspect_ratio = width as f32 / height.max(1) as f32;
                                 let (_camera_position, projection, view) =
                                     serenity::world::create_camera_matrices(
@@ -561,6 +570,8 @@ impl serenity::app::State for Editor {
                                     &scene.graph,
                                     0.into(),
                                     &mut self.selected,
+                                    scene_index,
+                                    &mut self.broker,
                                 );
                             });
                     });
@@ -581,7 +592,8 @@ impl serenity::app::State for Editor {
                         let node = &context.world.nodes[node_index];
                         if node.camera_index.is_some() {
                             if ui.button("Select camera").clicked() {
-                                scene.default_camera_graph_node_index = selected_graph_node_index;
+                                scene.default_camera_graph_node_index =
+                                    Some(selected_graph_node_index);
                             }
                         }
                         egui::ScrollArea::vertical()
@@ -722,6 +734,7 @@ pub enum Command {
     Translate(usize, f32, f32, f32),
     Rotate(usize, f32, f32, f32),
     Scale(usize, f32, f32, f32),
+    AddChildNode(usize, petgraph::graph::NodeIndex),
     Exit,
 }
 
@@ -738,17 +751,28 @@ fn node_ui(
     graph: &serenity::world::SceneGraph,
     graph_node_index: petgraph::graph::NodeIndex,
     selected_graph_node_index: &mut Option<petgraph::graph::NodeIndex>,
+    scene_index: usize,
+    broker: &mut Broker,
 ) {
     let id = ui.make_persistent_id(ui.next_auto_id());
     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
         .show_header(ui, |ui| {
             let node_index = graph[graph_node_index];
-            let NodeMetadata { name } = &world.metadata[node_index];
+            let serenity::world::NodeMetadata { name } = &world.metadata[node_index];
             let selected = selected_graph_node_index
                 .as_ref()
                 .map(|index| *index == graph_node_index)
                 .unwrap_or_default();
-            let response = ui.selectable_label(selected, format!("🔴 {name}"));
+            let response = ui
+                .selectable_label(selected, format!("🔴 {name}"))
+                .context_menu(|ui| {
+                    if ui.button("Add child node").clicked() {
+                        broker.publish(
+                            &Topic::Command.to_string(),
+                            Message::Command(Command::AddChildNode(scene_index, graph_node_index)),
+                        );
+                    }
+                });
             if response.clicked() {
                 *selected_graph_node_index = Some(graph_node_index);
             }
@@ -757,7 +781,15 @@ fn node_ui(
             graph
                 .neighbors_directed(graph_node_index, petgraph::Direction::Outgoing)
                 .for_each(|child_index| {
-                    node_ui(world, ui, graph, child_index, selected_graph_node_index);
+                    node_ui(
+                        world,
+                        ui,
+                        graph,
+                        child_index,
+                        selected_graph_node_index,
+                        scene_index,
+                        broker,
+                    );
                 });
         });
 }

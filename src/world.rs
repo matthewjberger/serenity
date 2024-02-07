@@ -24,12 +24,28 @@ impl World {
     pub fn add_child_node(
         &mut self,
         scene_index: usize,
-        parent_index: petgraph::graph::NodeIndex,
+        parent_graph_node_index: petgraph::graph::NodeIndex,
         node_index: usize,
-    ) {
+    ) -> petgraph::graph::NodeIndex {
         let scene = &mut self.scenes[scene_index];
         let graph_node_index = scene.graph.add_node(node_index);
-        scene.graph.add_edge(parent_index, graph_node_index, ());
+        scene
+            .graph
+            .add_edge(parent_graph_node_index, graph_node_index, ());
+        graph_node_index
+    }
+
+    pub fn add_bounding_box(
+        &mut self,
+        scene_index: usize,
+        graph_node_index: petgraph::prelude::NodeIndex,
+    ) {
+        let node_index = self.scenes[scene_index].graph[graph_node_index];
+        let primitive_mesh = crate::world::PrimitiveMesh {
+            shape: crate::world::Shape::CubeExtents,
+            color: nalgebra_glm::vec4(0.983, 0.486, 0.0, 1.0),
+        };
+        self.add_primitive_mesh_to_node(node_index, primitive_mesh);
     }
 
     pub fn add_node(&mut self) -> usize {
@@ -153,7 +169,7 @@ pub type SceneGraph = petgraph::Graph<usize, ()>;
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Scene {
-    pub default_camera_graph_node_index: petgraph::graph::NodeIndex,
+    pub default_camera_graph_node_index: Option<petgraph::graph::NodeIndex>,
     pub graph: SceneGraph,
 }
 
@@ -277,7 +293,9 @@ pub fn create_camera_matrices(
     scene: &crate::world::Scene,
     aspect_ratio: f32,
 ) -> (nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4) {
-    let camera_graph_node_index = scene.default_camera_graph_node_index;
+    let camera_graph_node_index = scene
+        .default_camera_graph_node_index
+        .expect("No default camera is configured for the scene!");
     let camera_node_index = scene.graph[camera_graph_node_index];
     let camera_node = &world.nodes[camera_node_index];
     let camera = &world.cameras[camera_node
