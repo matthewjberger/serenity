@@ -388,7 +388,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         camera_graph_node_index,
         (),
     );
-    scenes[0].camera_graph_node_index = camera_graph_node_index;
+    scenes[0].default_camera_graph_node_index = camera_graph_node_index;
 
     let gltf_cameras = gltf
         .cameras()
@@ -455,7 +455,7 @@ impl From<gltf::material::AlphaMode> for crate::world::AlphaMode {
 }
 
 impl From<gltf::texture::Sampler<'_>> for crate::world::Sampler {
-    fn from(sampler: gltf::texture::Sampler<'_>) -> Self {
+    fn from(sampler: gltf::texture::Sampler) -> Self {
         let min_filter = sampler
             .min_filter()
             .map(|filter| match filter {

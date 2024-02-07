@@ -107,9 +107,9 @@ impl Renderer {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.4,
-                            g: 0.2,
-                            b: 0.2,
+                            r: 0.19,
+                            g: 0.24,
+                            b: 0.42,
                             a: 1.0,
                         }),
                         store: true,

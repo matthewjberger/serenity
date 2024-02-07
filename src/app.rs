@@ -37,7 +37,7 @@ impl Context {
                 let node_index = self.world.scenes[scene_index].graph[graph_node_index];
                 let primitive_mesh = crate::world::PrimitiveMesh {
                     shape: crate::world::Shape::CubeExtents,
-                    color: nalgebra_glm::vec4(0.0, 1.0, 0.0, 1.0),
+                    color: nalgebra_glm::vec4(0.983, 0.486, 0.0, 1.0),
                 };
                 self.world
                     .add_primitive_mesh_to_node(node_index, primitive_mesh);

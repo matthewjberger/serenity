@@ -21,6 +21,52 @@ pub struct World {
 }
 
 impl World {
+    pub fn add_child_node(
+        &mut self,
+        scene_index: usize,
+        parent_index: petgraph::graph::NodeIndex,
+        node_index: usize,
+    ) {
+        let scene = &mut self.scenes[scene_index];
+        let graph_node_index = scene.graph.add_node(node_index);
+        scene.graph.add_edge(parent_index, graph_node_index, ());
+    }
+
+    pub fn add_node(&mut self) -> usize {
+        let transform_index = self.transforms.len();
+        self.transforms.push(crate::world::Transform::default());
+
+        let metadata_index = self.metadata.len();
+        self.metadata.push(crate::world::NodeMetadata {
+            name: "Node".to_string(),
+        });
+
+        let node_index = self.nodes.len();
+        let node = crate::world::Node {
+            transform_index,
+            metadata_index,
+            camera_index: None,
+            mesh_index: None,
+            light_index: None,
+            rigid_body_index: None,
+            primitive_mesh_index: None,
+            aabb_index: None,
+        };
+        self.nodes.push(node);
+        node_index
+    }
+
+    pub fn add_camera_to_node(&mut self, node_index: usize) {
+        let node = &mut self.nodes[node_index];
+        let camera = crate::world::Camera::default();
+        let transform = &mut self.transforms[node.transform_index];
+        transform.translation = camera.orientation.position();
+        transform.rotation = camera.orientation.look_at_offset();
+        let camera_index = self.cameras.len();
+        self.cameras.push(camera);
+        node.camera_index = Some(camera_index);
+    }
+
     pub fn add_rigid_body_to_node(&mut self, node_index: usize) {
         let node = &mut self.nodes[node_index];
         let rigid_body_index = self
@@ -107,7 +153,7 @@ pub type SceneGraph = petgraph::Graph<usize, ()>;
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Scene {
-    pub camera_graph_node_index: petgraph::graph::NodeIndex,
+    pub default_camera_graph_node_index: petgraph::graph::NodeIndex,
     pub graph: SceneGraph,
 }
 
@@ -231,7 +277,7 @@ pub fn create_camera_matrices(
     scene: &crate::world::Scene,
     aspect_ratio: f32,
 ) -> (nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4) {
-    let camera_graph_node_index = scene.camera_graph_node_index;
+    let camera_graph_node_index = scene.default_camera_graph_node_index;
     let camera_node_index = scene.graph[camera_graph_node_index];
     let camera_node = &world.nodes[camera_node_index];
     let camera = &world.cameras[camera_node
