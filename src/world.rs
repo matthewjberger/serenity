@@ -21,6 +21,120 @@ pub struct World {
 }
 
 impl World {
+    pub fn merge_world(&mut self, world: &World) {
+        let transform_offset = self.transforms.len();
+        let mesh_offset = self.meshes.len();
+        let material_offset = self.materials.len();
+        let image_offset = self.images.len();
+        let texture_offset = self.textures.len();
+        let sampler_offset = self.samplers.len();
+        let vertex_offset = self.vertices.len();
+        let index_offset = self.indices.len();
+        let camera_offset = self.cameras.len();
+        let node_offset = self.nodes.len();
+
+        world.animations.iter().cloned().for_each(|animation| {
+            let mut animation = animation.clone();
+            animation.channels.iter_mut().for_each(|channel| {
+                channel.target_node_index += node_offset;
+            });
+            self.animations.push(animation);
+        });
+
+        world.cameras.iter().cloned().for_each(|camera| {
+            self.cameras.push(camera);
+        });
+
+        world.images.iter().cloned().for_each(|image| {
+            self.images.push(image);
+        });
+
+        world
+            .indices
+            .iter()
+            .cloned()
+            .for_each(|index| self.indices.push(index + vertex_offset as u32));
+
+        world.materials.iter().cloned().for_each(|material| {
+            let mut material = material.clone();
+            material.base_color_texture_index = material.base_color_texture_index + texture_offset;
+            self.materials.push(material);
+        });
+
+        world.meshes.iter().for_each(|mesh| {
+            let mut mesh = mesh.clone();
+            mesh.primitives.iter_mut().for_each(|primitive| {
+                primitive.vertex_offset += vertex_offset;
+                primitive.index_offset += index_offset;
+                primitive.material_index = primitive.material_index.map(|i| i + material_offset);
+            });
+            self.meshes.push(mesh);
+        });
+
+        world.nodes.iter().cloned().for_each(|node| {
+            let mut node = node.clone();
+            node.transform_index += transform_offset;
+            node.mesh_index = node.mesh_index.map(|i| i + mesh_offset);
+            node.camera_index = node.camera_index.map(|i| i + camera_offset);
+            self.nodes.push(node);
+        });
+
+        world.samplers.iter().cloned().for_each(|sampler| {
+            self.samplers.push(sampler);
+        });
+
+        world
+            .scenes
+            .iter()
+            .enumerate()
+            .for_each(|(scene_index, scene)| {
+                scene.graph.node_indices().for_each(|graph_node_index| {
+                    let mut scene = world.scenes[scene_index].clone();
+                    scene.graph[graph_node_index] += node_offset;
+                    self.scenes.push(scene);
+                });
+            });
+
+        world.skins.iter().cloned().for_each(|skin| {
+            let mut skin = skin.clone();
+            skin.joints.iter_mut().for_each(|joint| {
+                joint.target_node_index += node_offset;
+            });
+            self.skins.push(skin);
+        });
+
+        world.textures.iter().for_each(|texture| {
+            let mut texture = texture.clone();
+            texture.image_index += image_offset;
+            texture.sampler_index = texture.sampler_index.map(|i| i + sampler_offset);
+            self.textures.push(texture);
+        });
+
+        world.transforms.iter().cloned().for_each(|transform| {
+            self.transforms.push(transform);
+        });
+
+        world.vertices.iter().cloned().for_each(|vertex| {
+            self.vertices.push(vertex);
+        });
+
+        world.metadata.iter().cloned().for_each(|metadata| {
+            self.metadata.push(metadata);
+        });
+
+        world
+            .primitive_meshes
+            .iter()
+            .cloned()
+            .for_each(|primitive_mesh| {
+                self.primitive_meshes.push(primitive_mesh);
+            });
+
+        world.aabbs.iter().cloned().for_each(|aabb| {
+            self.aabbs.push(aabb);
+        });
+    }
+
     pub fn add_child_node(
         &mut self,
         scene_index: usize,

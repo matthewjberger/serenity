@@ -15,11 +15,11 @@ pub struct Context {
 
 impl Context {
     pub fn import_file(&mut self, path: &str) {
-        self.world = crate::gltf::import_gltf(path);
+        let mut world = crate::gltf::import_gltf(path);
 
         // Add a default scene if none exist
-        if self.world.scenes.is_empty() {
-            self.world.scenes.push(crate::world::Scene::default());
+        if world.scenes.is_empty() {
+            world.scenes.push(crate::world::Scene::default());
         }
 
         // Assign the default active scene
@@ -27,29 +27,30 @@ impl Context {
         self.active_scene_index = Some(scene_index);
 
         // Add a default camera
-        let node_index = self.world.add_node();
-        self.world.add_camera_to_node(node_index);
+        let node_index = world.add_node();
+        world.add_camera_to_node(node_index);
         let camera_graph_node_index =
-            self.world
-                .add_child_node(scene_index, petgraph::graph::NodeIndex::new(0), node_index);
-        self.world.scenes[scene_index].default_camera_graph_node_index =
-            Some(camera_graph_node_index);
-        let node = &self.world.nodes[node_index];
-        let metadata = &mut self.world.metadata[node.metadata_index];
+            world.add_child_node(scene_index, petgraph::graph::NodeIndex::new(0), node_index);
+        world.scenes[scene_index].default_camera_graph_node_index = Some(camera_graph_node_index);
+        let node = &world.nodes[node_index];
+        let metadata = &mut world.metadata[node.metadata_index];
         metadata.name = "Main Camera".to_string();
 
         // Add bounding boxes to all nodes
-        self.world.scenes[scene_index]
+        world.scenes[scene_index]
             .graph
             .node_indices()
             .for_each(|graph_node_index| {
-                let node_index = self.world.scenes[scene_index].graph[graph_node_index];
-                let node = &self.world.nodes[node_index];
+                let node_index = world.scenes[scene_index].graph[graph_node_index];
+                let node = &world.nodes[node_index];
                 if node.mesh_index.is_none() && node.primitive_mesh_index.is_none() {
                     return;
                 }
-                self.world.add_bounding_box(scene_index, graph_node_index);
+                world.add_bounding_box(scene_index, graph_node_index);
             });
+
+        self.world.merge_world(&world);
+        // self.world = world;
 
         self.should_reload_view = true;
     }

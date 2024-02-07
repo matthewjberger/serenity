@@ -557,24 +557,58 @@ impl serenity::app::State for Editor {
             .resizable(true)
             .show(ui_context, |ui| {
                 ui.set_width(ui.available_width());
-                ui.heading("Scene Tree");
-                if let Some(scene_index) = context.active_scene_index {
-                    let scene = &context.world.scenes[scene_index];
-                    ui.group(|ui| {
-                        egui::ScrollArea::vertical()
-                            .id_source(ui.next_auto_id())
-                            .show(ui, |ui| {
-                                node_ui(
-                                    &context.world,
-                                    ui,
-                                    &scene.graph,
-                                    0.into(),
-                                    &mut self.selected,
-                                    scene_index,
-                                    &mut self.broker,
-                                );
-                            });
+
+                let mut selected_scene = None;
+                ui.heading("Scenes");
+                context
+                    .world
+                    .scenes
+                    .iter()
+                    .enumerate()
+                    .for_each(|(scene_index, scene)| {
+                        ui.group(|ui| {
+                            if ui.button("View scene").clicked() {
+                                context.active_scene_index = Some(scene_index);
+                                self.selected = None;
+                                selected_scene = Some(scene_index);
+                            }
+                            egui::ScrollArea::vertical()
+                                .id_source(ui.next_auto_id())
+                                .show(ui, |ui| {
+                                    node_ui(
+                                        &context.world,
+                                        ui,
+                                        &scene.graph,
+                                        0.into(),
+                                        &mut self.selected,
+                                        scene_index,
+                                        &mut self.broker,
+                                    );
+                                });
+                        });
                     });
+
+                if let Some(scene_index) = selected_scene {
+                    context.active_scene_index = Some(scene_index);
+                    if context.world.scenes[scene_index]
+                        .default_camera_graph_node_index
+                        .is_none()
+                    {
+                        // Add a default camera
+                        let node_index = context.world.add_node();
+                        context.world.add_camera_to_node(node_index);
+                        let camera_graph_node_index = context.world.add_child_node(
+                            scene_index,
+                            petgraph::graph::NodeIndex::new(0),
+                            node_index,
+                        );
+                        context.world.scenes[scene_index].default_camera_graph_node_index =
+                            Some(camera_graph_node_index);
+                        let node = &context.world.nodes[node_index];
+                        let metadata = &mut context.world.metadata[node.metadata_index];
+                        metadata.name = "Main Camera".to_string();
+                        context.should_reload_view = true;
+                    }
                 }
 
                 ui.allocate_space(ui.available_size());
