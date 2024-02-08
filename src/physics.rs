@@ -2,8 +2,7 @@
 pub struct PhysicsWorld {
     pub gravity: nalgebra_glm::Vec3,
     pub bodies: Vec<RigidBody>,
-    pub colliders: Vec<Collider>,
-    pub collision_shapes: Vec<CollisionShape>,
+    pub aabbs: Vec<AxisAlignedBoundingBox>,
     pub positions: Vec<nalgebra_glm::Vec3>,
     pub velocities: Vec<nalgebra_glm::Vec3>,
     pub forces: Vec<nalgebra_glm::Vec3>,
@@ -19,13 +18,18 @@ impl Default for PhysicsWorld {
             forces: Vec::new(),
             masses: Vec::new(),
             bodies: Vec::new(),
-            colliders: Vec::new(),
-            collision_shapes: Vec::new(),
+            aabbs: Vec::new(),
         }
     }
 }
 
 impl PhysicsWorld {
+    pub fn add_aabb(&mut self, aabb: AxisAlignedBoundingBox) -> usize {
+        let aabb_index = self.aabbs.len();
+        self.aabbs.push(aabb);
+        aabb_index
+    }
+
     pub fn add_rigid_body(&mut self, position: nalgebra_glm::Vec3) -> usize {
         let position_index = self.positions.len();
         self.positions.push(position);
@@ -39,33 +43,25 @@ impl PhysicsWorld {
         let mass_index = self.masses.len();
         self.masses.push(1.0);
 
+        let aabb_index = self.aabbs.len();
+        self.aabbs.push(AxisAlignedBoundingBox::default());
+
         let node_index = self.bodies.len();
         self.bodies.push(RigidBody {
             position_index,
             velocity_index,
             force_index,
             mass_index,
-            shape_indices: Vec::new(),
+            aabb_index,
         });
         node_index
     }
 
-    pub fn add_collider(&mut self, shapes: &[CollisionShape]) -> usize {
-        let shape_indices = shapes
-            .iter()
-            .cloned()
-            .map(|shape| {
-                let shape_index = self.collision_shapes.len();
-                self.collision_shapes.push(shape);
-                shape_index
-            })
-            .collect::<Vec<_>>();
-        let collider_index = self.colliders.len();
-        self.colliders.push(Collider { shape_indices });
-        collider_index
-    }
-
     pub fn step(&mut self, delta_time: f32) {
+        // Detect collisions
+        // let mut collisions = Vec::new();
+
+        // Integrate bodies
         self.bodies.iter().for_each(|node| {
             let force = self.forces[node.force_index];
             let mass = self.masses[node.mass_index];
@@ -93,16 +89,42 @@ pub struct RigidBody {
     pub velocity_index: usize,
     pub force_index: usize,
     pub mass_index: usize,
-    pub shape_indices: Vec<usize>,
+    pub aabb_index: usize,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Collider {
-    pub shape_indices: Vec<usize>,
+#[derive(Default, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct AxisAlignedBoundingBox {
+    pub min: nalgebra_glm::Vec3,
+    pub max: nalgebra_glm::Vec3,
 }
 
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
-pub enum CollisionShape {
-    /// Axis-Aligned Bounding Box
-    AABB(f32, f32, f32, f32),
+impl AxisAlignedBoundingBox {
+    pub fn new(min: nalgebra_glm::Vec3, max: nalgebra_glm::Vec3) -> Self {
+        Self { min, max }
+    }
+
+    pub fn extents(&self) -> nalgebra_glm::Vec3 {
+        self.max - self.min
+    }
+
+    pub fn center(&self) -> nalgebra_glm::Vec3 {
+        (self.min + self.max) / 2.0
+    }
+
+    pub fn from_vertices(vertices: &[crate::world::Vertex]) -> Self {
+        let mut min = vertices[0].position;
+        let mut max = vertices[0].position;
+
+        for point in vertices.iter().skip(1) {
+            min = nalgebra_glm::min2(&min, &point.position);
+            max = nalgebra_glm::max2(&max, &point.position);
+        }
+
+        Self { min, max }
+    }
+
+    pub fn expand_to_include(&mut self, other: &AxisAlignedBoundingBox) {
+        self.min = nalgebra_glm::min2(&self.min, &other.min);
+        self.max = nalgebra_glm::max2(&self.max, &other.max);
+    }
 }

@@ -1,6 +1,3 @@
-// TODO: add other shapes for instanced debug display
-//       line, cube, sphere, capsule
-
 pub struct DebugRender {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
@@ -164,9 +161,11 @@ impl DebugRender {
 
             if let Some(primitive_mesh_index) = node.primitive_mesh_index {
                 let primitive_mesh = &context.world.primitive_meshes[primitive_mesh_index];
-                match node.aabb_index {
-                    Some(aabb) => {
-                        let aabb = &context.world.aabbs[aabb];
+
+                let instance_binding = match node.rigid_body_index {
+                    Some(rigid_body_index) => {
+                        let rigid_body = &context.world.physics.bodies[rigid_body_index];
+                        let aabb = &context.world.physics.aabbs[rigid_body.aabb_index];
                         let transform = context
                             .world
                             .global_transform(&scene.graph, graph_node_index);
@@ -176,19 +175,19 @@ impl DebugRender {
                                 * nalgebra_glm::scaling(&(aabb.extents() / 2.0))),
                             color: primitive_mesh.color,
                         };
-                        instance_bindings.push(instance_binding);
+                        instance_binding
                     }
                     None => {
                         let model = context
                             .world
                             .global_transform(&scene.graph, graph_node_index);
-                        let instance_binding = InstanceBinding {
+                        InstanceBinding {
                             model,
                             color: primitive_mesh.color,
-                        };
-                        instance_bindings.push(instance_binding);
+                        }
                     }
-                }
+                };
+                instance_bindings.push(instance_binding);
             }
         });
 

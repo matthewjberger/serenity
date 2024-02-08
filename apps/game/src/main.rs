@@ -1,5 +1,5 @@
 fn main() {
-    serenity::app::App::new("Serenity", 1920, 1080).run(Game::default());
+    serenity::app::App::new("Serenity", 1920, 1080).run(Game);
 }
 
 #[derive(Default)]
@@ -7,7 +7,7 @@ pub struct Game;
 
 impl serenity::app::State for Game {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        context.import_file("resources/gltf/backrooms.glb");
+        context.import_file("resources/gltf/arena.glb");
     }
 
     fn receive_event(

@@ -16,7 +16,6 @@ pub struct World {
     pub transforms: Vec<Transform>,
     pub vertices: Vec<Vertex>,
     pub primitive_meshes: Vec<PrimitiveMesh>,
-    pub aabbs: Vec<AxisAlignedBoundingBox>,
     pub physics: crate::physics::PhysicsWorld,
 }
 
@@ -66,7 +65,6 @@ impl World {
             light_index: None,
             rigid_body_index: None,
             primitive_mesh_index: None,
-            aabb_index: None,
         };
         self.nodes.push(node);
         node_index
@@ -542,7 +540,6 @@ pub struct Node {
     pub light_index: Option<usize>,
     pub rigid_body_index: Option<usize>,
     pub primitive_mesh_index: Option<usize>,
-    pub aabb_index: Option<usize>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -676,41 +673,4 @@ pub struct Skin {
 pub struct Joint {
     pub target_node_index: usize,
     pub inverse_bind_matrix: nalgebra_glm::Mat4,
-}
-
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub struct AxisAlignedBoundingBox {
-    pub min: nalgebra_glm::Vec3,
-    pub max: nalgebra_glm::Vec3,
-}
-
-impl AxisAlignedBoundingBox {
-    pub fn new(min: nalgebra_glm::Vec3, max: nalgebra_glm::Vec3) -> Self {
-        Self { min, max }
-    }
-
-    pub fn extents(&self) -> nalgebra_glm::Vec3 {
-        self.max - self.min
-    }
-
-    pub fn center(&self) -> nalgebra_glm::Vec3 {
-        (self.min + self.max) / 2.0
-    }
-
-    pub fn from_vertices(vertices: &[Vertex]) -> Self {
-        let mut min = vertices[0].position;
-        let mut max = vertices[0].position;
-
-        for point in vertices.iter().skip(1) {
-            min = nalgebra_glm::min2(&min, &point.position);
-            max = nalgebra_glm::max2(&max, &point.position);
-        }
-
-        Self { min, max }
-    }
-
-    pub fn expand_to_include(&mut self, other: &AxisAlignedBoundingBox) {
-        self.min = nalgebra_glm::min2(&self.min, &other.min);
-        self.max = nalgebra_glm::max2(&self.max, &other.max);
-    }
 }
