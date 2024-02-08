@@ -7,7 +7,46 @@ pub struct Game;
 
 impl serenity::app::State for Game {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        context.import_file("resources/gltf/arena.glb");
+        context.import_file("resources/gltf/physics.glb");
+
+        let scene = &context.world.scenes[context.active_scene_index];
+
+        // Add rigid body and aabb to player
+        for graph_node_index in scene.graph.node_indices() {
+            let node_index = scene.graph[graph_node_index];
+            let node = &mut context.world.nodes[node_index];
+            let metadata = &context.world.metadata[node.metadata_index];
+            let global_transform_matrix = context
+                .world
+                .global_transform(&scene.graph, graph_node_index);
+            if metadata.name == "Player" {
+                let position = global_transform_matrix
+                    .transform_vector(&serenity::nalgebra_glm::Vec3::new(0.0, 0.0, 0.0));
+                let node = &mut context.world.nodes[node_index];
+
+                let rigid_body_index = context.world.physics.add_rigid_body(position);
+                node.rigid_body_index = Some(rigid_body_index);
+
+                if let Some(mesh_index) = node.mesh_index {
+                    let mesh = &context.world.meshes[mesh_index];
+                    let mut aabb = serenity::physics::AxisAlignedBoundingBox::new(
+                        serenity::nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
+                        serenity::nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
+                    );
+                    mesh.primitives.iter().for_each(|primitive| {
+                        let vertices = &context.world.vertices[primitive.vertex_offset
+                            ..(primitive.vertex_offset + primitive.number_of_vertices)];
+                        aabb.expand_to_include(
+                            &serenity::physics::AxisAlignedBoundingBox::from_vertices(vertices),
+                        );
+                    });
+                    let aabb_index = context.world.physics.add_aabb(aabb);
+                    context.world.physics.bodies[rigid_body_index].aabb_index = aabb_index;
+                }
+
+                break;
+            }
+        }
     }
 
     fn receive_event(

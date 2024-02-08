@@ -18,36 +18,10 @@ impl Context {
         if self.world.scenes.is_empty() {
             self.world.scenes.push(crate::world::Scene::default());
         }
-
-        // Assign the default active scene
         let scene_index = 0;
         self.active_scene_index = scene_index;
-
-        // Add a default camera
-        let node_index = self.world.add_node();
-        self.world.add_camera_to_node(node_index);
-        let camera_graph_node_index =
-            self.world
-                .add_child_node(scene_index, petgraph::graph::NodeIndex::new(0), node_index);
-        self.world.scenes[scene_index].default_camera_graph_node_index =
-            Some(camera_graph_node_index);
-        let node = &self.world.nodes[node_index];
-        let metadata = &mut self.world.metadata[node.metadata_index];
-        metadata.name = "Main Camera".to_string();
-
-        // Add bounding boxes to all nodes
-        self.world.scenes[scene_index]
-            .graph
-            .node_indices()
-            .for_each(|graph_node_index| {
-                let node_index = self.world.scenes[scene_index].graph[graph_node_index];
-                let node = &self.world.nodes[node_index];
-                if node.mesh_index.is_none() && node.primitive_mesh_index.is_none() {
-                    return;
-                }
-                self.world.add_bounding_box(scene_index, graph_node_index);
-            });
-
+        self.world.add_camera_to_scenegraph(scene_index);
+        self.world.add_bounding_boxes_to_all_nodes(scene_index);
         self.should_reload_view = true;
     }
 }
@@ -162,6 +136,7 @@ impl App {
                 }
 
                 context.world.physics.step(context.delta_time as _);
+                renderer.sync_debug(&context);
 
                 let scene_index = context.active_scene_index;
                 let scene = &mut context.world.scenes[scene_index];

@@ -12,7 +12,7 @@ pub struct PhysicsWorld {
 impl Default for PhysicsWorld {
     fn default() -> Self {
         Self {
-            gravity: nalgebra_glm::vec3(0.0, -2.8, 0.0),
+            gravity: nalgebra_glm::vec3(0.0, -0.8, 0.0),
             positions: Vec::new(),
             velocities: Vec::new(),
             forces: Vec::new(),
@@ -58,9 +58,6 @@ impl PhysicsWorld {
     }
 
     pub fn step(&mut self, delta_time: f32) {
-        // Detect collisions
-        // let mut collisions = Vec::new();
-
         // Integrate bodies
         self.bodies.iter().for_each(|node| {
             let force = self.forces[node.force_index];
