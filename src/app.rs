@@ -6,11 +6,8 @@ pub struct Context {
     pub world: crate::world::World,
     pub should_exit: bool,
     pub should_reload_view: bool,
-    pub should_sync_context: bool,
-    pub physics_enabled: bool,
-    pub gui_visible: bool,
     pub debug_visible: bool,
-    pub active_scene_index: Option<usize>,
+    pub active_scene_index: usize,
 }
 
 impl Context {
@@ -24,7 +21,7 @@ impl Context {
 
         // Assign the default active scene
         let scene_index = 0;
-        self.active_scene_index = Some(scene_index);
+        self.active_scene_index = scene_index;
 
         // Add a default camera
         let node_index = self.world.add_node();
@@ -69,10 +66,6 @@ pub trait State {
 
     /// Called every frame prior to rendering
     fn update(&mut self, _context: &mut Context) {}
-
-    /// Called every frame after update()
-    /// to create UI paint jobs for rendering
-    fn ui(&mut self, _context: &mut Context, _ui: &mut egui::Context) {}
 }
 
 pub struct App {
@@ -90,7 +83,7 @@ impl App {
             .with_transparent(true)
             .build(&event_loop)
             .expect("Failed to create winit window!");
-        let renderer = crate::render::Renderer::new(&window, width, height, window.scale_factor());
+        let renderer = crate::render::Renderer::new(&window, width, height);
         let context = Context {
             window,
             io: crate::io::Io::default(),
@@ -99,11 +92,8 @@ impl App {
             world: crate::world::World::default(),
             should_exit: false,
             should_reload_view: false,
-            should_sync_context: false,
-            physics_enabled: false,
-            gui_visible: true,
             debug_visible: false,
-            active_scene_index: None,
+            active_scene_index: 0,
         };
 
         Self {
@@ -154,29 +144,10 @@ impl App {
                 renderer.resize(width, height);
             }
 
-            let gui_consumed_event = {
-                match &event {
-                    winit::event::Event::WindowEvent { event, window_id } => {
-                        if *window_id == context.window.id() {
-                            renderer
-                                .gui
-                                .state
-                                .on_event(&renderer.gui.context, event)
-                                .consumed
-                        } else {
-                            false
-                        }
-                    }
-                    _ => false,
-                }
-            };
-
-            if !gui_consumed_event {
-                context
-                    .io
-                    .receive_event(&event, renderer.gpu.window_center());
-                state.receive_event(&mut context, &event);
-            }
+            context
+                .io
+                .receive_event(&event, renderer.gpu.window_center());
+            state.receive_event(&mut context, &event);
 
             if context.should_exit {
                 *control_flow = winit::event_loop::ControlFlow::Exit;
@@ -184,43 +155,30 @@ impl App {
 
             if let winit::event::Event::MainEventsCleared = event {
                 if context.should_reload_view {
-                    context.should_sync_context = true;
                     renderer.sync_world(&context.world);
+                    renderer.sync_debug(&context);
                     context.should_reload_view = false;
                     return;
                 }
 
-                if context.should_sync_context {
-                    renderer.sync_context(&context);
-                    context.should_sync_context = false;
-                    return;
-                }
+                context.world.physics.step(context.delta_time as _);
 
-                if context.physics_enabled {
-                    context.world.physics.step(context.delta_time as _);
-                    if let Some(scene_index) = context.active_scene_index {
-                        let scene = &mut context.world.scenes[scene_index];
-                        scene.graph.node_indices().for_each(|graph_node_index| {
-                            let node_index = scene.graph[graph_node_index];
-                            if let Some(rigid_body_index) =
-                                context.world.nodes[node_index].rigid_body_index
-                            {
-                                let transform_index =
-                                    context.world.nodes[node_index].transform_index;
-                                let transform = &mut context.world.transforms[transform_index];
-                                let rigid_body = &context.world.physics.bodies[rigid_body_index];
-                                transform.translation =
-                                    context.world.physics.positions[rigid_body.position_index];
-                            }
-                        });
-                    }
-                }
+                let scene_index = context.active_scene_index;
+                let scene = &mut context.world.scenes[scene_index];
 
-                renderer.render_frame(&mut context, |context, ui| {
-                    if context.gui_visible {
-                        state.ui(context, ui);
+                scene.graph.node_indices().for_each(|graph_node_index| {
+                    let node_index = scene.graph[graph_node_index];
+                    if let Some(rigid_body_index) = context.world.nodes[node_index].rigid_body_index
+                    {
+                        let transform_index = context.world.nodes[node_index].transform_index;
+                        let transform = &mut context.world.transforms[transform_index];
+                        let rigid_body = &context.world.physics.bodies[rigid_body_index];
+                        transform.translation =
+                            context.world.physics.positions[rigid_body.position_index];
                     }
                 });
+
+                renderer.render_frame(&mut context);
             }
         });
     }

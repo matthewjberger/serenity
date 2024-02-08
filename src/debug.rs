@@ -90,110 +90,107 @@ impl DebugRender {
         gpu: &crate::gpu::Gpu,
         context: &crate::app::Context,
     ) {
-        if let Some(scene_index) = context.active_scene_index {
-            let scene = &context.world.scenes[scene_index];
+        let scene_index = context.active_scene_index;
+        let scene = &context.world.scenes[scene_index];
 
-            let (camera_position, projection, view) =
-                crate::world::create_camera_matrices(&context.world, scene, gpu.aspect_ratio());
+        let (camera_position, projection, view) =
+            crate::world::create_camera_matrices(&context.world, scene, gpu.aspect_ratio());
 
-            gpu.queue.write_buffer(
-                &self.uniform_buffer,
-                0,
-                bytemuck::cast_slice(&[Uniform {
-                    view,
-                    projection,
-                    camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
-                }]),
-            );
+        gpu.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[Uniform {
+                view,
+                projection,
+                camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
+            }]),
+        );
 
-            render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
-            render_pass.set_pipeline(&self.cube_pipeline);
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.set_pipeline(&self.cube_pipeline);
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
-            // TODO: We can batch the shapes per shape type and then send the draw calls once per shape
-            [crate::world::Shape::Cube, crate::world::Shape::CubeExtents]
-                .iter()
-                .for_each(|shape| {
-                    scene.graph.node_indices().for_each(|graph_node_index| {
-                        let node_index = scene.graph[graph_node_index];
-                        let node = &context.world.nodes[node_index];
+        // TODO: We can batch the shapes per shape type and then send the draw calls once per shape
+        [crate::world::Shape::Cube, crate::world::Shape::CubeExtents]
+            .iter()
+            .for_each(|shape| {
+                scene.graph.node_indices().for_each(|graph_node_index| {
+                    let node_index = scene.graph[graph_node_index];
+                    let node = &context.world.nodes[node_index];
 
-                        // Only show primitive meshes for
-                        if node.mesh_index.is_none() {
+                    // Only show primitive meshes for
+                    if node.mesh_index.is_none() {
+                        return;
+                    }
+
+                    if let Some(primitive_mesh_index) = node.primitive_mesh_index {
+                        let primitive_mesh = &context.world.primitive_meshes[primitive_mesh_index];
+
+                        if &primitive_mesh.shape != shape {
                             return;
                         }
 
-                        if let Some(primitive_mesh_index) = node.primitive_mesh_index {
-                            let primitive_mesh =
-                                &context.world.primitive_meshes[primitive_mesh_index];
-
-                            if &primitive_mesh.shape != shape {
-                                return;
-                            }
-
-                            let instance_offset = primitive_mesh_index as u32;
-                            match primitive_mesh.shape {
-                                crate::world::Shape::CubeExtents => {
-                                    render_pass.draw_indexed(
-                                        0..24,
-                                        0,
-                                        instance_offset..(instance_offset + 1),
-                                    );
-                                }
-                                crate::world::Shape::Cube => render_pass.draw_indexed(
-                                    0..(INDICES.len() as _),
+                        let instance_offset = primitive_mesh_index as u32;
+                        match primitive_mesh.shape {
+                            crate::world::Shape::CubeExtents => {
+                                render_pass.draw_indexed(
+                                    0..24,
                                     0,
                                     instance_offset..(instance_offset + 1),
-                                ),
+                                );
                             }
+                            crate::world::Shape::Cube => render_pass.draw_indexed(
+                                0..(INDICES.len() as _),
+                                0,
+                                instance_offset..(instance_offset + 1),
+                            ),
                         }
-                    });
+                    }
                 });
-        }
+            });
     }
 
     pub fn sync_context(&mut self, context: &crate::app::Context, gpu: &crate::gpu::Gpu) {
         let mut instance_bindings = Vec::new();
 
-        if let Some(scene_index) = context.active_scene_index {
-            let scene = &context.world.scenes[scene_index];
-            scene.graph.node_indices().for_each(|graph_node_index| {
-                let node_index = scene.graph[graph_node_index];
-                let node = &context.world.nodes[node_index];
+        let scene_index = context.active_scene_index;
+        let scene = &context.world.scenes[scene_index];
+        scene.graph.node_indices().for_each(|graph_node_index| {
+            let node_index = scene.graph[graph_node_index];
+            let node = &context.world.nodes[node_index];
 
-                if let Some(primitive_mesh_index) = node.primitive_mesh_index {
-                    let primitive_mesh = &context.world.primitive_meshes[primitive_mesh_index];
-                    match node.aabb_index {
-                        Some(aabb) => {
-                            let aabb = &context.world.aabbs[aabb];
-                            let transform = context
-                                .world
-                                .global_transform(&scene.graph, graph_node_index);
-                            let instance_binding = InstanceBinding {
-                                model: (transform
-                                    * nalgebra_glm::translation(&aabb.center())
-                                    * nalgebra_glm::scaling(&(aabb.extents() / 2.0))),
-                                color: primitive_mesh.color,
-                            };
-                            instance_bindings.push(instance_binding);
-                        }
-                        None => {
-                            let model = context
-                                .world
-                                .global_transform(&scene.graph, graph_node_index);
-                            let instance_binding = InstanceBinding {
-                                model,
-                                color: primitive_mesh.color,
-                            };
-                            instance_bindings.push(instance_binding);
-                        }
+            if let Some(primitive_mesh_index) = node.primitive_mesh_index {
+                let primitive_mesh = &context.world.primitive_meshes[primitive_mesh_index];
+                match node.aabb_index {
+                    Some(aabb) => {
+                        let aabb = &context.world.aabbs[aabb];
+                        let transform = context
+                            .world
+                            .global_transform(&scene.graph, graph_node_index);
+                        let instance_binding = InstanceBinding {
+                            model: (transform
+                                * nalgebra_glm::translation(&aabb.center())
+                                * nalgebra_glm::scaling(&(aabb.extents() / 2.0))),
+                            color: primitive_mesh.color,
+                        };
+                        instance_bindings.push(instance_binding);
+                    }
+                    None => {
+                        let model = context
+                            .world
+                            .global_transform(&scene.graph, graph_node_index);
+                        let instance_binding = InstanceBinding {
+                            model,
+                            color: primitive_mesh.color,
+                        };
+                        instance_bindings.push(instance_binding);
                     }
                 }
-            });
-        }
+            }
+        });
 
         if (self.instance_buffer.size() as usize)
             < instance_bindings.len() * std::mem::size_of::<InstanceBinding>()

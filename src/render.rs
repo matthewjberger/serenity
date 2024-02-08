@@ -1,6 +1,5 @@
 pub struct Renderer {
     pub gpu: crate::gpu::Gpu,
-    pub gui: crate::gui::Gui,
     pub view: Option<crate::view::WorldRender>,
     pub debug: crate::debug::DebugRender,
     pub depth_texture_view: wgpu::TextureView,
@@ -13,23 +12,20 @@ impl Renderer {
         window: &W,
         width: u32,
         height: u32,
-        scale_factor: f64,
     ) -> Self {
         let gpu = pollster::block_on(crate::gpu::Gpu::new_async(&window, width, height));
         let depth_texture_view =
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
-        let gui = crate::gui::Gui::new(&window, &gpu, scale_factor);
         let debug = crate::debug::DebugRender::new(&gpu);
         Self {
             gpu,
-            gui,
             view: None,
             debug,
             depth_texture_view,
         }
     }
 
-    pub fn sync_context(&mut self, context: &crate::app::Context) {
+    pub fn sync_debug(&mut self, context: &crate::app::Context) {
         self.debug.sync_context(context, &self.gpu);
     }
 
@@ -48,30 +44,13 @@ impl Renderer {
         );
     }
 
-    pub fn render_frame(
-        &mut self,
-        context: &mut crate::app::Context,
-        ui_callback: impl FnOnce(&mut crate::app::Context, &mut egui::Context),
-    ) {
-        self.begin_frame(context);
-        ui_callback(context, &mut self.gui.context);
-        self.end_frame(context);
-    }
-
-    fn begin_frame(&mut self, context: &mut crate::app::Context) {
-        self.gui.begin_frame(&context.window);
-    }
-
-    fn end_frame(&mut self, context: &mut crate::app::Context) {
+    pub fn render_frame(&mut self, context: &mut crate::app::Context) {
         let mut encoder = self
             .gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-
-        let (paint_jobs, screen_descriptor) =
-            self.gui.end_frame(&self.gpu, &context.window, &mut encoder);
 
         let surface_texture = self
             .gpu
@@ -132,10 +111,6 @@ impl Renderer {
             if let Some(view) = self.view.as_mut() {
                 view.render(&mut render_pass, &self.gpu, context);
             }
-
-            self.gui
-                .renderer
-                .render(&mut render_pass, &paint_jobs, &screen_descriptor);
         }
 
         self.gpu.queue.submit(std::iter::once(encoder.finish()));

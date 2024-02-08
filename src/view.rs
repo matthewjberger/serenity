@@ -300,153 +300,143 @@ impl WorldRender {
         gpu: &crate::gpu::Gpu,
         context: &crate::app::Context,
     ) {
-        if let Some(scene_index) = context.active_scene_index {
-            let scene = &context.world.scenes[scene_index];
+        let scene_index = context.active_scene_index;
+        let scene = &context.world.scenes[scene_index];
 
-            let (camera_position, projection, view) =
-                crate::world::create_camera_matrices(&context.world, scene, gpu.aspect_ratio());
+        let (camera_position, projection, view) =
+            crate::world::create_camera_matrices(&context.world, scene, gpu.aspect_ratio());
 
-            gpu.queue.write_buffer(
-                &self.uniform_buffer,
-                0,
-                bytemuck::cast_slice(&[Uniform {
-                    view,
-                    projection,
-                    camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
-                }]),
-            );
+        gpu.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[Uniform {
+                view,
+                projection,
+                camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
+            }]),
+        );
 
-            let mut mesh_ubos = vec![DynamicUniform::default(); context.world.transforms.len()];
+        let mut mesh_ubos = vec![DynamicUniform::default(); context.world.transforms.len()];
+        scene
+            .graph
+            .node_indices()
+            .enumerate()
+            .for_each(|(ubo_index, graph_node_index)| {
+                mesh_ubos[ubo_index] = DynamicUniform {
+                    model: context
+                        .world
+                        .global_transform(&scene.graph, graph_node_index),
+                };
+            });
+        gpu.queue
+            .write_buffer(&self.dynamic_uniform_buffer, 0, unsafe {
+                std::slice::from_raw_parts(
+                    mesh_ubos.as_ptr() as *const u8,
+                    mesh_ubos.len() * gpu.alignment() as usize,
+                )
+            });
+
+        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.texture_array_bind_group, &[]);
+
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        for alpha_mode in [
+            crate::world::AlphaMode::Opaque,
+            crate::world::AlphaMode::Mask,
+            crate::world::AlphaMode::Blend,
+        ]
+        .iter()
+        {
             scene
                 .graph
                 .node_indices()
                 .enumerate()
                 .for_each(|(ubo_index, graph_node_index)| {
-                    mesh_ubos[ubo_index] = DynamicUniform {
-                        model: context
-                            .world
-                            .global_transform(&scene.graph, graph_node_index),
-                    };
-                });
-            gpu.queue
-                .write_buffer(&self.dynamic_uniform_buffer, 0, unsafe {
-                    std::slice::from_raw_parts(
-                        mesh_ubos.as_ptr() as *const u8,
-                        mesh_ubos.len() * gpu.alignment() as usize,
-                    )
-                });
+                    let node_index = scene.graph[graph_node_index];
+                    let node = &context.world.nodes[node_index];
+                    if let Some(mesh_index) = node.mesh_index {
+                        let offset = (ubo_index as u64 * gpu.alignment()) as wgpu::DynamicOffset;
+                        render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
+                        let mesh = &context.world.meshes[mesh_index];
 
-            render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            render_pass.set_bind_group(2, &self.texture_array_bind_group, &[]);
+                        for primitive in mesh.primitives.iter() {
+                            match primitive.topology {
+                                crate::world::PrimitiveTopology::Lines => {
+                                    render_pass.set_pipeline(&self.line_pipeline);
+                                }
+                                crate::world::PrimitiveTopology::LineStrip => {
+                                    render_pass.set_pipeline(&self.line_strip_pipeline);
+                                }
+                                crate::world::PrimitiveTopology::Triangles => match alpha_mode {
+                                    crate::world::AlphaMode::Opaque
+                                    | crate::world::AlphaMode::Mask => {
+                                        render_pass.set_pipeline(&self.triangle_filled_pipeline);
+                                    }
+                                    crate::world::AlphaMode::Blend => {
+                                        render_pass.set_pipeline(&self.triangle_blended_pipeline);
+                                    }
+                                },
+                                crate::world::PrimitiveTopology::TriangleStrip => {
+                                    render_pass.set_pipeline(&self.triangle_strip_pipeline);
+                                }
 
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            for alpha_mode in [
-                crate::world::AlphaMode::Opaque,
-                crate::world::AlphaMode::Mask,
-                crate::world::AlphaMode::Blend,
-            ]
-            .iter()
-            {
-                scene
-                    .graph
-                    .node_indices()
-                    .enumerate()
-                    .for_each(|(ubo_index, graph_node_index)| {
-                        let node_index = scene.graph[graph_node_index];
-                        let node = &context.world.nodes[node_index];
-                        if let Some(mesh_index) = node.mesh_index {
-                            let offset =
-                                (ubo_index as u64 * gpu.alignment()) as wgpu::DynamicOffset;
-                            render_pass.set_bind_group(
-                                1,
-                                &self.dynamic_uniform_bind_group,
-                                &[offset],
+                                // wgpu does not support line loops or triangle fans
+                                // and Point primitive topology is unsupported on Metal so it is omitted here
+                                _ => continue,
+                            }
+
+                            let mut shader_material = Material::default();
+
+                            match primitive.material_index {
+                                Some(material_index) => {
+                                    let material = &context.world.materials[material_index];
+                                    if material.alpha_mode != *alpha_mode {
+                                        continue;
+                                    }
+                                    shader_material.base_color = material.base_color_factor;
+                                    shader_material.base_texture_index =
+                                        material.base_color_texture_index as _;
+                                    shader_material.alpha_mode = material.alpha_mode as _;
+                                    shader_material.alpha_cutoff =
+                                        material.alpha_cutoff.unwrap_or(0.5);
+                                }
+                                None => {
+                                    shader_material.base_color =
+                                        nalgebra_glm::vec4(0.5, 0.5, 0.5, 1.0);
+                                    shader_material.base_texture_index = -1;
+                                    shader_material.alpha_mode = 0;
+                                    shader_material.alpha_cutoff = 0.5;
+                                }
+                            };
+
+                            render_pass.set_push_constants(
+                                wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                0,
+                                bytemuck::cast_slice(&[shader_material]),
                             );
-                            let mesh = &context.world.meshes[mesh_index];
 
-                            for primitive in mesh.primitives.iter() {
-                                match primitive.topology {
-                                    crate::world::PrimitiveTopology::Lines => {
-                                        render_pass.set_pipeline(&self.line_pipeline);
-                                    }
-                                    crate::world::PrimitiveTopology::LineStrip => {
-                                        render_pass.set_pipeline(&self.line_strip_pipeline);
-                                    }
-                                    crate::world::PrimitiveTopology::Triangles => {
-                                        match alpha_mode {
-                                            crate::world::AlphaMode::Opaque
-                                            | crate::world::AlphaMode::Mask => {
-                                                render_pass
-                                                    .set_pipeline(&self.triangle_filled_pipeline);
-                                            }
-                                            crate::world::AlphaMode::Blend => {
-                                                render_pass
-                                                    .set_pipeline(&self.triangle_blended_pipeline);
-                                            }
-                                        }
-                                    }
-                                    crate::world::PrimitiveTopology::TriangleStrip => {
-                                        render_pass.set_pipeline(&self.triangle_strip_pipeline);
-                                    }
-
-                                    // wgpu does not support line loops or triangle fans
-                                    // and Point primitive topology is unsupported on Metal so it is omitted here
-                                    _ => continue,
-                                }
-
-                                let mut shader_material = Material::default();
-
-                                match primitive.material_index {
-                                    Some(material_index) => {
-                                        let material = &context.world.materials[material_index];
-                                        if material.alpha_mode != *alpha_mode {
-                                            continue;
-                                        }
-                                        shader_material.base_color = material.base_color_factor;
-                                        shader_material.base_texture_index =
-                                            material.base_color_texture_index as _;
-                                        shader_material.alpha_mode = material.alpha_mode as _;
-                                        shader_material.alpha_cutoff =
-                                            material.alpha_cutoff.unwrap_or(0.5);
-                                    }
-                                    None => {
-                                        shader_material.base_color =
-                                            nalgebra_glm::vec4(0.5, 0.5, 0.5, 1.0);
-                                        shader_material.base_texture_index = -1;
-                                        shader_material.alpha_mode = 0;
-                                        shader_material.alpha_cutoff = 0.5;
-                                    }
-                                };
-
-                                render_pass.set_push_constants(
-                                    wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                    0,
-                                    bytemuck::cast_slice(&[shader_material]),
+                            if primitive.number_of_indices > 0 {
+                                let index_offset = primitive.index_offset as u32;
+                                let number_of_indices =
+                                    index_offset + primitive.number_of_indices as u32;
+                                render_pass.draw_indexed(
+                                    index_offset..number_of_indices,
+                                    primitive.vertex_offset as i32,
+                                    0..1, // TODO: support multiple instances per primitive
                                 );
-
-                                if primitive.number_of_indices > 0 {
-                                    let index_offset = primitive.index_offset as u32;
-                                    let number_of_indices =
-                                        index_offset + primitive.number_of_indices as u32;
-                                    render_pass.draw_indexed(
-                                        index_offset..number_of_indices,
-                                        primitive.vertex_offset as i32,
-                                        0..1, // TODO: support multiple instances per primitive
-                                    );
-                                } else {
-                                    let vertex_offset = primitive.vertex_offset as u32;
-                                    let number_of_vertices =
-                                        vertex_offset + primitive.number_of_vertices as u32;
-                                    render_pass.draw(
-                                        vertex_offset..number_of_vertices,
-                                        0..1, // TODO: support multiple instances per primitive
-                                    );
-                                }
+                            } else {
+                                let vertex_offset = primitive.vertex_offset as u32;
+                                let number_of_vertices =
+                                    vertex_offset + primitive.number_of_vertices as u32;
+                                render_pass.draw(
+                                    vertex_offset..number_of_vertices,
+                                    0..1, // TODO: support multiple instances per primitive
+                                );
                             }
                         }
-                    });
-            }
+                    }
+                });
         }
     }
 }

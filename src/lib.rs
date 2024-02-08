@@ -2,14 +2,12 @@ pub mod app;
 pub mod debug;
 pub mod gltf;
 pub mod gpu;
-pub mod gui;
 pub mod io;
 pub mod physics;
 pub mod render;
 pub mod view;
 pub mod world;
 
-pub use egui;
 pub use log;
 pub use nalgebra_glm;
 pub use petgraph;

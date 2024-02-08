@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/editor"]
+members = ["apps/game"]
 
 [package]
 name = "serenity"
@@ -11,11 +11,7 @@ repository = "https://github.com/matthewjberger/serenity"
 version = "0.1.0"
 
 [dependencies]
-bytemuck = "1.14.0"
-egui = "0.23.0"
-egui-wgpu = { version = "0.23.0", features = ["winit"] }
-egui-winit = "0.23.0"
-egui_extras = { version = "0.23.0", features = ["all_loaders"] }
+bytemuck = { version = "1.14.0", features = ["derive"] }
 env_logger = "0.10.1"
 gltf = { version = "1.4.0", features = ["KHR_lights_punctual", "names"] }
 image = "0.24.7"

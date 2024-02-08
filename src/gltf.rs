@@ -488,7 +488,7 @@ impl From<gltf::image::Data> for crate::world::Image {
                 image::ImageBuffer::from_raw(data.width, data.height, data.pixels.to_vec())
                     .unwrap(),
             ),
-            _ => panic!("Unsupported image format!"),
+            format => panic!("Unsupported image format: {format:#?}"),
         };
         let rgba_img = img.to_rgba8();
         let pixels = rgba_img.into_raw();
