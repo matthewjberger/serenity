@@ -5,10 +5,11 @@ pub struct DebugRender {
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
     pub cube_pipeline: wgpu::RenderPipeline,
+    pub number_of_instances: u32,
 }
 
 impl DebugRender {
-    pub fn new(gpu: &crate::gpu::Gpu) -> Self {
+    pub fn new(gpu: &crate::gpu::Gpu, world: &crate::world::World) -> Self {
         let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
             &gpu.device,
             &wgpu::util::BufferInitDescriptor {
@@ -26,12 +27,25 @@ impl DebugRender {
             },
         );
 
+        let mut number_of_instances = 0;
+        if let Some(scene_index) = world.default_scene_index {
+            let scene = &world.scenes[scene_index];
+            scene.graph.node_indices().for_each(|graph_node_index| {
+                let node_index = scene.graph[graph_node_index];
+                let node = &world.nodes[node_index];
+                if node.rigid_body_index.is_some() {
+                    number_of_instances += 1;
+                }
+            });
+        }
+        let instance_bindings = vec![InstanceBinding::default(); number_of_instances as usize];
+
         let instance_buffer = wgpu::util::DeviceExt::create_buffer_init(
             &gpu.device,
             &wgpu::util::BufferInitDescriptor {
-                label: Some("Instance Buffer"),
-                contents: &[],
-                usage: wgpu::BufferUsages::VERTEX,
+                label: Some("instance_buffer"),
+                contents: bytemuck::cast_slice(&instance_bindings),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             },
         );
 
@@ -75,24 +89,20 @@ impl DebugRender {
             vertex_buffer,
             index_buffer,
             instance_buffer,
+            number_of_instances,
             uniform_buffer,
             uniform_bind_group,
             cube_pipeline,
         }
     }
 
-    pub fn render<'rp>(
-        &'rp mut self,
-        render_pass: &mut wgpu::RenderPass<'rp>,
+    pub fn sync_camera(
+        &mut self,
         gpu: &crate::gpu::Gpu,
-        context: &crate::app::Context,
+        projection: nalgebra_glm::Mat4,
+        view: nalgebra_glm::Mat4,
+        camera_position: nalgebra_glm::Vec3,
     ) {
-        let scene_index = context.active_scene_index;
-        let scene = &context.world.scenes[scene_index];
-
-        let (camera_position, projection, view) =
-            crate::world::create_camera_matrices(&context.world, scene, gpu.aspect_ratio());
-
         gpu.queue.write_buffer(
             &self.uniform_buffer,
             0,
@@ -102,113 +112,48 @@ impl DebugRender {
                 camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
             }]),
         );
-
-        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-
-        render_pass.set_pipeline(&self.cube_pipeline);
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-        // TODO: We can batch the shapes per shape type and then send the draw calls once per shape
-        [crate::world::Shape::Cube, crate::world::Shape::CubeExtents]
-            .iter()
-            .for_each(|shape| {
-                scene.graph.node_indices().for_each(|graph_node_index| {
-                    let node_index = scene.graph[graph_node_index];
-                    let node = &context.world.nodes[node_index];
-
-                    // Only show primitive meshes for
-                    if node.mesh_index.is_none() {
-                        return;
-                    }
-
-                    if let Some(primitive_mesh_index) = node.primitive_mesh_index {
-                        let primitive_mesh = &context.world.primitive_meshes[primitive_mesh_index];
-
-                        if &primitive_mesh.shape != shape {
-                            return;
-                        }
-
-                        let instance_offset = primitive_mesh_index as u32;
-                        match primitive_mesh.shape {
-                            crate::world::Shape::CubeExtents => {
-                                render_pass.draw_indexed(
-                                    0..24,
-                                    0,
-                                    instance_offset..(instance_offset + 1),
-                                );
-                            }
-                            crate::world::Shape::Cube => render_pass.draw_indexed(
-                                0..(INDICES.len() as _),
-                                0,
-                                instance_offset..(instance_offset + 1),
-                            ),
-                        }
-                    }
-                });
-            });
     }
 
-    pub fn sync_context(&mut self, context: &crate::app::Context, gpu: &crate::gpu::Gpu) {
-        let mut instance_bindings = Vec::new();
+    pub fn sync_instances(
+        &mut self,
+        scene: &crate::world::Scene,
+        world: &crate::world::World,
+        gpu: &crate::gpu::Gpu,
+    ) {
+        let mut instance_bindings = vec![];
 
-        let scene_index = context.active_scene_index;
-        let scene = &context.world.scenes[scene_index];
         scene.graph.node_indices().for_each(|graph_node_index| {
             let node_index = scene.graph[graph_node_index];
-            let node = &context.world.nodes[node_index];
-
-            if let Some(primitive_mesh_index) = node.primitive_mesh_index {
-                let primitive_mesh = &context.world.primitive_meshes[primitive_mesh_index];
-
-                let instance_binding = match node.rigid_body_index {
-                    Some(rigid_body_index) => {
-                        let rigid_body = &context.world.physics.bodies[rigid_body_index];
-                        let aabb = &context.world.physics.aabbs[rigid_body.aabb_index];
-                        let transform = context
-                            .world
-                            .global_transform(&scene.graph, graph_node_index);
-                        let instance_binding = InstanceBinding {
-                            model: (transform
-                                * nalgebra_glm::translation(&aabb.center())
-                                * nalgebra_glm::scaling(&(aabb.extents() / 2.0))),
-                            color: primitive_mesh.color,
-                        };
-                        instance_binding
-                    }
-                    None => {
-                        let model = context
-                            .world
-                            .global_transform(&scene.graph, graph_node_index);
-                        InstanceBinding {
-                            model,
-                            color: primitive_mesh.color,
-                        }
-                    }
+            let node = &world.nodes[node_index];
+            if let Some(rigid_body_index) = node.rigid_body_index {
+                let color = nalgebra_glm::vec4(0.0, 1.0, 0.0, 1.0);
+                let rigid_body = &world.physics.bodies[rigid_body_index];
+                let aabb = &world.physics.aabbs[rigid_body.aabb_index];
+                let transform = world.global_transform(&scene.graph, graph_node_index);
+                let instance_binding = crate::debug::InstanceBinding {
+                    model: (transform
+                        * nalgebra_glm::translation(&aabb.center())
+                        * nalgebra_glm::scaling(&(aabb.extents()))),
+                    color,
                 };
                 instance_bindings.push(instance_binding);
             }
         });
 
-        if (self.instance_buffer.size() as usize)
-            < instance_bindings.len() * std::mem::size_of::<InstanceBinding>()
-        {
-            self.instance_buffer = wgpu::util::DeviceExt::create_buffer_init(
-                &gpu.device,
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("Instance Buffer"),
-                    contents: bytemuck::cast_slice(&instance_bindings),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                },
-            );
-        } else {
-            gpu.queue.write_buffer(
-                &self.instance_buffer,
-                0,
-                bytemuck::cast_slice(&instance_bindings),
-            );
-        }
+        gpu.queue.write_buffer(
+            &self.instance_buffer,
+            0,
+            bytemuck::cast_slice(&instance_bindings),
+        );
+    }
+
+    pub fn render<'rp>(&'rp mut self, render_pass: &mut wgpu::RenderPass<'rp>) {
+        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        render_pass.set_pipeline(&self.cube_pipeline);
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.draw_indexed(0..24, 0, 0..self.number_of_instances);
     }
 }
 
@@ -304,28 +249,28 @@ impl Vertex {
 }
 const VERTICES: [Vertex; 8] = [
     Vertex {
-        position: nalgebra_glm::Vec3::new(-1.0, -1.0, -1.0),
+        position: nalgebra_glm::Vec3::new(-0.5, -0.5, -0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(1.0, -1.0, -1.0),
+        position: nalgebra_glm::Vec3::new(0.5, -0.5, -0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(1.0, 1.0, -1.0),
+        position: nalgebra_glm::Vec3::new(0.5, 0.5, -0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(-1.0, 1.0, -1.0),
+        position: nalgebra_glm::Vec3::new(-0.5, 0.5, -0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(-1.0, -1.0, 1.0),
+        position: nalgebra_glm::Vec3::new(-0.5, -0.5, 0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(1.0, -1.0, 1.0),
+        position: nalgebra_glm::Vec3::new(0.5, -0.5, 0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(1.0, 1.0, 1.0),
+        position: nalgebra_glm::Vec3::new(0.5, 0.5, 0.5),
     },
     Vertex {
-        position: nalgebra_glm::Vec3::new(-1.0, 1.0, 1.0),
+        position: nalgebra_glm::Vec3::new(-0.5, 0.5, 0.5),
     },
 ];
 
@@ -357,7 +302,7 @@ const INDICES: [u32; 48] = [
 ];
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Default, Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceBinding {
     pub model: nalgebra_glm::Mat4,
     pub color: nalgebra_glm::Vec4,

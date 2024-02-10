@@ -9,19 +9,21 @@ impl serenity::app::State for Game {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
         context.import_file("resources/gltf/physics.glb");
 
-        let scene = &context.world.scenes[context.active_scene_index];
+        let Some(scene_index) = context.world.default_scene_index else {
+            return;
+        };
+        let scene = &context.world.scenes[scene_index];
 
         // Add rigid body and aabb to player
         for graph_node_index in scene.graph.node_indices() {
             let node_index = scene.graph[graph_node_index];
             let node = &mut context.world.nodes[node_index];
             let metadata = &context.world.metadata[node.metadata_index];
-            let global_transform_matrix = context
+            let (global_translation, _global_rotation) = context
                 .world
-                .global_transform(&scene.graph, graph_node_index);
-            if metadata.name == "Player" {
-                let position = global_transform_matrix
-                    .transform_vector(&serenity::nalgebra_glm::Vec3::new(0.0, 0.0, 0.0));
+                .global_isometry(&scene.graph, graph_node_index);
+            if metadata.name == "Player" || metadata.name == "Ground" {
+                let position = global_translation;
                 let node = &mut context.world.nodes[node_index];
 
                 let rigid_body_index = context.world.physics.add_rigid_body(position);
@@ -36,15 +38,21 @@ impl serenity::app::State for Game {
                     mesh.primitives.iter().for_each(|primitive| {
                         let vertices = &context.world.vertices[primitive.vertex_offset
                             ..(primitive.vertex_offset + primitive.number_of_vertices)];
-                        aabb.expand_to_include(
-                            &serenity::physics::AxisAlignedBoundingBox::from_vertices(vertices),
-                        );
+                        vertices.into_iter().for_each(|vertex| {
+                            aabb.expand_to_include_vertex(vertex);
+                        });
                     });
                     let aabb_index = context.world.physics.add_aabb(aabb);
                     context.world.physics.bodies[rigid_body_index].aabb_index = aabb_index;
-                }
 
-                break;
+                    if metadata.name == "Player" {
+                        context.world.physics.bodies[rigid_body_index].dynamic = true;
+                    }
+
+                    if metadata.name == "Ground" {
+                        context.world.physics.bodies[rigid_body_index].dynamic = false;
+                    }
+                }
             }
         }
     }
@@ -81,7 +89,7 @@ impl serenity::app::State for Game {
                 serenity::winit::event::ElementState::Pressed,
             ) = (keycode, state)
             {
-                context.debug_visible = !context.debug_visible;
+                context.world.show_debug = !context.world.show_debug;
             }
         }
     }
@@ -92,7 +100,10 @@ impl serenity::app::State for Game {
 }
 
 fn camera_system(context: &mut serenity::app::Context) {
-    let scene_index = context.active_scene_index;
+    let Some(scene_index) = context.world.default_scene_index else {
+        return;
+    };
+
     let scene = &context.world.scenes[scene_index];
 
     let camera_node_index = scene.graph[scene

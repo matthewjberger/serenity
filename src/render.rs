@@ -1,7 +1,6 @@
 pub struct Renderer {
     pub gpu: crate::gpu::Gpu,
     pub view: Option<crate::view::WorldRender>,
-    pub debug: crate::debug::DebugRender,
     pub depth_texture_view: wgpu::TextureView,
 }
 
@@ -16,17 +15,11 @@ impl Renderer {
         let gpu = pollster::block_on(crate::gpu::Gpu::new_async(&window, width, height));
         let depth_texture_view =
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
-        let debug = crate::debug::DebugRender::new(&gpu);
         Self {
             gpu,
             view: None,
-            debug,
             depth_texture_view,
         }
-    }
-
-    pub fn sync_debug(&mut self, context: &crate::app::Context) {
-        self.debug.sync_context(context, &self.gpu);
     }
 
     pub fn sync_world(&mut self, world: &crate::world::World) {
@@ -104,12 +97,8 @@ impl Renderer {
                 }),
             });
 
-            if context.debug_visible {
-                self.debug.render(&mut render_pass, &self.gpu, context);
-            }
-
             if let Some(view) = self.view.as_mut() {
-                view.render(&mut render_pass, &self.gpu, context);
+                view.render(&mut render_pass, &self.gpu, &context.world);
             }
         }
 

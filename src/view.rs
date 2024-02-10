@@ -13,6 +13,7 @@ pub struct WorldRender {
     pub line_pipeline: wgpu::RenderPipeline,
     pub line_strip_pipeline: wgpu::RenderPipeline,
     pub triangle_strip_pipeline: wgpu::RenderPipeline,
+    pub debug: crate::debug::DebugRender,
 }
 
 impl WorldRender {
@@ -276,6 +277,8 @@ impl WorldRender {
             wgpu::PolygonMode::Fill,
         );
 
+        let debug = crate::debug::DebugRender::new(gpu, world);
+
         Self {
             vertex_buffer,
             index_buffer,
@@ -291,6 +294,7 @@ impl WorldRender {
             line_pipeline,
             line_strip_pipeline,
             triangle_strip_pipeline,
+            debug,
         }
     }
 
@@ -298,13 +302,15 @@ impl WorldRender {
         &'rp mut self,
         render_pass: &mut wgpu::RenderPass<'rp>,
         gpu: &crate::gpu::Gpu,
-        context: &crate::app::Context,
+        world: &crate::world::World,
     ) {
-        let scene_index = context.active_scene_index;
-        let scene = &context.world.scenes[scene_index];
+        let Some(scene_index) = world.default_scene_index else {
+            return;
+        };
+        let scene = &world.scenes[scene_index];
 
         let (camera_position, projection, view) =
-            crate::world::create_camera_matrices(&context.world, scene, gpu.aspect_ratio());
+            crate::world::create_camera_matrices(world, scene, gpu.aspect_ratio());
 
         gpu.queue.write_buffer(
             &self.uniform_buffer,
@@ -316,16 +322,21 @@ impl WorldRender {
             }]),
         );
 
-        let mut mesh_ubos = vec![DynamicUniform::default(); context.world.transforms.len()];
+        if world.show_debug {
+            self.debug
+                .sync_camera(gpu, projection, view, camera_position);
+            self.debug.sync_instances(scene, world, gpu);
+            self.debug.render(render_pass);
+        }
+
+        let mut mesh_ubos = vec![DynamicUniform::default(); world.transforms.len()];
         scene
             .graph
             .node_indices()
             .enumerate()
             .for_each(|(ubo_index, graph_node_index)| {
                 mesh_ubos[ubo_index] = DynamicUniform {
-                    model: context
-                        .world
-                        .global_transform(&scene.graph, graph_node_index),
+                    model: world.global_transform(&scene.graph, graph_node_index),
                 };
             });
         gpu.queue
@@ -341,6 +352,7 @@ impl WorldRender {
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+
         for alpha_mode in [
             crate::world::AlphaMode::Opaque,
             crate::world::AlphaMode::Mask,
@@ -354,11 +366,11 @@ impl WorldRender {
                 .enumerate()
                 .for_each(|(ubo_index, graph_node_index)| {
                     let node_index = scene.graph[graph_node_index];
-                    let node = &context.world.nodes[node_index];
+                    let node = &world.nodes[node_index];
                     if let Some(mesh_index) = node.mesh_index {
                         let offset = (ubo_index as u64 * gpu.alignment()) as wgpu::DynamicOffset;
                         render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
-                        let mesh = &context.world.meshes[mesh_index];
+                        let mesh = &world.meshes[mesh_index];
 
                         for primitive in mesh.primitives.iter() {
                             match primitive.topology {
@@ -390,7 +402,7 @@ impl WorldRender {
 
                             match primitive.material_index {
                                 Some(material_index) => {
-                                    let material = &context.world.materials[material_index];
+                                    let material = &world.materials[material_index];
                                     if material.alpha_mode != *alpha_mode {
                                         continue;
                                     }

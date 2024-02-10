@@ -6,22 +6,21 @@ pub struct Context {
     pub world: crate::world::World,
     pub should_exit: bool,
     pub should_reload_view: bool,
-    pub debug_visible: bool,
-    pub active_scene_index: usize,
 }
 
 impl Context {
     pub fn import_file(&mut self, path: &str) {
         self.world = crate::gltf::import_gltf(path);
 
-        // Add a default scene if none exist
         if self.world.scenes.is_empty() {
             self.world.scenes.push(crate::world::Scene::default());
+            self.world.default_scene_index = Some(0);
         }
-        let scene_index = 0;
-        self.active_scene_index = scene_index;
-        self.world.add_camera_to_scenegraph(scene_index);
-        self.world.add_bounding_boxes_to_all_nodes(scene_index);
+
+        if let Some(scene_index) = self.world.default_scene_index {
+            self.world.add_camera_to_scenegraph(scene_index);
+        }
+
         self.should_reload_view = true;
     }
 }
@@ -66,8 +65,6 @@ impl App {
             world: crate::world::World::default(),
             should_exit: false,
             should_reload_view: false,
-            debug_visible: false,
-            active_scene_index: 0,
         };
 
         Self {
@@ -130,28 +127,28 @@ impl App {
             if let winit::event::Event::MainEventsCleared = event {
                 if context.should_reload_view {
                     renderer.sync_world(&context.world);
-                    renderer.sync_debug(&context);
                     context.should_reload_view = false;
                     return;
                 }
 
                 context.world.physics.step(context.delta_time as _);
-                renderer.sync_debug(&context);
 
-                let scene_index = context.active_scene_index;
-                let scene = &mut context.world.scenes[scene_index];
+                if let Some(scene_index) = context.world.default_scene_index {
+                    let scene = &mut context.world.scenes[scene_index];
 
-                scene.graph.node_indices().for_each(|graph_node_index| {
-                    let node_index = scene.graph[graph_node_index];
-                    if let Some(rigid_body_index) = context.world.nodes[node_index].rigid_body_index
-                    {
-                        let transform_index = context.world.nodes[node_index].transform_index;
-                        let transform = &mut context.world.transforms[transform_index];
-                        let rigid_body = &context.world.physics.bodies[rigid_body_index];
-                        transform.translation =
-                            context.world.physics.positions[rigid_body.position_index];
-                    }
-                });
+                    scene.graph.node_indices().for_each(|graph_node_index| {
+                        let node_index = scene.graph[graph_node_index];
+                        if let Some(rigid_body_index) =
+                            context.world.nodes[node_index].rigid_body_index
+                        {
+                            let transform_index = context.world.nodes[node_index].transform_index;
+                            let transform = &mut context.world.transforms[transform_index];
+                            let rigid_body = &context.world.physics.bodies[rigid_body_index];
+                            transform.translation =
+                                context.world.physics.positions[rigid_body.position_index];
+                        }
+                    });
+                }
 
                 renderer.render_frame(&mut context);
             }

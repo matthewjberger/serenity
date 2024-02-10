@@ -12,7 +12,7 @@ pub struct PhysicsWorld {
 impl Default for PhysicsWorld {
     fn default() -> Self {
         Self {
-            gravity: nalgebra_glm::vec3(0.0, -0.8, 0.0),
+            gravity: nalgebra_glm::vec3(0.0, -2.8, 0.0),
             positions: Vec::new(),
             velocities: Vec::new(),
             forces: Vec::new(),
@@ -53,35 +53,73 @@ impl PhysicsWorld {
             force_index,
             mass_index,
             aabb_index,
+            dynamic: true,
         });
         node_index
     }
 
     pub fn step(&mut self, delta_time: f32) {
+        for index_a in 0..self.bodies.iter().len() {
+            for index_b in 0..self.bodies.iter().len() {
+                if index_a == index_b {
+                    continue;
+                }
+
+                let aabb_index_a = self.bodies[index_a].aabb_index;
+                let aabb_index_b = self.bodies[index_b].aabb_index;
+                let aabb_a = &self.aabbs[aabb_index_a];
+                let aabb_b = &self.aabbs[aabb_index_b];
+
+                let position_index_a = self.bodies[index_a].position_index;
+                let position_index_b = self.bodies[index_b].position_index;
+                let position_a = &self.positions[position_index_a];
+                let position_b = &self.positions[position_index_b];
+
+                let min_a = position_a;
+                let max_a = position_a + (aabb_a.extents() / 2.0);
+
+                let min_b = position_b;
+                let max_b = position_b + (aabb_b.extents() / 2.0);
+
+                let overlap_x = min_a.x <= max_b.x && max_a.x >= min_b.x;
+                let overlap_y = min_a.y <= max_b.y && max_a.y >= min_b.y;
+                let overlap_z = min_a.z <= max_b.z && max_a.z >= min_b.z;
+
+                if overlap_x && overlap_y && overlap_z {
+                    return;
+                }
+            }
+        }
+
         // Integrate bodies
-        self.bodies.iter().for_each(|node| {
-            let force = self.forces[node.force_index];
-            let mass = self.masses[node.mass_index];
+        self.bodies.iter().for_each(|body| {
+            if !body.dynamic {
+                return;
+            }
+
+            let force = self.forces[body.force_index];
+            let mass = self.masses[body.mass_index];
             let acceleration = force / mass;
 
             let acceleration = acceleration + self.gravity;
 
-            let velocity = self.velocities[node.velocity_index];
-            let position = self.positions[node.position_index];
+            let velocity = self.velocities[body.velocity_index];
+            let position = self.positions[body.position_index];
 
             let new_velocity = velocity + acceleration * delta_time;
             let new_position = position + velocity * delta_time;
 
-            self.velocities[node.velocity_index] = new_velocity;
-            self.positions[node.position_index] = new_position;
+            self.velocities[body.velocity_index] = new_velocity;
+            self.positions[body.position_index] = new_position;
 
-            self.forces[node.force_index] = nalgebra_glm::vec3(0.0, 0.0, 0.0);
+            self.forces[body.force_index] = nalgebra_glm::vec3(0.0, 0.0, 0.0);
         });
     }
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RigidBody {
+    pub dynamic: bool,
     pub position_index: usize,
     pub velocity_index: usize,
     pub force_index: usize,
@@ -118,6 +156,11 @@ impl AxisAlignedBoundingBox {
         }
 
         Self { min, max }
+    }
+
+    pub fn expand_to_include_vertex(&mut self, vertex: &crate::world::Vertex) {
+        self.min = nalgebra_glm::min2(&self.min, &vertex.position);
+        self.max = nalgebra_glm::max2(&self.max, &vertex.position);
     }
 
     pub fn expand_to_include(&mut self, other: &AxisAlignedBoundingBox) {

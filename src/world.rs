@@ -1,5 +1,6 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct World {
+    pub default_scene_index: Option<usize>,
     pub animations: Vec<Animation>,
     pub cameras: Vec<Camera>,
     pub images: Vec<Image>,
@@ -15,8 +16,8 @@ pub struct World {
     pub textures: Vec<Texture>,
     pub transforms: Vec<Transform>,
     pub vertices: Vec<Vertex>,
-    pub primitive_meshes: Vec<PrimitiveMesh>,
     pub physics: crate::physics::PhysicsWorld,
+    pub show_debug: bool,
 }
 
 impl World {
@@ -32,19 +33,6 @@ impl World {
             .graph
             .add_edge(parent_graph_node_index, graph_node_index, ());
         graph_node_index
-    }
-
-    pub fn add_bounding_box(
-        &mut self,
-        scene_index: usize,
-        graph_node_index: petgraph::prelude::NodeIndex,
-    ) {
-        let node_index = self.scenes[scene_index].graph[graph_node_index];
-        let primitive_mesh = crate::world::PrimitiveMesh {
-            shape: crate::world::Shape::CubeExtents,
-            color: nalgebra_glm::vec4(0.983, 0.486, 0.0, 1.0),
-        };
-        self.add_primitive_mesh_to_node(node_index, primitive_mesh);
     }
 
     pub fn add_node(&mut self) -> usize {
@@ -89,28 +77,6 @@ impl World {
         node.rigid_body_index = Some(rigid_body_index);
     }
 
-    pub fn add_primitive_mesh_to_node(&mut self, node_index: usize, primitive_mesh: PrimitiveMesh) {
-        let node = &mut self.nodes[node_index];
-        let primitive_mesh_index = self.primitive_meshes.len();
-        self.primitive_meshes.push(primitive_mesh);
-        node.primitive_mesh_index = Some(primitive_mesh_index);
-    }
-
-    pub fn add_bounding_boxes_to_all_nodes(&mut self, scene_index: usize) {
-        // Add bounding boxes to all nodes
-        self.scenes[scene_index]
-            .graph
-            .node_indices()
-            .for_each(|graph_node_index| {
-                let node_index = self.scenes[scene_index].graph[graph_node_index];
-                let node = &self.nodes[node_index];
-                if node.mesh_index.is_none() && node.primitive_mesh_index.is_none() {
-                    return;
-                }
-                self.add_bounding_box(scene_index, graph_node_index);
-            });
-    }
-
     pub fn add_camera_to_scenegraph(&mut self, scene_index: usize) {
         let node_index = self.add_node();
         self.add_camera_to_node(node_index);
@@ -140,25 +106,30 @@ impl World {
             None => transform,
         }
     }
-}
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PrimitiveMesh {
-    pub shape: Shape,
-    pub color: nalgebra_glm::Vec4,
-}
-
-#[repr(C)]
-#[derive(
-    Default, Copy, Clone, Debug, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
-)]
-pub enum Shape {
-    // Includes diagonal lines
-    #[default]
-    Cube,
-
-    // Does not include diagonal lines
-    CubeExtents,
+    pub fn global_isometry(
+        &self,
+        scenegraph: &SceneGraph,
+        graph_node_index: petgraph::graph::NodeIndex,
+    ) -> (nalgebra_glm::Vec3, nalgebra_glm::Quat) {
+        let node_index = scenegraph[graph_node_index];
+        let transform_index = self.nodes[node_index].transform_index;
+        let transform = self.transforms[transform_index];
+        match scenegraph
+            .neighbors_directed(graph_node_index, petgraph::Direction::Incoming)
+            .next()
+        {
+            Some(parent_node_index) => {
+                let (parent_translation, parent_rotation) =
+                    self.global_isometry(scenegraph, parent_node_index);
+                (
+                    parent_translation + transform.translation,
+                    parent_rotation * transform.rotation,
+                )
+            }
+            None => (transform.translation, transform.rotation),
+        }
+    }
 }
 
 #[repr(C)]
