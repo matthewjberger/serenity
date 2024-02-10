@@ -19,7 +19,7 @@ impl serenity::app::State for Game {
             let global_transform_matrix = context
                 .world
                 .global_transform(&scene.graph, graph_node_index);
-            if metadata.name == "Player" {
+            if metadata.name == "Player" || metadata.name == "Ground" {
                 let position = global_transform_matrix
                     .transform_vector(&serenity::nalgebra_glm::Vec3::new(0.0, 0.0, 0.0));
                 let node = &mut context.world.nodes[node_index];
@@ -42,9 +42,15 @@ impl serenity::app::State for Game {
                     });
                     let aabb_index = context.world.physics.add_aabb(aabb);
                     context.world.physics.bodies[rigid_body_index].aabb_index = aabb_index;
-                }
 
-                break;
+                    if metadata.name == "Player" {
+                        context.world.physics.bodies[rigid_body_index].dynamic = true;
+                    }
+
+                    if metadata.name == "Ground" {
+                        context.world.physics.bodies[rigid_body_index].dynamic = false;
+                    }
+                }
             }
         }
     }
