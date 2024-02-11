@@ -126,31 +126,11 @@ impl App {
 
             if let winit::event::Event::MainEventsCleared = event {
                 if context.should_reload_view {
-                    renderer.sync_world(&context.world);
+                    renderer.load_world(&context.world);
                     context.should_reload_view = false;
-                    return;
+                } else {
+                    renderer.render_frame(&mut context);
                 }
-
-                context.world.physics.step(context.delta_time as _);
-
-                if let Some(scene_index) = context.world.default_scene_index {
-                    let scene = &mut context.world.scenes[scene_index];
-
-                    scene.graph.node_indices().for_each(|graph_node_index| {
-                        let node_index = scene.graph[graph_node_index];
-                        if let Some(rigid_body_index) =
-                            context.world.nodes[node_index].rigid_body_index
-                        {
-                            let transform_index = context.world.nodes[node_index].transform_index;
-                            let transform = &mut context.world.transforms[transform_index];
-                            let rigid_body = &context.world.physics.bodies[rigid_body_index];
-                            transform.translation =
-                                context.world.physics.positions[rigid_body.position_index];
-                        }
-                    });
-                }
-
-                renderer.render_frame(&mut context);
             }
         });
     }

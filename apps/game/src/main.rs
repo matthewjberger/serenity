@@ -7,54 +7,7 @@ pub struct Game;
 
 impl serenity::app::State for Game {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        context.import_file("resources/gltf/physics.glb");
-
-        let Some(scene_index) = context.world.default_scene_index else {
-            return;
-        };
-        let scene = &context.world.scenes[scene_index];
-
-        // Add rigid body and aabb to player
-        for graph_node_index in scene.graph.node_indices() {
-            let node_index = scene.graph[graph_node_index];
-            let node = &mut context.world.nodes[node_index];
-            let metadata = &context.world.metadata[node.metadata_index];
-            let (global_translation, _global_rotation) = context
-                .world
-                .global_isometry(&scene.graph, graph_node_index);
-            if metadata.name == "Player" || metadata.name == "Ground" {
-                let position = global_translation;
-                let node = &mut context.world.nodes[node_index];
-
-                let rigid_body_index = context.world.physics.add_rigid_body(position);
-                node.rigid_body_index = Some(rigid_body_index);
-
-                if let Some(mesh_index) = node.mesh_index {
-                    let mesh = &context.world.meshes[mesh_index];
-                    let mut aabb = serenity::physics::AxisAlignedBoundingBox::new(
-                        serenity::nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
-                        serenity::nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
-                    );
-                    mesh.primitives.iter().for_each(|primitive| {
-                        let vertices = &context.world.vertices[primitive.vertex_offset
-                            ..(primitive.vertex_offset + primitive.number_of_vertices)];
-                        vertices.into_iter().for_each(|vertex| {
-                            aabb.expand_to_include_vertex(vertex);
-                        });
-                    });
-                    let aabb_index = context.world.physics.add_aabb(aabb);
-                    context.world.physics.bodies[rigid_body_index].aabb_index = aabb_index;
-
-                    if metadata.name == "Player" {
-                        context.world.physics.bodies[rigid_body_index].dynamic = true;
-                    }
-
-                    if metadata.name == "Ground" {
-                        context.world.physics.bodies[rigid_body_index].dynamic = false;
-                    }
-                }
-            }
-        }
+        context.import_file("resources/gltf/spheres.glb");
     }
 
     fn receive_event(
@@ -82,14 +35,6 @@ impl serenity::app::State for Game {
             ) = (keycode, state)
             {
                 context.should_exit = true;
-            }
-
-            if let (
-                serenity::winit::event::VirtualKeyCode::F3,
-                serenity::winit::event::ElementState::Pressed,
-            ) = (keycode, state)
-            {
-                context.world.show_debug = !context.world.show_debug;
             }
         }
     }

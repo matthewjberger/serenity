@@ -16,8 +16,6 @@ pub struct World {
     pub textures: Vec<Texture>,
     pub transforms: Vec<Transform>,
     pub vertices: Vec<Vertex>,
-    pub physics: crate::physics::PhysicsWorld,
-    pub show_debug: bool,
 }
 
 impl World {
@@ -67,14 +65,6 @@ impl World {
         let camera_index = self.cameras.len();
         self.cameras.push(camera);
         node.camera_index = Some(camera_index);
-    }
-
-    pub fn add_rigid_body_to_node(&mut self, node_index: usize) {
-        let node = &mut self.nodes[node_index];
-        let rigid_body_index = self
-            .physics
-            .add_rigid_body(nalgebra_glm::Vec3::new(0.0, 0.0, 0.0));
-        node.rigid_body_index = Some(rigid_body_index);
     }
 
     pub fn add_camera_to_scenegraph(&mut self, scene_index: usize) {

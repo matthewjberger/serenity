@@ -22,7 +22,7 @@ impl Renderer {
         }
     }
 
-    pub fn sync_world(&mut self, world: &crate::world::World) {
+    pub fn load_world(&mut self, world: &crate::world::World) {
         let _ = std::mem::replace(
             &mut self.view,
             Some(crate::view::WorldRender::new(&self.gpu, world)),

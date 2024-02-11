@@ -13,7 +13,6 @@ pub struct WorldRender {
     pub line_pipeline: wgpu::RenderPipeline,
     pub line_strip_pipeline: wgpu::RenderPipeline,
     pub triangle_strip_pipeline: wgpu::RenderPipeline,
-    pub debug: crate::debug::DebugRender,
 }
 
 impl WorldRender {
@@ -277,8 +276,6 @@ impl WorldRender {
             wgpu::PolygonMode::Fill,
         );
 
-        let debug = crate::debug::DebugRender::new(gpu, world);
-
         Self {
             vertex_buffer,
             index_buffer,
@@ -294,7 +291,6 @@ impl WorldRender {
             line_pipeline,
             line_strip_pipeline,
             triangle_strip_pipeline,
-            debug,
         }
     }
 
@@ -321,13 +317,6 @@ impl WorldRender {
                 camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
             }]),
         );
-
-        if world.show_debug {
-            self.debug
-                .sync_camera(gpu, projection, view, camera_position);
-            self.debug.sync_instances(scene, world, gpu);
-            self.debug.render(render_pass);
-        }
 
         let mut mesh_ubos = vec![DynamicUniform::default(); world.transforms.len()];
         scene
