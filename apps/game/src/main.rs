@@ -8,6 +8,9 @@ pub struct Game;
 impl serenity::app::State for Game {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
         context.import_file("resources/gltf/spheres.glb");
+        let light_node = context.world.add_node();
+        context.world.add_light_to_node(light_node);
+        context.world.add_root_node_to_scenegraph(0, light_node);
     }
 
     fn receive_event(
@@ -18,9 +21,9 @@ impl serenity::app::State for Game {
         if let serenity::winit::event::Event::WindowEvent {
             event:
                 serenity::winit::event::WindowEvent::KeyboardInput {
-                    input:
-                        serenity::winit::event::KeyboardInput {
-                            virtual_keycode: Some(keycode),
+                    event:
+                        serenity::winit::event::KeyEvent {
+                            physical_key: serenity::winit::keyboard::PhysicalKey::Code(key_code),
                             state,
                             ..
                         },
@@ -29,11 +32,13 @@ impl serenity::app::State for Game {
             ..
         } = *event
         {
-            if let (
-                serenity::winit::event::VirtualKeyCode::Escape,
-                serenity::winit::event::ElementState::Pressed,
-            ) = (keycode, state)
-            {
+            if matches!(
+                (key_code, state),
+                (
+                    serenity::winit::keyboard::KeyCode::Escape,
+                    serenity::winit::event::ElementState::Pressed
+                )
+            ) {
                 context.should_exit = true;
             }
         }
@@ -69,7 +74,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::event::VirtualKeyCode::W)
+        .is_key_pressed(serenity::winit::keyboard::KeyCode::KeyW)
     {
         camera.orientation.offset -= camera.orientation.direction() * speed;
         sync_transform = true;
@@ -77,7 +82,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::event::VirtualKeyCode::A)
+        .is_key_pressed(serenity::winit::keyboard::KeyCode::KeyA)
     {
         camera.orientation.offset += camera.orientation.right() * speed;
         sync_transform = true;
@@ -85,7 +90,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::event::VirtualKeyCode::S)
+        .is_key_pressed(serenity::winit::keyboard::KeyCode::KeyS)
     {
         camera.orientation.offset += camera.orientation.direction() * speed;
         sync_transform = true;
@@ -93,7 +98,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::event::VirtualKeyCode::D)
+        .is_key_pressed(serenity::winit::keyboard::KeyCode::KeyD)
     {
         camera.orientation.offset -= camera.orientation.right() * speed;
         sync_transform = true;
@@ -101,7 +106,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::event::VirtualKeyCode::Space)
+        .is_key_pressed(serenity::winit::keyboard::KeyCode::Space)
     {
         camera.orientation.offset += camera.orientation.up() * speed;
         sync_transform = true;
@@ -109,7 +114,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::event::VirtualKeyCode::LShift)
+        .is_key_pressed(serenity::winit::keyboard::KeyCode::ShiftLeft)
     {
         camera.orientation.offset -= camera.orientation.up() * speed;
         sync_transform = true;

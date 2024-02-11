@@ -1,18 +1,12 @@
-pub struct Renderer {
-    pub gpu: crate::gpu::Gpu,
+pub struct Renderer<'window> {
+    pub gpu: crate::gpu::Gpu<'window>,
     pub view: Option<crate::view::WorldRender>,
     pub depth_texture_view: wgpu::TextureView,
 }
 
-impl Renderer {
-    pub fn new<
-        W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
-    >(
-        window: &W,
-        width: u32,
-        height: u32,
-    ) -> Self {
-        let gpu = pollster::block_on(crate::gpu::Gpu::new_async(&window, width, height));
+impl<'window> Renderer<'window> {
+    pub fn new(window: impl Into<wgpu::SurfaceTarget<'window>>, width: u32, height: u32) -> Self {
+        let gpu = pollster::block_on(crate::gpu::Gpu::new_async(window, width, height));
         let depth_texture_view =
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
         Self {
@@ -84,17 +78,19 @@ impl Renderer {
                             b: 0.42,
                             a: 1.0,
                         }),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
                 }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
 
             if let Some(view) = self.view.as_mut() {

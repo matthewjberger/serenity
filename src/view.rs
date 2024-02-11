@@ -6,6 +6,9 @@ pub struct WorldRender {
     pub dynamic_uniform_buffer: wgpu::Buffer,
     pub dynamic_uniform_bind_group: wgpu::BindGroup,
     pub texture_array_bind_group: wgpu::BindGroup,
+    _light_uniform: LightUniformBuffer,
+    pub light_uniform_buffer: wgpu::Buffer,
+    pub light_uniform_bind_group: wgpu::BindGroup,
     pub samplers: Vec<wgpu::Sampler>,
     pub textures: Vec<wgpu::Texture>,
     pub triangle_filled_pipeline: wgpu::RenderPipeline,
@@ -216,13 +219,55 @@ impl WorldRender {
             (texture_array_bind_group, texture_array_bind_group_layout)
         };
 
+        let light_uniform = LightUniformBuffer {
+            position: nalgebra_glm::vec4(2.0, 2.0, 2.0, 1.0),
+            color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
+        };
+
+        let light_uniform_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            &gpu.device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Light Buffer"),
+                contents: bytemuck::cast_slice(&[light_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
+
+        let light_uniform_bind_group_layout =
+            &gpu.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                    label: Some("light_uniform_bind_group_layout"),
+                });
+
+        let light_uniform_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: light_uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: light_uniform_buffer.as_entire_binding(),
+            }],
+            label: Some("light_uniform_bind_group"),
+        });
+
+        let bind_group_layouts = &[
+            &uniform_bind_group_layout,
+            &dynamic_uniform_bind_group_layout,
+            &texture_array_bind_group_layout,
+            &light_uniform_bind_group_layout,
+        ];
+
         let line_pipeline = create_pipeline(
             gpu,
-            &[
-                &uniform_bind_group_layout,
-                &dynamic_uniform_bind_group_layout,
-                &texture_array_bind_group_layout,
-            ],
+            bind_group_layouts,
             false,
             wgpu::PrimitiveTopology::LineList,
             wgpu::PolygonMode::Fill,
@@ -230,11 +275,7 @@ impl WorldRender {
 
         let line_strip_pipeline = create_pipeline(
             gpu,
-            &[
-                &uniform_bind_group_layout,
-                &dynamic_uniform_bind_group_layout,
-                &texture_array_bind_group_layout,
-            ],
+            bind_group_layouts,
             false,
             wgpu::PrimitiveTopology::LineStrip,
             wgpu::PolygonMode::Fill,
@@ -242,11 +283,7 @@ impl WorldRender {
 
         let triangle_filled_pipeline = create_pipeline(
             gpu,
-            &[
-                &uniform_bind_group_layout,
-                &dynamic_uniform_bind_group_layout,
-                &texture_array_bind_group_layout,
-            ],
+            bind_group_layouts,
             false,
             wgpu::PrimitiveTopology::TriangleList,
             wgpu::PolygonMode::Fill,
@@ -254,11 +291,7 @@ impl WorldRender {
 
         let triangle_blended_pipeline = create_pipeline(
             gpu,
-            &[
-                &uniform_bind_group_layout,
-                &dynamic_uniform_bind_group_layout,
-                &texture_array_bind_group_layout,
-            ],
+            bind_group_layouts,
             true,
             wgpu::PrimitiveTopology::TriangleList,
             wgpu::PolygonMode::Fill,
@@ -266,11 +299,7 @@ impl WorldRender {
 
         let triangle_strip_pipeline = create_pipeline(
             gpu,
-            &[
-                &uniform_bind_group_layout,
-                &dynamic_uniform_bind_group_layout,
-                &texture_array_bind_group_layout,
-            ],
+            bind_group_layouts,
             true,
             wgpu::PrimitiveTopology::TriangleStrip,
             wgpu::PolygonMode::Fill,
@@ -283,6 +312,9 @@ impl WorldRender {
             uniform_bind_group,
             dynamic_uniform_buffer,
             dynamic_uniform_bind_group,
+            _light_uniform: light_uniform,
+            light_uniform_buffer,
+            light_uniform_bind_group,
             texture_array_bind_group,
             triangle_filled_pipeline,
             triangle_blended_pipeline,
@@ -338,6 +370,7 @@ impl WorldRender {
 
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_bind_group(2, &self.texture_array_bind_group, &[]);
+        render_pass.set_bind_group(3, &self.light_uniform_bind_group, &[]);
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -716,6 +749,13 @@ impl Default for Material {
     }
 }
 
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct LightUniformBuffer {
+    position: nalgebra_glm::Vec4,
+    color: nalgebra_glm::Vec4,
+}
+
 const SHADER_SOURCE: &str = "
 struct Uniform {
     view: mat4x4<f32>,
@@ -735,8 +775,12 @@ var<uniform> mesh_ubo: DynamicUniform;
 
 @group(2) @binding(0)
 var texture_array: binding_array<texture_2d<f32>>;
+
 @group(2) @binding(1)
 var sampler_array: binding_array<sampler>;
+
+@group(3) @binding(0)
+var<uniform> light: Light;
 
 struct Material {
     base_color: vec4<f32>,
@@ -764,6 +808,11 @@ struct VertexOutput {
     @location(2) tex_coord: vec2<f32>,
 };
 
+struct Light {
+    position: vec4<f32>,
+    color: vec4<f32>,
+}
+
 @vertex
 fn vertex_main(vert: VertexInput) -> VertexOutput {
     var out: VertexOutput;
@@ -787,9 +836,14 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
 
-    var color = base_color.rgb * in.color;
+    let ambient_strength = 0.1;
+    let ambient_color = light.color.rgb * ambient_strength;
+    let light_dir = normalize(light.position.xyz - in.position.xyz);
+    let diffuse_strength =  max(dot(in.normal, light_dir), 0.0);
+    let diffuse_color = light.color.rgb * diffuse_strength;
+    let result = (ambient_color + diffuse_color) * base_color.rgb * in.color;
 
-    return vec4(color, base_color.a);
+    return vec4<f32>(result.xyz, 1.0);
 }
 ";
 

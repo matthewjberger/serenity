@@ -1,5 +1,4 @@
 pub struct Context {
-    pub window: winit::window::Window,
     pub io: crate::io::Io,
     pub delta_time: f64,
     pub last_frame: std::time::Instant,
@@ -41,24 +40,27 @@ pub trait State {
     fn update(&mut self, _context: &mut Context) {}
 }
 
-pub struct App {
+pub struct App<'window> {
     event_loop: winit::event_loop::EventLoop<()>,
     context: Context,
-    renderer: crate::render::Renderer,
+    renderer: crate::render::Renderer<'window>,
 }
 
-impl App {
+impl<'window> App<'window> {
     pub fn new(title: &str, width: u32, height: u32) -> Self {
-        let event_loop = winit::event_loop::EventLoop::new();
+        env_logger::init();
+
+        let event_loop =
+            winit::event_loop::EventLoop::new().expect("Failed to create winit event loop!");
         let window = winit::window::WindowBuilder::new()
             .with_title(title)
             .with_inner_size(winit::dpi::PhysicalSize::new(width, height))
             .with_transparent(true)
             .build(&event_loop)
             .expect("Failed to create winit window!");
-        let renderer = crate::render::Renderer::new(&window, width, height);
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+        let renderer = crate::render::Renderer::new(window, width, height);
         let context = Context {
-            window,
             io: crate::io::Io::default(),
             delta_time: 0.01,
             last_frame: std::time::Instant::now(),
@@ -66,7 +68,6 @@ impl App {
             should_exit: false,
             should_reload_view: false,
         };
-
         Self {
             event_loop,
             context,
@@ -75,8 +76,6 @@ impl App {
     }
 
     pub fn run(self, mut state: impl State + 'static) {
-        env_logger::init();
-
         let Self {
             event_loop,
             mut context,
@@ -85,9 +84,7 @@ impl App {
 
         state.initialize(&mut context);
 
-        event_loop.run(move |event, _, control_flow| {
-            *control_flow = winit::event_loop::ControlFlow::Poll;
-
+        event_loop.run(move |event, elwt| {
             if let winit::event::Event::NewEvents(..) = event {
                 context.delta_time = (std::time::Instant::now()
                     .duration_since(context.last_frame)
@@ -103,7 +100,7 @@ impl App {
                 ..
             } = event
             {
-                *control_flow = winit::event_loop::ControlFlow::Exit
+                elwt.exit();
             }
 
             if let winit::event::Event::WindowEvent {
@@ -121,10 +118,10 @@ impl App {
             state.receive_event(&mut context, &event);
 
             if context.should_exit {
-                *control_flow = winit::event_loop::ControlFlow::Exit;
+                elwt.exit();
             }
 
-            if let winit::event::Event::MainEventsCleared = event {
+            if let winit::event::Event::AboutToWait = event {
                 if context.should_reload_view {
                     renderer.load_world(&context.world);
                     context.should_reload_view = false;
@@ -132,6 +129,6 @@ impl App {
                     renderer.render_frame(&mut context);
                 }
             }
-        });
+        }).expect("Failed to execute frame!");
     }
 }

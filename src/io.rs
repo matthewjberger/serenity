@@ -1,12 +1,11 @@
 #[derive(Default)]
 pub struct Io {
-    pub keystates:
-        std::collections::HashMap<winit::event::VirtualKeyCode, winit::event::ElementState>,
+    pub keystates: std::collections::HashMap<winit::keyboard::KeyCode, winit::event::ElementState>,
     pub mouse: Mouse,
 }
 
 impl Io {
-    pub fn is_key_pressed(&self, keycode: winit::event::VirtualKeyCode) -> bool {
+    pub fn is_key_pressed(&self, keycode: winit::keyboard::KeyCode) -> bool {
         self.keystates.contains_key(&keycode)
             && self.keystates[&keycode] == winit::event::ElementState::Pressed
     }
@@ -19,9 +18,9 @@ impl Io {
         if let winit::event::Event::WindowEvent {
             event:
                 winit::event::WindowEvent::KeyboardInput {
-                    input:
-                        winit::event::KeyboardInput {
-                            virtual_keycode: Some(keycode),
+                    event:
+                        winit::event::KeyEvent {
+                            physical_key: winit::keyboard::PhysicalKey::Code(key_code),
                             state,
                             ..
                         },
@@ -30,7 +29,7 @@ impl Io {
             ..
         } = *event
         {
-            *self.keystates.entry(keycode).or_insert(state) = state;
+            *self.keystates.entry(key_code).or_insert(state) = state;
         }
         self.mouse.receive_event(event, window_center);
     }

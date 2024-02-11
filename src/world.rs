@@ -19,7 +19,7 @@ pub struct World {
 }
 
 impl World {
-    pub fn add_child_node(
+    pub fn add_child_node_to_scenegraph(
         &mut self,
         scene_index: usize,
         parent_graph_node_index: petgraph::graph::NodeIndex,
@@ -56,6 +56,32 @@ impl World {
         node_index
     }
 
+    pub fn add_camera_to_scenegraph(&mut self, scene_index: usize) {
+        let node_index = self.add_node();
+        self.add_camera_to_node(node_index);
+        let camera_graph_node_index = self.add_child_node_to_scenegraph(
+            scene_index,
+            petgraph::graph::NodeIndex::new(0),
+            node_index,
+        );
+        self.scenes[scene_index].default_camera_graph_node_index = Some(camera_graph_node_index);
+        let node = &self.nodes[node_index];
+        let metadata = &mut self.metadata[node.metadata_index];
+        metadata.name = "Main Camera".to_string();
+    }
+
+    pub fn add_root_node_to_scenegraph(
+        &mut self,
+        scene_index: usize,
+        node_index: usize,
+    ) -> petgraph::graph::NodeIndex {
+        self.add_child_node_to_scenegraph(
+            scene_index,
+            petgraph::graph::NodeIndex::new(0),
+            node_index,
+        )
+    }
+
     pub fn add_camera_to_node(&mut self, node_index: usize) {
         let node = &mut self.nodes[node_index];
         let camera = crate::world::Camera::default();
@@ -67,15 +93,11 @@ impl World {
         node.camera_index = Some(camera_index);
     }
 
-    pub fn add_camera_to_scenegraph(&mut self, scene_index: usize) {
-        let node_index = self.add_node();
-        self.add_camera_to_node(node_index);
-        let camera_graph_node_index =
-            self.add_child_node(scene_index, petgraph::graph::NodeIndex::new(0), node_index);
-        self.scenes[scene_index].default_camera_graph_node_index = Some(camera_graph_node_index);
-        let node = &self.nodes[node_index];
-        let metadata = &mut self.metadata[node.metadata_index];
-        metadata.name = "Main Camera".to_string();
+    pub fn add_light_to_node(&mut self, node_index: usize) -> usize {
+        let light_index = self.lights.len();
+        self.lights.push(Light::default());
+        self.nodes[node_index].light_index = Some(light_index);
+        node_index
     }
 
     pub fn global_transform(

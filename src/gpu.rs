@@ -1,12 +1,12 @@
-pub struct Gpu {
-    pub surface: wgpu::Surface,
+pub struct Gpu<'window> {
+    pub surface: wgpu::Surface<'window>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub surface_config: wgpu::SurfaceConfiguration,
     pub surface_format: wgpu::TextureFormat,
 }
 
-impl Gpu {
+impl<'window> Gpu<'window> {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
     pub fn alignment(&self) -> u64 {
@@ -61,10 +61,8 @@ impl Gpu {
         })
     }
 
-    pub async fn new_async<
-        W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
-    >(
-        window: &W,
+    pub async fn new_async(
+        window: impl Into<wgpu::SurfaceTarget<'window>>,
         width: u32,
         height: u32,
     ) -> Self {
@@ -73,7 +71,7 @@ impl Gpu {
             ..Default::default()
         });
 
-        let surface = unsafe { instance.create_surface(window) }.unwrap();
+        let surface = instance.create_surface(window).unwrap();
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -87,22 +85,22 @@ impl Gpu {
         let required_features = wgpu::Features::PUSH_CONSTANTS
             | wgpu::Features::TEXTURE_BINDING_ARRAY
             | wgpu::Features::POLYGON_MODE_LINE;
-        let optional_features = wgpu::Features::POLYGON_MODE_POINT;
 
+        // Use the texture resolution limits from the adapter to support images the size of the surface
+        let required_limits = wgpu::Limits {
+            max_sampled_textures_per_shader_stage: 128,
+            max_push_constant_size: 256,
+            ..Default::default()
+        }
+        .using_resolution(adapter.limits());
         let (device, queue) = {
             log::info!("WGPU Adapter Features: {:#?}", adapter.features());
             adapter
                 .request_device(
                     &wgpu::DeviceDescriptor {
-                        features: (optional_features & adapter.features()) | required_features,
-                        limits: wgpu::Limits {
-                            max_sampled_textures_per_shader_stage: 128,
-                            max_push_constant_size: 256,
-                            ..Default::default()
-                        }
-                        // Use the texture resolution limits from the adapter to support images the size of the surface
-                        .using_resolution(adapter.limits()),
-                        label: Some("Render Device"),
+                        label: Some("WGPU Device"),
+                        required_features,
+                        required_limits,
                     },
                     None,
                 )
@@ -128,6 +126,7 @@ impl Gpu {
             present_mode: surface_capabilities.present_modes[0],
             alpha_mode: surface_capabilities.alpha_modes[0],
             view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
 
         surface.configure(&device, &surface_config);
