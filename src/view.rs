@@ -685,7 +685,7 @@ fn create_pipeline(
                 module: &shader_module,
                 entry_point: "fragment_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: gpu.surface_format,
+                    format: wgpu::TextureFormat::Rgba16Float,
                     blend: if blending_enabled {
                         Some(wgpu::BlendState::ALPHA_BLENDING)
                     } else {

@@ -1,6 +1,7 @@
 pub mod app;
 pub mod gltf;
 pub mod gpu;
+pub mod hdr;
 pub mod io;
 pub mod render;
 pub mod view;

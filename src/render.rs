@@ -2,6 +2,7 @@ pub struct Renderer<'window> {
     pub gpu: crate::gpu::Gpu<'window>,
     pub view: Option<crate::view::WorldRender>,
     pub depth_texture_view: wgpu::TextureView,
+    pub hdr_pipeline: crate::hdr::HdrPipeline,
 }
 
 impl<'window> Renderer<'window> {
@@ -9,10 +10,13 @@ impl<'window> Renderer<'window> {
         let gpu = pollster::block_on(crate::gpu::Gpu::new_async(window, width, height));
         let depth_texture_view =
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
+        let hdr_pipeline =
+            crate::hdr::HdrPipeline::new(&gpu, gpu.surface_config.width, gpu.surface_config.height);
         Self {
             gpu,
             view: None,
             depth_texture_view,
+            hdr_pipeline,
         }
     }
 
@@ -51,7 +55,7 @@ impl<'window> Renderer<'window> {
                 .create_view(&wgpu::TextureViewDescriptor {
                     label: wgpu::Label::default(),
                     aspect: wgpu::TextureAspect::default(),
-                    format: None,
+                    format: Some(self.gpu.surface_format),
                     dimension: None,
                     base_mip_level: 0,
                     mip_level_count: None,
@@ -69,7 +73,7 @@ impl<'window> Renderer<'window> {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &surface_texture_view,
+                    view: &self.hdr_pipeline.texture_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -98,6 +102,11 @@ impl<'window> Renderer<'window> {
             }
         }
 
+        self.hdr_pipeline.render_to_texture(
+            &mut encoder,
+            &surface_texture_view,
+            &self.depth_texture_view,
+        );
         self.gpu.queue.submit(std::iter::once(encoder.finish()));
 
         surface_texture.present();
