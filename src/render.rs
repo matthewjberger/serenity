@@ -2,7 +2,7 @@ pub struct Renderer<'window> {
     pub gpu: crate::gpu::Gpu<'window>,
     pub view: Option<crate::view::WorldRender>,
     pub depth_texture_view: wgpu::TextureView,
-    pub hdr_pipeline: crate::hdr::HdrPipeline,
+    pub hdr_pipeline: crate::fullscreen::FullscreenPipeline,
 }
 
 impl<'window> Renderer<'window> {
@@ -10,8 +10,11 @@ impl<'window> Renderer<'window> {
         let gpu = pollster::block_on(crate::gpu::Gpu::new_async(window, width, height));
         let depth_texture_view =
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
-        let hdr_pipeline =
-            crate::hdr::HdrPipeline::new(&gpu, gpu.surface_config.width, gpu.surface_config.height);
+        let hdr_pipeline = crate::fullscreen::FullscreenPipeline::new(
+            &gpu,
+            gpu.surface_config.width,
+            gpu.surface_config.height,
+        );
         Self {
             gpu,
             view: None,
@@ -102,7 +105,7 @@ impl<'window> Renderer<'window> {
             }
         }
 
-        self.hdr_pipeline.render_to_texture(
+        self.hdr_pipeline.render(
             &mut encoder,
             &surface_texture_view,
             &self.depth_texture_view,

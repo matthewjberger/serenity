@@ -5,7 +5,6 @@ pub struct WorldRender {
     pub uniform_bind_group: wgpu::BindGroup,
     pub dynamic_uniform_buffer: wgpu::Buffer,
     pub dynamic_uniform_bind_group: wgpu::BindGroup,
-    pub texture_array_bind_group: wgpu::BindGroup,
     _light_uniform: LightUniformBuffer,
     pub light_uniform_buffer: wgpu::Buffer,
     pub light_uniform_bind_group: wgpu::BindGroup,
@@ -166,59 +165,6 @@ impl WorldRender {
             );
         }
 
-        let (texture_array_bind_group, texture_array_bind_group_layout) = {
-            let texture_array_bind_group_layout =
-                gpu.device
-                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        label: Some("bind group layout"),
-                        entries: &[
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 0,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Texture {
-                                    sample_type: wgpu::TextureSampleType::Float {
-                                        filterable: true,
-                                    },
-                                    view_dimension: wgpu::TextureViewDimension::D2,
-                                    multisampled: false,
-                                },
-                                count: std::num::NonZeroU32::new(textures.len() as _),
-                            },
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 1,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                                count: std::num::NonZeroU32::new(samplers.len() as _),
-                            },
-                        ],
-                    });
-            let texture_views = textures
-                .iter()
-                .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()))
-                .collect::<Vec<_>>();
-            let texture_array_bind_group =
-                gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureViewArray(
-                                &texture_views.iter().collect::<Vec<_>>(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::SamplerArray(
-                                &samplers.iter().collect::<Vec<_>>(),
-                            ),
-                        },
-                    ],
-                    layout: &texture_array_bind_group_layout,
-                    label: Some("texture array bind group"),
-                });
-
-            (texture_array_bind_group, texture_array_bind_group_layout)
-        };
-
         let light_uniform = LightUniformBuffer {
             position: nalgebra_glm::vec4(2.0, 2.0, 2.0, 1.0),
             color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
@@ -261,7 +207,6 @@ impl WorldRender {
         let bind_group_layouts = &[
             &uniform_bind_group_layout,
             &dynamic_uniform_bind_group_layout,
-            &texture_array_bind_group_layout,
             &light_uniform_bind_group_layout,
         ];
 
@@ -315,7 +260,6 @@ impl WorldRender {
             _light_uniform: light_uniform,
             light_uniform_buffer,
             light_uniform_bind_group,
-            texture_array_bind_group,
             triangle_filled_pipeline,
             triangle_blended_pipeline,
             textures,
@@ -369,8 +313,7 @@ impl WorldRender {
             });
 
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-        render_pass.set_bind_group(2, &self.texture_array_bind_group, &[]);
-        render_pass.set_bind_group(3, &self.light_uniform_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.light_uniform_bind_group, &[]);
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -443,12 +386,6 @@ impl WorldRender {
                                     shader_material.alpha_cutoff = 0.5;
                                 }
                             };
-
-                            render_pass.set_push_constants(
-                                wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                0,
-                                bytemuck::cast_slice(&[shader_material]),
-                            );
 
                             if primitive.number_of_indices > 0 {
                                 let index_offset = primitive.index_offset as u32;
@@ -640,10 +577,7 @@ fn create_pipeline(
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts,
-            push_constant_ranges: &[wgpu::PushConstantRange {
-                stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                range: 0..32, // 1 byte
-            }],
+            push_constant_ranges: &[],
         });
 
     gpu.device
@@ -774,22 +708,7 @@ struct DynamicUniform {
 var<uniform> mesh_ubo: DynamicUniform;
 
 @group(2) @binding(0)
-var texture_array: binding_array<texture_2d<f32>>;
-
-@group(2) @binding(1)
-var sampler_array: binding_array<sampler>;
-
-@group(3) @binding(0)
 var<uniform> light: Light;
-
-struct Material {
-    base_color: vec4<f32>,
-    base_texture_index: i32,
-    alpha_mode: i32,
-    alpha_cutoff: f32,
-    sampler_index: i32,
-}
-var<push_constant> material: Material;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -826,21 +745,15 @@ fn vertex_main(vert: VertexInput) -> VertexOutput {
 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var base_color = material.base_color;
+    var base_color = vec4<f32>(0.5, 0.5, 0.5, 1.0);
 
-    if material.base_texture_index > -1 {
-        base_color *= textureSampleLevel(texture_array[material.base_texture_index], sampler_array[material.sampler_index], in.tex_coord, 0.0);
-    } 
-
-    if material.alpha_mode == 1 && base_color.a < material.alpha_cutoff {
-        discard;
-    }
-
-    let ambient_strength = 0.1;
+    let ambient_strength = 0.2;
     let ambient_color = light.color.rgb * ambient_strength;
+
     let light_dir = normalize(light.position.xyz - in.position.xyz);
     let diffuse_strength =  max(dot(in.normal, light_dir), 0.0);
     let diffuse_color = light.color.rgb * diffuse_strength;
+
     let result = (ambient_color + diffuse_color) * base_color.rgb * in.color;
 
     return vec4<f32>(result.xyz, 1.0);
