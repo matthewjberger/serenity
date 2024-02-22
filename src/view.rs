@@ -1,6 +1,7 @@
 pub struct WorldRender {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
+    pub indirect_draw_buffer: wgpu::Buffer,
     pub transform_buffer: wgpu::Buffer,
     pub transform_buffer_bind_group: wgpu::BindGroup,
     pub uniform_buffer: wgpu::Buffer,
@@ -12,10 +13,6 @@ pub struct WorldRender {
     pub samplers: Vec<wgpu::Sampler>,
     pub textures: Vec<wgpu::Texture>,
     pub triangle_filled_pipeline: wgpu::RenderPipeline,
-    pub triangle_blended_pipeline: wgpu::RenderPipeline,
-    pub line_pipeline: wgpu::RenderPipeline,
-    pub line_strip_pipeline: wgpu::RenderPipeline,
-    pub triangle_strip_pipeline: wgpu::RenderPipeline,
 }
 
 impl WorldRender {
@@ -256,6 +253,37 @@ impl WorldRender {
             label: Some("light_uniform_bind_group"),
         });
 
+        let mut draw_commands = Vec::new();
+
+        for scene in world.scenes.iter() {
+            for graph_node_index in scene.graph.node_indices() {
+                let node_index = scene.graph[graph_node_index];
+                let node = &world.nodes[node_index];
+                if let Some(mesh_index) = node.mesh_index {
+                    let mesh = &world.meshes[mesh_index];
+                    for primitive in mesh.primitives.iter() {
+                        let draw_command = DrawIndexedIndirectArgs {
+                            index_count: primitive.number_of_indices as _,
+                            instance_count: 1,
+                            first_index: primitive.index_offset as _,
+                            base_vertex: primitive.vertex_offset as _,
+                            first_instance: 0,
+                        };
+                        draw_commands.push(draw_command);
+                    }
+                }
+            }
+        }
+
+        let indirect_draw_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            &gpu.device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Indirect Draw Buffer"),
+                contents: bytemuck::cast_slice(&draw_commands),
+                usage: wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_DST,
+            },
+        );
+
         let transform_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Transform Buffer"),
             size: (std::mem::size_of::<nalgebra_glm::Mat4>() * world.transforms.len())
@@ -295,22 +323,6 @@ impl WorldRender {
             &light_uniform_bind_group_layout,
         ];
 
-        let line_pipeline = create_pipeline(
-            gpu,
-            bind_group_layouts,
-            false,
-            wgpu::PrimitiveTopology::LineList,
-            wgpu::PolygonMode::Fill,
-        );
-
-        let line_strip_pipeline = create_pipeline(
-            gpu,
-            bind_group_layouts,
-            false,
-            wgpu::PrimitiveTopology::LineStrip,
-            wgpu::PolygonMode::Fill,
-        );
-
         let triangle_filled_pipeline = create_pipeline(
             gpu,
             bind_group_layouts,
@@ -319,27 +331,12 @@ impl WorldRender {
             wgpu::PolygonMode::Fill,
         );
 
-        let triangle_blended_pipeline = create_pipeline(
-            gpu,
-            bind_group_layouts,
-            true,
-            wgpu::PrimitiveTopology::TriangleList,
-            wgpu::PolygonMode::Fill,
-        );
-
-        let triangle_strip_pipeline = create_pipeline(
-            gpu,
-            bind_group_layouts,
-            true,
-            wgpu::PrimitiveTopology::TriangleStrip,
-            wgpu::PolygonMode::Fill,
-        );
-
         Self {
             vertex_buffer,
             index_buffer,
             uniform_buffer,
             uniform_bind_group,
+            indirect_draw_buffer,
             transform_buffer,
             transform_buffer_bind_group,
             _light_uniform,
@@ -347,12 +344,8 @@ impl WorldRender {
             light_uniform_bind_group,
             texture_array_bind_group,
             triangle_filled_pipeline,
-            triangle_blended_pipeline,
             textures,
             samplers,
-            line_pipeline,
-            line_strip_pipeline,
-            triangle_strip_pipeline,
         }
     }
 
@@ -399,103 +392,106 @@ impl WorldRender {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
-        for alpha_mode in [
-            crate::world::AlphaMode::Opaque,
-            crate::world::AlphaMode::Mask,
-            crate::world::AlphaMode::Blend,
-        ]
-        .iter()
-        {
-            scene
-                .graph
-                .node_indices()
-                .enumerate()
-                .for_each(|(ubo_index, graph_node_index)| {
-                    let node_index = scene.graph[graph_node_index];
-                    let node = &world.nodes[node_index];
-                    if let Some(mesh_index) = node.mesh_index {
-                        let mesh = &world.meshes[mesh_index];
+        render_pass.set_pipeline(&self.triangle_filled_pipeline);
+        render_pass.draw_indexed_indirect(&self.indirect_draw_buffer, 0);
 
-                        for primitive in mesh.primitives.iter() {
-                            match primitive.topology {
-                                crate::world::PrimitiveTopology::Lines => {
-                                    render_pass.set_pipeline(&self.line_pipeline);
-                                }
-                                crate::world::PrimitiveTopology::LineStrip => {
-                                    render_pass.set_pipeline(&self.line_strip_pipeline);
-                                }
-                                crate::world::PrimitiveTopology::Triangles => match alpha_mode {
-                                    crate::world::AlphaMode::Opaque
-                                    | crate::world::AlphaMode::Mask => {
-                                        render_pass.set_pipeline(&self.triangle_filled_pipeline);
-                                    }
-                                    crate::world::AlphaMode::Blend => {
-                                        render_pass.set_pipeline(&self.triangle_blended_pipeline);
-                                    }
-                                },
-                                crate::world::PrimitiveTopology::TriangleStrip => {
-                                    render_pass.set_pipeline(&self.triangle_strip_pipeline);
-                                }
+        // for alpha_mode in [
+        //     crate::world::AlphaMode::Opaque,
+        //     crate::world::AlphaMode::Mask,
+        //     crate::world::AlphaMode::Blend,
+        // ]
+        // .iter()
+        // {
+        //     // scene
+        //     //     .graph
+        //     //     .node_indices()
+        //     //     .enumerate()
+        //     //     .for_each(|(ubo_index, graph_node_index)| {
+        //     //         let node_index = scene.graph[graph_node_index];
+        //     //         let node = &world.nodes[node_index];
+        //     //         if let Some(mesh_index) = node.mesh_index {
+        //     //             let mesh = &world.meshes[mesh_index];
 
-                                // wgpu does not support line loops or triangle fans
-                                // and Point primitive topology is unsupported on Metal so it is omitted here
-                                _ => continue,
-                            }
+        //     //             for primitive in mesh.primitives.iter() {
+        //     //                 match primitive.topology {
+        //     //                     crate::world::PrimitiveTopology::Lines => {
+        //     //                         render_pass.set_pipeline(&self.line_pipeline);
+        //     //                     }
+        //     //                     crate::world::PrimitiveTopology::LineStrip => {
+        //     //                         render_pass.set_pipeline(&self.line_strip_pipeline);
+        //     //                     }
+        //     //                     crate::world::PrimitiveTopology::Triangles => match alpha_mode {
+        //     //                         crate::world::AlphaMode::Opaque
+        //     //                         | crate::world::AlphaMode::Mask => {
+        //     //                             render_pass.set_pipeline(&self.triangle_filled_pipeline);
+        //     //                         }
+        //     //                         crate::world::AlphaMode::Blend => {
+        //     //                             render_pass.set_pipeline(&self.triangle_blended_pipeline);
+        //     //                         }
+        //     //                     },
+        //     //                     crate::world::PrimitiveTopology::TriangleStrip => {
+        //     //                         render_pass.set_pipeline(&self.triangle_strip_pipeline);
+        //     //                     }
 
-                            let mut shader_material = Material::default();
+        //     //                     // wgpu does not support line loops or triangle fans
+        //     //                     // and Point primitive topology is unsupported on Metal so it is omitted here
+        //     //                     _ => continue,
+        //     //                 }
 
-                            match primitive.material_index {
-                                Some(material_index) => {
-                                    let material = &world.materials[material_index];
-                                    if material.alpha_mode != *alpha_mode {
-                                        continue;
-                                    }
-                                    shader_material.base_color = material.base_color_factor;
-                                    shader_material.base_texture_index =
-                                        material.base_color_texture_index as _;
-                                    shader_material.alpha_mode = material.alpha_mode as _;
-                                    shader_material.alpha_cutoff =
-                                        material.alpha_cutoff.unwrap_or(0.5);
-                                }
-                                None => {
-                                    shader_material.base_color =
-                                        nalgebra_glm::vec4(0.5, 0.5, 0.5, 1.0);
-                                    shader_material.base_texture_index = -1;
-                                    shader_material.alpha_mode = 0;
-                                    shader_material.alpha_cutoff = 0.5;
-                                }
-                            };
+        //     //                 let mut shader_material = Material::default();
 
-                            shader_material.object_index = ubo_index as _;
+        //     //                 match primitive.material_index {
+        //     //                     Some(material_index) => {
+        //     //                         let material = &world.materials[material_index];
+        //     //                         if material.alpha_mode != *alpha_mode {
+        //     //                             continue;
+        //     //                         }
+        //     //                         shader_material.base_color = material.base_color_factor;
+        //     //                         shader_material.base_texture_index =
+        //     //                             material.base_color_texture_index as _;
+        //     //                         shader_material.alpha_mode = material.alpha_mode as _;
+        //     //                         shader_material.alpha_cutoff =
+        //     //                             material.alpha_cutoff.unwrap_or(0.5);
+        //     //                     }
+        //     //                     None => {
+        //     //                         shader_material.base_color =
+        //     //                             nalgebra_glm::vec4(0.5, 0.5, 0.5, 1.0);
+        //     //                         shader_material.base_texture_index = -1;
+        //     //                         shader_material.alpha_mode = 0;
+        //     //                         shader_material.alpha_cutoff = 0.5;
+        //     //                     }
+        //     //                 };
 
-                            render_pass.set_push_constants(
-                                wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                0,
-                                bytemuck::cast_slice(&[shader_material]),
-                            );
+        //     //                 shader_material.object_index = ubo_index as _;
 
-                            if primitive.number_of_indices > 0 {
-                                let index_offset = primitive.index_offset as u32;
-                                let number_of_indices =
-                                    index_offset + primitive.number_of_indices as u32;
-                                render_pass.draw_indexed(
-                                    index_offset..number_of_indices,
-                                    primitive.vertex_offset as i32,
-                                    0..1, // TODO: support multiple instances per primitive
-                                );
-                            } else {
-                                let vertex_offset = primitive.vertex_offset as u32;
-                                let number_of_vertices =
-                                    vertex_offset + primitive.number_of_vertices as u32;
-                                render_pass.draw(
-                                    vertex_offset..number_of_vertices,
-                                    0..1, // TODO: support multiple instances per primitive
-                                );
-                            }
-                        }
-                    }
-                });
-        }
+        //     //                 render_pass.set_push_constants(
+        //     //                     wgpu::ShaderStages::VERTEX_FRAGMENT,
+        //     //                     0,
+        //     //                     bytemuck::cast_slice(&[shader_material]),
+        //     //                 );
+
+        //     //                 if primitive.number_of_indices > 0 {
+        //     //                     let index_offset = primitive.index_offset as u32;
+        //     //                     let number_of_indices =
+        //     //                         index_offset + primitive.number_of_indices as u32;
+        //     //                     render_pass.draw_indexed(
+        //     //                         index_offset..number_of_indices,
+        //     //                         primitive.vertex_offset as i32,
+        //     //                         0..1, // TODO: support multiple instances per primitive
+        //     //                     );
+        //     //                 } else {
+        //     //                     let vertex_offset = primitive.vertex_offset as u32;
+        //     //                     let number_of_vertices =
+        //     //                         vertex_offset + primitive.number_of_vertices as u32;
+        //     //                     render_pass.draw(
+        //     //                         vertex_offset..number_of_vertices,
+        //     //                         0..1, // TODO: support multiple instances per primitive
+        //     //                     );
+        //     //                 }
+        //     //             }
+        //     //         }
+        //     //     });
+        // }
     }
 }
 
@@ -878,4 +874,31 @@ impl From<wgpu::PrimitiveTopology> for crate::world::PrimitiveTopology {
             wgpu::PrimitiveTopology::TriangleStrip => Self::TriangleStrip,
         }
     }
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct MaterialProperties {
+    base_color: nalgebra_glm::Vec3,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct DrawIndexedIndirectArgs {
+    /// The number of indices to draw.
+    pub index_count: u32,
+
+    /// The number of instances to draw.
+    pub instance_count: u32,
+
+    /// The first index within the index buffer.
+    pub first_index: u32,
+
+    /// The value added to the vertex index before indexing into the vertex buffer.
+    pub base_vertex: i32,
+
+    /// The instance ID of the first instance to draw.
+    ///
+    /// Has to be 0, unless [`Features::INDIRECT_FIRST_INSTANCE`](crate::Features::INDIRECT_FIRST_INSTANCE) is enabled.
+    pub first_instance: u32,
 }
