@@ -7,7 +7,7 @@ pub struct Game;
 
 impl serenity::app::State for Game {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        context.import_file("resources/gltf/spheres.glb");
+        context.import_file("resources/gltf/helmet.glb");
         let light_node = context.world.add_node();
         context.world.add_light_to_node(light_node);
         context.world.add_root_node_to_scenegraph(0, light_node);

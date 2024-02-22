@@ -1,10 +1,10 @@
 pub struct WorldRender {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
+    pub transform_buffer: wgpu::Buffer,
+    pub transform_buffer_bind_group: wgpu::BindGroup,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
-    pub dynamic_uniform_buffer: wgpu::Buffer,
-    pub dynamic_uniform_bind_group: wgpu::BindGroup,
     pub texture_array_bind_group: wgpu::BindGroup,
     _light_uniform: LightUniformBuffer,
     pub light_uniform_buffer: wgpu::Buffer,
@@ -23,8 +23,6 @@ impl WorldRender {
         let (vertex_buffer, index_buffer) =
             create_geometry_buffers(&gpu.device, &world.vertices, &world.indices);
         let (uniform_buffer, uniform_bind_group_layout, uniform_bind_group) = create_uniform(gpu);
-        let (dynamic_uniform_buffer, dynamic_uniform_bind_group_layout, dynamic_uniform_bind_group) =
-            create_dynamic_uniform(gpu, world.transforms.len() as _);
 
         let mut samplers = world
             .samplers
@@ -219,7 +217,7 @@ impl WorldRender {
             (texture_array_bind_group, texture_array_bind_group_layout)
         };
 
-        let light_uniform = LightUniformBuffer {
+        let _light_uniform = LightUniformBuffer {
             position: nalgebra_glm::vec4(2.0, 2.0, 2.0, 1.0),
             color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
         };
@@ -228,7 +226,7 @@ impl WorldRender {
             &gpu.device,
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Light Buffer"),
-                contents: bytemuck::cast_slice(&[light_uniform]),
+                contents: bytemuck::cast_slice(&[_light_uniform]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             },
         );
@@ -258,9 +256,41 @@ impl WorldRender {
             label: Some("light_uniform_bind_group"),
         });
 
+        let transform_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Transform Buffer"),
+            size: (std::mem::size_of::<nalgebra_glm::Mat4>() * world.transforms.len())
+                as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let transform_buffer_bind_group_layout =
+            gpu.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                    label: None,
+                });
+        let transform_buffer_bind_group =
+            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &transform_buffer_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: transform_buffer.as_entire_binding(),
+                }],
+                label: None,
+            });
+
         let bind_group_layouts = &[
             &uniform_bind_group_layout,
-            &dynamic_uniform_bind_group_layout,
+            &transform_buffer_bind_group_layout,
             &texture_array_bind_group_layout,
             &light_uniform_bind_group_layout,
         ];
@@ -310,9 +340,9 @@ impl WorldRender {
             index_buffer,
             uniform_buffer,
             uniform_bind_group,
-            dynamic_uniform_buffer,
-            dynamic_uniform_bind_group,
-            _light_uniform: light_uniform,
+            transform_buffer,
+            transform_buffer_bind_group,
+            _light_uniform,
             light_uniform_buffer,
             light_uniform_bind_group,
             texture_array_bind_group,
@@ -350,25 +380,19 @@ impl WorldRender {
             }]),
         );
 
-        let mut mesh_ubos = vec![DynamicUniform::default(); world.transforms.len()];
-        scene
-            .graph
-            .node_indices()
-            .enumerate()
-            .for_each(|(ubo_index, graph_node_index)| {
-                mesh_ubos[ubo_index] = DynamicUniform {
-                    model: world.global_transform(&scene.graph, graph_node_index),
-                };
-            });
-        gpu.queue
-            .write_buffer(&self.dynamic_uniform_buffer, 0, unsafe {
-                std::slice::from_raw_parts(
-                    mesh_ubos.as_ptr() as *const u8,
-                    mesh_ubos.len() * gpu.alignment() as usize,
-                )
-            });
+        for (ubo_index, graph_node_index) in scene.graph.node_indices().enumerate() {
+            let transform = world.global_transform(&scene.graph, graph_node_index);
+            let offset =
+                (ubo_index * std::mem::size_of::<nalgebra_glm::Mat4>()) as wgpu::BufferAddress;
+            gpu.queue.write_buffer(
+                &self.transform_buffer,
+                offset,
+                bytemuck::cast_slice(&[transform]),
+            );
+        }
 
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.transform_buffer_bind_group, &[]);
         render_pass.set_bind_group(2, &self.texture_array_bind_group, &[]);
         render_pass.set_bind_group(3, &self.light_uniform_bind_group, &[]);
 
@@ -390,8 +414,6 @@ impl WorldRender {
                     let node_index = scene.graph[graph_node_index];
                     let node = &world.nodes[node_index];
                     if let Some(mesh_index) = node.mesh_index {
-                        let offset = (ubo_index as u64 * gpu.alignment()) as wgpu::DynamicOffset;
-                        render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
                         let mesh = &world.meshes[mesh_index];
 
                         for primitive in mesh.primitives.iter() {
@@ -444,6 +466,8 @@ impl WorldRender {
                                 }
                             };
 
+                            shader_material.object_index = ubo_index as _;
+
                             render_pass.set_push_constants(
                                 wgpu::ShaderStages::VERTEX_FRAGMENT,
                                 0,
@@ -475,54 +499,54 @@ impl WorldRender {
     }
 }
 
-fn create_dynamic_uniform(
-    gpu: &crate::gpu::Gpu,
-    max_meshes: wgpu::BufferAddress,
-) -> (wgpu::Buffer, wgpu::BindGroupLayout, wgpu::BindGroup) {
-    let dynamic_uniform_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("dynamic_uniform_buffer"),
-        size: max_meshes * gpu.alignment(),
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
+// fn create_dynamic_uniform(
+//     gpu: &crate::gpu::Gpu,
+//     max_meshes: wgpu::BufferAddress,
+// ) -> (wgpu::Buffer, wgpu::BindGroupLayout, wgpu::BindGroup) {
+//     let dynamic_uniform_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+//         label: Some("dynamic_uniform_buffer"),
+//         size: max_meshes * gpu.alignment(),
+//         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+//         mapped_at_creation: false,
+//     });
 
-    let dynamic_uniform_bind_group_layout =
-        gpu.device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: wgpu::BufferSize::new(
-                            std::mem::size_of::<DynamicUniform>() as _,
-                        ),
-                    },
-                    count: None,
-                }],
-                label: Some("dynamic_uniform_buffer_layout"),
-            });
+//     let dynamic_uniform_bind_group_layout =
+//         gpu.device
+//             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+//                 entries: &[wgpu::BindGroupLayoutEntry {
+//                     binding: 0,
+//                     visibility: wgpu::ShaderStages::VERTEX,
+//                     ty: wgpu::BindingType::Buffer {
+//                         ty: wgpu::BufferBindingType::Uniform,
+//                         has_dynamic_offset: true,
+//                         min_binding_size: wgpu::BufferSize::new(
+//                             std::mem::size_of::<DynamicUniform>() as _,
+//                         ),
+//                     },
+//                     count: None,
+//                 }],
+//                 label: Some("dynamic_uniform_buffer_layout"),
+//             });
 
-    let dynamic_uniform_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &dynamic_uniform_bind_group_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: &dynamic_uniform_buffer,
-                offset: 0,
-                size: wgpu::BufferSize::new(std::mem::size_of::<DynamicUniform>() as _),
-            }),
-        }],
-        label: Some("dynamic_uniform_bind_group"),
-    });
+//     let dynamic_uniform_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+//         layout: &dynamic_uniform_bind_group_layout,
+//         entries: &[wgpu::BindGroupEntry {
+//             binding: 0,
+//             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+//                 buffer: &dynamic_uniform_buffer,
+//                 offset: 0,
+//                 size: wgpu::BufferSize::new(std::mem::size_of::<DynamicUniform>() as _),
+//             }),
+//         }],
+//         label: Some("dynamic_uniform_bind_group"),
+//     });
 
-    (
-        dynamic_uniform_buffer,
-        dynamic_uniform_bind_group_layout,
-        dynamic_uniform_bind_group,
-    )
-}
+//     (
+//         dynamic_uniform_buffer,
+//         dynamic_uniform_bind_group_layout,
+//         dynamic_uniform_bind_group,
+//     )
+// }
 
 fn create_uniform(gpu: &crate::gpu::Gpu) -> (wgpu::Buffer, wgpu::BindGroupLayout, wgpu::BindGroup) {
     let uniform_buffer = wgpu::util::DeviceExt::create_buffer_init(
@@ -642,7 +666,7 @@ fn create_pipeline(
             bind_group_layouts,
             push_constant_ranges: &[wgpu::PushConstantRange {
                 stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                range: 0..32, // 1 byte
+                range: 0..36, // 1 byte
             }],
         });
 
@@ -721,12 +745,6 @@ impl crate::world::Vertex {
     }
 }
 
-#[repr(C, align(256))]
-#[derive(Default, Copy, Clone, Debug, bytemuck::Zeroable)]
-pub struct DynamicUniform {
-    pub model: nalgebra_glm::Mat4,
-}
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Material {
@@ -735,6 +753,7 @@ struct Material {
     pub alpha_mode: i32,
     pub alpha_cutoff: f32,
     pub sampler_index: i32,
+    pub object_index: i32, // todo: move this outta here
 }
 
 impl Default for Material {
@@ -745,6 +764,7 @@ impl Default for Material {
             alpha_mode: 0,
             alpha_cutoff: 0.5,
             sampler_index: 0,
+            object_index: 0,
         }
     }
 }
@@ -761,17 +781,17 @@ struct Uniform {
     view: mat4x4<f32>,
     projection: mat4x4<f32>,
     camera_position: vec4<f32>,
-};
+}
 
 @group(0) @binding(0)
 var<uniform> ubo: Uniform;
 
-struct DynamicUniform {
-    model: mat4x4<f32>,
-};
+struct Transform {
+    matrix: mat4x4<f32>,
+}
 
 @group(1) @binding(0)
-var<uniform> mesh_ubo: DynamicUniform;
+var<storage, read> transforms: array<Transform>;
 
 @group(2) @binding(0)
 var texture_array: binding_array<texture_2d<f32>>;
@@ -788,6 +808,7 @@ struct Material {
     alpha_mode: i32,
     alpha_cutoff: f32,
     sampler_index: i32,
+    object_index: i32,
 }
 var<push_constant> material: Material;
 
@@ -816,7 +837,7 @@ struct Light {
 @vertex
 fn vertex_main(vert: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    let mvp = ubo.projection * ubo.view * mesh_ubo.model;
+    let mvp = ubo.projection * ubo.view * transforms[material.object_index].matrix;
     out.position = mvp * vec4(vert.position, 1.0);
     out.normal = vec4((mvp * vec4(vert.normal, 0.0)).xyz, 1.0).xyz;
     out.color = vert.color_0;
