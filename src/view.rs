@@ -439,23 +439,6 @@ fn create_geometry_buffers(
 
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Light {
-    position: nalgebra_glm::Vec4,
-    color: nalgebra_glm::Vec4,
-}
-
-impl Light {
-    pub fn new(position: nalgebra_glm::Vec3, color: nalgebra_glm::Vec3) -> Self {
-        let mut position = nalgebra_glm::vec3_to_vec4(&position);
-        position.w = 1.0;
-        let mut color = nalgebra_glm::vec3_to_vec4(&color);
-        color.w = 1.0;
-        Self { position, color }
-    }
-}
-
-#[repr(C)]
-#[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Uniform {
     pub view: nalgebra_glm::Mat4,
     pub projection: nalgebra_glm::Mat4,
@@ -587,13 +570,6 @@ impl Default for Material {
     }
 }
 
-#[repr(C)]
-#[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct LightUniformBuffer {
-    position: nalgebra_glm::Vec4,
-    color: nalgebra_glm::Vec4,
-}
-
 impl From<wgpu::PrimitiveTopology> for crate::world::PrimitiveTopology {
     fn from(value: wgpu::PrimitiveTopology) -> Self {
         match value {
@@ -682,16 +658,10 @@ struct VertexOutput {
     @location(2) tex_coord: vec2<f32>,
 };
 
-struct Light {
-    position: vec4<f32>,
-    color: vec4<f32>,
-}
-
 @vertex
-fn vertex_main(vert: VertexInput) -> VertexOutput {
+fn vertex_main(@builtin(instance_index) instance_index: u32, vert: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    // TODO: add model matrix back by getting it from the transforms[] array
-    let mvp = ubo.projection * ubo.view;
+    let mvp = ubo.projection * ubo.view * transforms[instance_index].matrix;
     out.position = mvp * vec4(vert.position, 1.0);
     out.normal = vec4((mvp * vec4(vert.normal, 0.0)).xyz, 1.0).xyz;
     out.color = vert.color_0;
