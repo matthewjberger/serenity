@@ -4,12 +4,12 @@ pub struct WorldRender {
     pub indirect_draw_buffer: wgpu::Buffer,
     pub transform_buffer: wgpu::Buffer,
     pub transform_buffer_bind_group: wgpu::BindGroup,
+    pub material_buffer: wgpu::Buffer,
+    pub material_buffer_bind_group: wgpu::BindGroup,
+    pub material_indices_buffer: wgpu::Buffer,
+    pub material_indices_buffer_bind_group: wgpu::BindGroup,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
-    pub texture_array_bind_group: wgpu::BindGroup,
-    _light_uniform: LightUniformBuffer,
-    pub light_uniform_buffer: wgpu::Buffer,
-    pub light_uniform_bind_group: wgpu::BindGroup,
     pub samplers: Vec<wgpu::Sampler>,
     pub textures: Vec<wgpu::Texture>,
     pub triangle_filled_pipeline: wgpu::RenderPipeline,
@@ -161,98 +161,6 @@ impl WorldRender {
             );
         }
 
-        let (texture_array_bind_group, texture_array_bind_group_layout) = {
-            let texture_array_bind_group_layout =
-                gpu.device
-                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        label: Some("bind group layout"),
-                        entries: &[
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 0,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Texture {
-                                    sample_type: wgpu::TextureSampleType::Float {
-                                        filterable: true,
-                                    },
-                                    view_dimension: wgpu::TextureViewDimension::D2,
-                                    multisampled: false,
-                                },
-                                count: std::num::NonZeroU32::new(textures.len() as _),
-                            },
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 1,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                                count: std::num::NonZeroU32::new(samplers.len() as _),
-                            },
-                        ],
-                    });
-            let texture_views = textures
-                .iter()
-                .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()))
-                .collect::<Vec<_>>();
-            let texture_array_bind_group =
-                gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureViewArray(
-                                &texture_views.iter().collect::<Vec<_>>(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::SamplerArray(
-                                &samplers.iter().collect::<Vec<_>>(),
-                            ),
-                        },
-                    ],
-                    layout: &texture_array_bind_group_layout,
-                    label: Some("texture array bind group"),
-                });
-
-            (texture_array_bind_group, texture_array_bind_group_layout)
-        };
-
-        let _light_uniform = LightUniformBuffer {
-            position: nalgebra_glm::vec4(2.0, 2.0, 2.0, 1.0),
-            color: nalgebra_glm::vec4(1.0, 1.0, 1.0, 1.0),
-        };
-
-        let light_uniform_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            &gpu.device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Light Buffer"),
-                contents: bytemuck::cast_slice(&[_light_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        );
-
-        let light_uniform_bind_group_layout =
-            &gpu.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }],
-                    label: Some("light_uniform_bind_group_layout"),
-                });
-
-        let light_uniform_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: light_uniform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: light_uniform_buffer.as_entire_binding(),
-            }],
-            label: Some("light_uniform_bind_group"),
-        });
-
         let mut draw_commands = Vec::new();
 
         for scene in world.scenes.iter() {
@@ -316,11 +224,77 @@ impl WorldRender {
                 label: None,
             });
 
+        // TODO: get materials into shader
+        let material_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Material Buffer"),
+            size: (std::mem::size_of::<Material>() * world.materials.len()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let material_buffer_bind_group_layout =
+            gpu.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                    label: None,
+                });
+        let material_buffer_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &material_buffer_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: material_buffer.as_entire_binding(),
+            }],
+            label: None,
+        });
+
+        let number_of_primitives = world
+            .meshes
+            .iter()
+            .fold(0, |count, mesh| count + mesh.primitives.len());
+        let material_indices_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Material Buffer"),
+            size: (std::mem::size_of::<u32>() * number_of_primitives) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let material_indices_buffer_bind_group_layout =
+            gpu.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                    label: None,
+                });
+        let material_indices_buffer_bind_group =
+            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &material_indices_buffer_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: material_indices_buffer.as_entire_binding(),
+                }],
+                label: None,
+            });
+
         let bind_group_layouts = &[
             &uniform_bind_group_layout,
             &transform_buffer_bind_group_layout,
-            &texture_array_bind_group_layout,
-            &light_uniform_bind_group_layout,
+            &material_buffer_bind_group_layout,
+            &material_indices_buffer_bind_group_layout,
         ];
 
         let triangle_filled_pipeline = create_pipeline(
@@ -339,10 +313,10 @@ impl WorldRender {
             indirect_draw_buffer,
             transform_buffer,
             transform_buffer_bind_group,
-            _light_uniform,
-            light_uniform_buffer,
-            light_uniform_bind_group,
-            texture_array_bind_group,
+            material_buffer,
+            material_buffer_bind_group,
+            material_indices_buffer,
+            material_indices_buffer_bind_group,
             triangle_filled_pipeline,
             textures,
             samplers,
@@ -386,163 +360,16 @@ impl WorldRender {
 
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_bind_group(1, &self.transform_buffer_bind_group, &[]);
-        render_pass.set_bind_group(2, &self.texture_array_bind_group, &[]);
-        render_pass.set_bind_group(3, &self.light_uniform_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.material_buffer_bind_group, &[]);
+        render_pass.set_bind_group(3, &self.material_indices_buffer_bind_group, &[]);
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
         render_pass.set_pipeline(&self.triangle_filled_pipeline);
         render_pass.draw_indexed_indirect(&self.indirect_draw_buffer, 0);
-
-        // for alpha_mode in [
-        //     crate::world::AlphaMode::Opaque,
-        //     crate::world::AlphaMode::Mask,
-        //     crate::world::AlphaMode::Blend,
-        // ]
-        // .iter()
-        // {
-        //     // scene
-        //     //     .graph
-        //     //     .node_indices()
-        //     //     .enumerate()
-        //     //     .for_each(|(ubo_index, graph_node_index)| {
-        //     //         let node_index = scene.graph[graph_node_index];
-        //     //         let node = &world.nodes[node_index];
-        //     //         if let Some(mesh_index) = node.mesh_index {
-        //     //             let mesh = &world.meshes[mesh_index];
-
-        //     //             for primitive in mesh.primitives.iter() {
-        //     //                 match primitive.topology {
-        //     //                     crate::world::PrimitiveTopology::Lines => {
-        //     //                         render_pass.set_pipeline(&self.line_pipeline);
-        //     //                     }
-        //     //                     crate::world::PrimitiveTopology::LineStrip => {
-        //     //                         render_pass.set_pipeline(&self.line_strip_pipeline);
-        //     //                     }
-        //     //                     crate::world::PrimitiveTopology::Triangles => match alpha_mode {
-        //     //                         crate::world::AlphaMode::Opaque
-        //     //                         | crate::world::AlphaMode::Mask => {
-        //     //                             render_pass.set_pipeline(&self.triangle_filled_pipeline);
-        //     //                         }
-        //     //                         crate::world::AlphaMode::Blend => {
-        //     //                             render_pass.set_pipeline(&self.triangle_blended_pipeline);
-        //     //                         }
-        //     //                     },
-        //     //                     crate::world::PrimitiveTopology::TriangleStrip => {
-        //     //                         render_pass.set_pipeline(&self.triangle_strip_pipeline);
-        //     //                     }
-
-        //     //                     // wgpu does not support line loops or triangle fans
-        //     //                     // and Point primitive topology is unsupported on Metal so it is omitted here
-        //     //                     _ => continue,
-        //     //                 }
-
-        //     //                 let mut shader_material = Material::default();
-
-        //     //                 match primitive.material_index {
-        //     //                     Some(material_index) => {
-        //     //                         let material = &world.materials[material_index];
-        //     //                         if material.alpha_mode != *alpha_mode {
-        //     //                             continue;
-        //     //                         }
-        //     //                         shader_material.base_color = material.base_color_factor;
-        //     //                         shader_material.base_texture_index =
-        //     //                             material.base_color_texture_index as _;
-        //     //                         shader_material.alpha_mode = material.alpha_mode as _;
-        //     //                         shader_material.alpha_cutoff =
-        //     //                             material.alpha_cutoff.unwrap_or(0.5);
-        //     //                     }
-        //     //                     None => {
-        //     //                         shader_material.base_color =
-        //     //                             nalgebra_glm::vec4(0.5, 0.5, 0.5, 1.0);
-        //     //                         shader_material.base_texture_index = -1;
-        //     //                         shader_material.alpha_mode = 0;
-        //     //                         shader_material.alpha_cutoff = 0.5;
-        //     //                     }
-        //     //                 };
-
-        //     //                 shader_material.object_index = ubo_index as _;
-
-        //     //                 render_pass.set_push_constants(
-        //     //                     wgpu::ShaderStages::VERTEX_FRAGMENT,
-        //     //                     0,
-        //     //                     bytemuck::cast_slice(&[shader_material]),
-        //     //                 );
-
-        //     //                 if primitive.number_of_indices > 0 {
-        //     //                     let index_offset = primitive.index_offset as u32;
-        //     //                     let number_of_indices =
-        //     //                         index_offset + primitive.number_of_indices as u32;
-        //     //                     render_pass.draw_indexed(
-        //     //                         index_offset..number_of_indices,
-        //     //                         primitive.vertex_offset as i32,
-        //     //                         0..1, // TODO: support multiple instances per primitive
-        //     //                     );
-        //     //                 } else {
-        //     //                     let vertex_offset = primitive.vertex_offset as u32;
-        //     //                     let number_of_vertices =
-        //     //                         vertex_offset + primitive.number_of_vertices as u32;
-        //     //                     render_pass.draw(
-        //     //                         vertex_offset..number_of_vertices,
-        //     //                         0..1, // TODO: support multiple instances per primitive
-        //     //                     );
-        //     //                 }
-        //     //             }
-        //     //         }
-        //     //     });
-        // }
     }
 }
-
-// fn create_dynamic_uniform(
-//     gpu: &crate::gpu::Gpu,
-//     max_meshes: wgpu::BufferAddress,
-// ) -> (wgpu::Buffer, wgpu::BindGroupLayout, wgpu::BindGroup) {
-//     let dynamic_uniform_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-//         label: Some("dynamic_uniform_buffer"),
-//         size: max_meshes * gpu.alignment(),
-//         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-//         mapped_at_creation: false,
-//     });
-
-//     let dynamic_uniform_bind_group_layout =
-//         gpu.device
-//             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-//                 entries: &[wgpu::BindGroupLayoutEntry {
-//                     binding: 0,
-//                     visibility: wgpu::ShaderStages::VERTEX,
-//                     ty: wgpu::BindingType::Buffer {
-//                         ty: wgpu::BufferBindingType::Uniform,
-//                         has_dynamic_offset: true,
-//                         min_binding_size: wgpu::BufferSize::new(
-//                             std::mem::size_of::<DynamicUniform>() as _,
-//                         ),
-//                     },
-//                     count: None,
-//                 }],
-//                 label: Some("dynamic_uniform_buffer_layout"),
-//             });
-
-//     let dynamic_uniform_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-//         layout: &dynamic_uniform_bind_group_layout,
-//         entries: &[wgpu::BindGroupEntry {
-//             binding: 0,
-//             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-//                 buffer: &dynamic_uniform_buffer,
-//                 offset: 0,
-//                 size: wgpu::BufferSize::new(std::mem::size_of::<DynamicUniform>() as _),
-//             }),
-//         }],
-//         label: Some("dynamic_uniform_bind_group"),
-//     });
-
-//     (
-//         dynamic_uniform_buffer,
-//         dynamic_uniform_bind_group_layout,
-//         dynamic_uniform_bind_group,
-//     )
-// }
 
 fn create_uniform(gpu: &crate::gpu::Gpu) -> (wgpu::Buffer, wgpu::BindGroupLayout, wgpu::BindGroup) {
     let uniform_buffer = wgpu::util::DeviceExt::create_buffer_init(
@@ -660,10 +487,7 @@ fn create_pipeline(
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts,
-            push_constant_ranges: &[wgpu::PushConstantRange {
-                stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                range: 0..36, // 1 byte
-            }],
+            push_constant_ranges: &[],
         });
 
     gpu.device
@@ -749,7 +573,6 @@ struct Material {
     pub alpha_mode: i32,
     pub alpha_cutoff: f32,
     pub sampler_index: i32,
-    pub object_index: i32, // todo: move this outta here
 }
 
 impl Default for Material {
@@ -760,7 +583,6 @@ impl Default for Material {
             alpha_mode: 0,
             alpha_cutoff: 0.5,
             sampler_index: 0,
-            object_index: 0,
         }
     }
 }
@@ -771,98 +593,6 @@ struct LightUniformBuffer {
     position: nalgebra_glm::Vec4,
     color: nalgebra_glm::Vec4,
 }
-
-const SHADER_SOURCE: &str = "
-struct Uniform {
-    view: mat4x4<f32>,
-    projection: mat4x4<f32>,
-    camera_position: vec4<f32>,
-}
-
-@group(0) @binding(0)
-var<uniform> ubo: Uniform;
-
-struct Transform {
-    matrix: mat4x4<f32>,
-}
-
-@group(1) @binding(0)
-var<storage, read> transforms: array<Transform>;
-
-@group(2) @binding(0)
-var texture_array: binding_array<texture_2d<f32>>;
-
-@group(2) @binding(1)
-var sampler_array: binding_array<sampler>;
-
-@group(3) @binding(0)
-var<uniform> light: Light;
-
-struct Material {
-    base_color: vec4<f32>,
-    base_texture_index: i32,
-    alpha_mode: i32,
-    alpha_cutoff: f32,
-    sampler_index: i32,
-    object_index: i32,
-}
-var<push_constant> material: Material;
-
-struct VertexInput {
-    @location(0) position: vec3<f32>,
-    @location(1) normal: vec3<f32>,
-    @location(2) uv_0: vec2<f32>,
-    @location(3) uv_1: vec2<f32>,
-    @location(4) joint_0: vec4<f32>,
-    @location(5) weight_0: vec4<f32>,
-    @location(6) color_0: vec3<f32>,
-};
-
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) normal: vec3<f32>,
-    @location(1) color: vec3<f32>,
-    @location(2) tex_coord: vec2<f32>,
-};
-
-struct Light {
-    position: vec4<f32>,
-    color: vec4<f32>,
-}
-
-@vertex
-fn vertex_main(vert: VertexInput) -> VertexOutput {
-    var out: VertexOutput;
-    let mvp = ubo.projection * ubo.view * transforms[material.object_index].matrix;
-    out.position = mvp * vec4(vert.position, 1.0);
-    out.normal = vec4((mvp * vec4(vert.normal, 0.0)).xyz, 1.0).xyz;
-    out.color = vert.color_0;
-    out.tex_coord = vert.uv_0;
-    return out;
-};
-
-@fragment
-fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var base_color = material.base_color;
-
-    if material.base_texture_index > -1 {
-        base_color *= textureSampleLevel(texture_array[material.base_texture_index], sampler_array[material.sampler_index], in.tex_coord, 0.0);
-    } 
-
-    if material.alpha_mode == 1 && base_color.a < material.alpha_cutoff {
-        discard;
-    }
-
-    let ambient_strength = 0.1;
-    let ambient_color = light.color.rgb * ambient_strength;
-    let light_dir = normalize(light.position.xyz - in.position.xyz);
-    let diffuse_strength =  max(dot(in.normal, light_dir), 0.0);
-    let diffuse_color = light.color.rgb * diffuse_strength;
-    let result = (ambient_color + diffuse_color) * base_color.rgb * in.color;
-
-    return vec4<f32>(result.xyz, 1.0);
-}
-";
 
 impl From<wgpu::PrimitiveTopology> for crate::world::PrimitiveTopology {
     fn from(value: wgpu::PrimitiveTopology) -> Self {
@@ -902,3 +632,87 @@ pub struct DrawIndexedIndirectArgs {
     /// Has to be 0, unless [`Features::INDIRECT_FIRST_INSTANCE`](crate::Features::INDIRECT_FIRST_INSTANCE) is enabled.
     pub first_instance: u32,
 }
+
+const SHADER_SOURCE: &str = "
+struct Uniform {
+    view: mat4x4<f32>,
+    projection: mat4x4<f32>,
+    camera_position: vec4<f32>,
+}
+
+@group(0) @binding(0)
+var<uniform> ubo: Uniform;
+
+struct Transform {
+    matrix: mat4x4<f32>,
+}
+
+@group(1) @binding(0)
+var<storage, read> transforms: array<Transform>;
+
+struct Material {
+    base_color: vec4<f32>,
+    base_texture_index: i32,
+    alpha_mode: i32,
+    alpha_cutoff: f32,
+    sampler_index: i32,
+    object_index: i32,
+}
+
+@group(2) @binding(0)
+var<storage, read> materials: array<Material>;
+
+@group(3) @binding(0)
+var<storage, read> material_indices: array<i32>;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv_0: vec2<f32>,
+    @location(3) uv_1: vec2<f32>,
+    @location(4) joint_0: vec4<f32>,
+    @location(5) weight_0: vec4<f32>,
+    @location(6) color_0: vec3<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) normal: vec3<f32>,
+    @location(1) color: vec3<f32>,
+    @location(2) tex_coord: vec2<f32>,
+};
+
+struct Light {
+    position: vec4<f32>,
+    color: vec4<f32>,
+}
+
+@vertex
+fn vertex_main(vert: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    // TODO: add model matrix back by getting it from the transforms[] array
+    let mvp = ubo.projection * ubo.view;
+    out.position = mvp * vec4(vert.position, 1.0);
+    out.normal = vec4((mvp * vec4(vert.normal, 0.0)).xyz, 1.0).xyz;
+    out.color = vert.color_0;
+    out.tex_coord = vert.uv_0;
+    return out;
+};
+
+@fragment
+fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    var base_color = vec3<f32>(0.6, 0.6, 0.6);
+
+    let light_position = vec3<f32>(10.0, 10.0, 10.0);
+    let light_color = vec3<f32>(0.8, 0.8, 0.8);
+
+    let ambient_strength = 0.1;
+    let ambient_color = light_color * ambient_strength;
+    let light_dir = normalize(light_position - in.position.xyz);
+    let diffuse_strength =  max(dot(in.normal, light_dir), 0.0);
+    let diffuse_color = light_color * diffuse_strength;
+    let result = (ambient_color + diffuse_color) * base_color * in.color;
+
+    return vec4<f32>(result.xyz, 1.0);
+}
+";
