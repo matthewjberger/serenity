@@ -82,17 +82,8 @@ impl<'window> Gpu<'window> {
             .await
             .expect("Failed to request adapter!");
 
-        let required_features = wgpu::Features::PUSH_CONSTANTS
-            | wgpu::Features::TEXTURE_BINDING_ARRAY
-            | wgpu::Features::POLYGON_MODE_LINE;
-
-        // Use the texture resolution limits from the adapter to support images the size of the surface
-        let required_limits = wgpu::Limits {
-            max_sampled_textures_per_shader_stage: 128,
-            max_push_constant_size: 256,
-            ..Default::default()
-        }
-        .using_resolution(adapter.limits());
+        let required_features = wgpu::Features::all_webgpu_mask();
+        let required_limits = wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits());
         let (device, queue) = {
             log::info!("WGPU Adapter Features: {:#?}", adapter.features());
             adapter
