@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/game"]
+members = ["apps/viewer"]
 
 [package]
 name = "serenity"
