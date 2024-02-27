@@ -82,16 +82,14 @@ impl<'window> Gpu<'window> {
             .await
             .expect("Failed to request adapter!");
 
-        let required_features = wgpu::Features::all_webgpu_mask();
-        let required_limits = wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits());
         let (device, queue) = {
             log::info!("WGPU Adapter Features: {:#?}", adapter.features());
             adapter
                 .request_device(
                     &wgpu::DeviceDescriptor {
                         label: Some("WGPU Device"),
-                        required_features,
-                        required_limits,
+                        required_features: wgpu::Features::all_webgpu_mask(),
+                        required_limits: wgpu::Limits::downlevel_defaults(),
                     },
                     None,
                 )
