@@ -1,97 +1,66 @@
-pub struct Context {
-    pub io: crate::io::Io,
-    pub delta_time: f64,
-    pub last_frame: std::time::Instant,
-    pub world: crate::world::World,
-    pub should_exit: bool,
-    pub should_reload_view: bool,
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run(state: impl State + 'static) {
+    env_logger::init();
+    pollster::block_on(run_async(state));
 }
 
-impl Context {
-    pub fn import_file(&mut self, path: &str) {
-        self.world = crate::gltf::import_gltf(path);
-
-        if self.world.scenes.is_empty() {
-            self.world.scenes.push(crate::world::Scene::default());
-            self.world.default_scene_index = Some(0);
-        }
-
-        if let Some(scene_index) = self.world.default_scene_index {
-            self.world.add_camera_to_scenegraph(scene_index);
-        }
-
-        self.should_reload_view = true;
-    }
+#[cfg(target_arch = "wasm32")]
+pub fn run(state: impl State + 'static) {
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    console_log::init().expect("could not initialize logger");
+    wasm_bindgen_futures::spawn_local(run_async(state));
 }
 
-pub fn window_aspect_ratio(window: &winit::window::Window) -> f32 {
-    let winit::dpi::PhysicalSize { width, height } = window.inner_size();
-    width as f32 / height.max(1) as f32
-}
+pub async fn run_async(mut state: impl State + 'static) {
+    let event_loop =
+        winit::event_loop::EventLoop::new().expect("Failed to create winit event loop!");
 
-pub trait State {
-    /// Called once before the main loop
-    fn initialize(&mut self, _context: &mut Context) {}
+    #[allow(unused_mut)]
+    let mut builder = winit::window::WindowBuilder::new();
 
-    /// Called when a winit event is received
-    fn receive_event(&mut self, _context: &mut Context, _event: &winit::event::Event<()>) {}
-
-    /// Called every frame prior to rendering
-    fn update(&mut self, _context: &mut Context) {}
-}
-
-pub struct App<'window> {
-    event_loop: winit::event_loop::EventLoop<()>,
-    context: Context,
-    renderer: crate::render::Renderer<'window>,
-}
-
-impl<'window> App<'window> {
-    pub fn new(title: &str, width: u32, height: u32) -> Self {
-        env_logger::init();
-
-        let event_loop =
-            winit::event_loop::EventLoop::new().expect("Failed to create winit event loop!");
-        let window = winit::window::WindowBuilder::new()
-            .with_title(title)
-            .with_inner_size(winit::dpi::PhysicalSize::new(width, height))
-            .with_transparent(true)
-            .build(&event_loop)
-            .expect("Failed to create winit window!");
-        event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
-        let renderer = crate::render::Renderer::new(window, width, height);
-        let context = Context {
-            io: crate::io::Io::default(),
-            delta_time: 0.01,
-            last_frame: std::time::Instant::now(),
-            world: crate::world::World::default(),
-            should_exit: false,
-            should_reload_view: false,
-        };
-        Self {
-            event_loop,
-            context,
-            renderer,
-        }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        builder = builder
+            .with_title("Serenity")
+            .with_inner_size(winit::dpi::PhysicalSize::new(1920, 1080));
     }
 
-    pub fn run(self, mut state: impl State + 'static) {
-        let Self {
-            event_loop,
-            mut context,
-            mut renderer,
-        } = self;
+    #[cfg(target_arch = "wasm32")]
+    {
+        use winit::platform::web::WindowBuilderExtWebSys;
+        let canvas = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .get_element_by_id("canvas")
+            .unwrap()
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .unwrap();
+        builder = builder.with_canvas(Some(canvas));
+    }
 
-        state.initialize(&mut context);
+    let window = builder
+        .build(&event_loop)
+        .expect("Failed to create winit window!");
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
-        event_loop.run(move |event, elwt| {
+    let mut renderer = crate::render::Renderer::new(window, 1920, 1080).await;
+
+    let mut context = Context {
+        io: crate::io::Io::default(),
+        world: crate::world::World::default(),
+        should_exit: false,
+        should_reload_view: false,
+    };
+
+    state.initialize(&mut context);
+
+    event_loop
+        .run(move |event, elwt| {
             if let winit::event::Event::NewEvents(..) = event {
-                context.delta_time = (std::time::Instant::now()
-                    .duration_since(context.last_frame)
-                    .as_micros() as f64)
-                    / 1_000_000_f64;
-                context.last_frame = std::time::Instant::now();
-
                 state.update(&mut context);
             }
 
@@ -129,6 +98,41 @@ impl<'window> App<'window> {
                     renderer.render_frame(&mut context);
                 }
             }
-        }).expect("Failed to execute frame!");
+        })
+        .expect("Failed to execute frame!");
+}
+
+pub struct Context {
+    pub io: crate::io::Io,
+    pub world: crate::world::World,
+    pub should_exit: bool,
+    pub should_reload_view: bool,
+}
+
+impl Context {
+    pub fn import_gltf_slice(&mut self, bytes: &[u8]) {
+        self.world = crate::gltf::import_gltf_slice(bytes);
+
+        if self.world.scenes.is_empty() {
+            self.world.scenes.push(crate::world::Scene::default());
+            self.world.default_scene_index = Some(0);
+        }
+
+        if let Some(scene_index) = self.world.default_scene_index {
+            self.world.add_camera_to_scenegraph(scene_index);
+        }
+
+        self.should_reload_view = true;
     }
+}
+
+pub trait State {
+    /// Called once before the main loop
+    fn initialize(&mut self, _context: &mut Context) {}
+
+    /// Called when a winit event is received
+    fn receive_event(&mut self, _context: &mut Context, _event: &winit::event::Event<()>) {}
+
+    /// Called every frame prior to rendering
+    fn update(&mut self, _context: &mut Context) {}
 }

@@ -6,8 +6,12 @@ pub struct Renderer<'window> {
 }
 
 impl<'window> Renderer<'window> {
-    pub fn new(window: impl Into<wgpu::SurfaceTarget<'window>>, width: u32, height: u32) -> Self {
-        let gpu = pollster::block_on(crate::gpu::Gpu::new_async(window, width, height));
+    pub async fn new(
+        window: impl Into<wgpu::SurfaceTarget<'window>>,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let gpu = crate::gpu::Gpu::new_async(window, width, height).await;
         let depth_texture_view =
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
         let hdr_pipeline =

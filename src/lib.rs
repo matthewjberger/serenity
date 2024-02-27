@@ -10,5 +10,12 @@ pub mod world;
 pub use log;
 pub use nalgebra_glm;
 pub use petgraph;
-pub use uuid;
 pub use winit;
+
+pub use self::app::run;
+
+#[cfg(target_arch = "wasm32")]
+pub use wasm_bindgen;
+
+#[cfg(target_arch = "wasm32")]
+pub use wasm_bindgen_futures;

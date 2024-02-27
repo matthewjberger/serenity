@@ -1,13 +1,18 @@
-fn main() {
-    serenity::app::App::new("Serenity", 1920, 1080).run(Game);
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(start)]
+pub async fn run() {
+    serenity::run(Viewer::default());
 }
 
 #[derive(Default)]
-pub struct Game;
+pub struct Viewer;
 
-impl serenity::app::State for Game {
+impl serenity::app::State for Viewer {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        context.import_file("resources/gltf/helmet.glb");
+        context.import_gltf_slice(include_bytes!("../resources/helmet.glb"));
         let light_node = context.world.add_node();
         context.world.add_light_to_node(light_node);
         context.world.add_root_node_to_scenegraph(0, light_node);
@@ -70,7 +75,7 @@ fn camera_system(context: &mut serenity::app::Context) {
     let camera = &mut context.world.cameras[camera_node.camera_index.unwrap()];
 
     let mut sync_transform = false;
-    let speed = 10.0 * context.delta_time as f32;
+    let speed = 10.0;
 
     if context
         .io
@@ -122,17 +127,15 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     camera
         .orientation
-        .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
+        .zoom(6.0 * context.io.mouse.wheel_delta.y);
 
     if context.io.mouse.is_middle_clicked {
-        camera
-            .orientation
-            .pan(&(context.io.mouse.position_delta * context.delta_time as f32));
+        camera.orientation.pan(&context.io.mouse.position_delta);
         sync_transform = true;
     }
 
     if context.io.mouse.is_right_clicked {
-        let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
+        let mut delta = context.io.mouse.position_delta;
         delta.x *= -1.0;
         delta.y *= -1.0;
         camera.orientation.rotate(&delta);

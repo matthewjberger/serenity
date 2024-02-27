@@ -1,6 +1,19 @@
-pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn import_gltf_file(path: impl AsRef<std::path::Path>) -> crate::world::World {
     let (gltf, buffers, raw_images) = gltf::import(path.as_ref()).expect("Failed to import gltf");
+    import_gltf_document(raw_images, gltf, buffers)
+}
 
+pub fn import_gltf_slice(bytes: &[u8]) -> crate::world::World {
+    let (gltf, buffers, raw_images) = gltf::import_slice(bytes).expect("Failed to import gltf");
+    import_gltf_document(raw_images, gltf, buffers)
+}
+
+fn import_gltf_document(
+    raw_images: Vec<gltf::image::Data>,
+    gltf: gltf::Document,
+    buffers: Vec<gltf::buffer::Data>,
+) -> crate::world::World {
     let images = raw_images
         .into_iter()
         .map(crate::world::Image::from)
