@@ -1,5 +1,5 @@
 fn main() {
-    serenity::app::App::new("Serenity", 1920, 1080).run(Game);
+    serenity::app::run(Game);
 }
 
 #[derive(Default)]
