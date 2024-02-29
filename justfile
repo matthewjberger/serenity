@@ -25,6 +25,9 @@ lint:
 run $project="viewer":
     cargo run -r -p {{project}}
 
+udeps:
+    cargo +nightly udeps --all
+
 test:
     cargo test --all -- --nocapture
 

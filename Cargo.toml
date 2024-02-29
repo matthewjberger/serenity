@@ -26,7 +26,6 @@ nalgebra-glm = { version = "0.18.0", features = [
 ] }
 petgraph = { version = "0.6.4", features = ["serde-1"] }
 pollster = "0.3.0"
-raw-window-handle = "0.6.0"
 serde = { version = "1.0.193", features = ["derive"] }
 uuid = { version = "1.6.1", features = ["v4"] }
 wgpu = "0.19.1"

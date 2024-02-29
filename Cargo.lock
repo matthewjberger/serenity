@@ -1865,7 +1865,6 @@ dependencies = [
  "nalgebra-glm",
  "petgraph",
  "pollster",
- "raw-window-handle 0.6.0",
  "serde",
  "uuid",
  "wgpu",
