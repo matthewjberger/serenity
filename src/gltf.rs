@@ -235,11 +235,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                 nodes.push(crate::world::Node {
                     transform_index,
                     metadata_index,
-                    camera_index: None,
-                    mesh_index: None,
-                    light_index: None,
-                    rigid_body_index: None,
-                    primitive_mesh_index: None,
+                    ..Default::default()
                 });
 
                 let root_node_index = scene.graph.add_node(node_index);
@@ -374,6 +370,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         textures,
         transforms,
         vertices,
+        ..Default::default()
     }
 }
 

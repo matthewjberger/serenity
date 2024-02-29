@@ -11,6 +11,27 @@ impl serenity::app::State for Game {
         let light_node = context.world.add_node();
         context.world.add_light_to_node(light_node);
         context.world.add_root_node_to_scenegraph(0, light_node);
+
+        // Add a grid of instanced meshes to the first visible node in the scene
+        let grid_size = 10;
+        let spacing = 4.0;
+        (0..grid_size).for_each(|x| {
+            (0..grid_size).for_each(|y| {
+                context.world.add_node_instance(
+                    1,
+                    serenity::world::Instance {
+                        transform: serenity::world::Transform {
+                            translation: serenity::nalgebra_glm::Vec3::new(
+                                x as f32 * spacing,
+                                y as f32 * spacing,
+                                0.0,
+                            ),
+                            ..Default::default()
+                        },
+                    },
+                );
+            });
+        });
     }
 
     fn receive_event(
@@ -44,7 +65,13 @@ impl serenity::app::State for Game {
         }
     }
 
-    fn update(&mut self, context: &mut serenity::app::Context) {
+    fn update(&mut self, context: &mut serenity::app::Context, ui: &serenity::egui::Context) {
+        serenity::egui::Window::new("wgpu")
+            .resizable(false)
+            .fixed_pos((10.0, 10.0))
+            .show(ui, |ui| {
+                ui.heading("Hello, world!");
+            });
         camera_system(context);
     }
 }

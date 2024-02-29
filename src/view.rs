@@ -7,6 +7,7 @@
 pub struct WorldRender {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
+    pub instance_buffer: wgpu::Buffer,
 
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
@@ -30,6 +31,24 @@ impl WorldRender {
     pub fn new(gpu: &crate::gpu::Gpu, world: &crate::world::World) -> Self {
         let (vertex_buffer, index_buffer) =
             create_geometry_buffers(&gpu.device, &world.vertices, &world.indices);
+
+        let mut instances = world
+            .instances
+            .iter()
+            .map(|instance| instance.transform.matrix())
+            .collect::<Vec<_>>();
+        if instances.is_empty() {
+            instances.push(nalgebra_glm::Mat4::identity());
+        }
+        let instance_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            &gpu.device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("instance_buffer"),
+                contents: bytemuck::cast_slice(&instances),
+                usage: wgpu::BufferUsages::VERTEX,
+            },
+        );
+
         let (uniform_buffer, uniform_bind_group_layout, uniform_bind_group) = create_uniform(gpu);
         let (dynamic_uniform_buffer, dynamic_uniform_bind_group_layout, dynamic_uniform_bind_group) =
             create_dynamic_uniform(gpu, world.transforms.len() as _);
@@ -271,6 +290,7 @@ impl WorldRender {
         Self {
             vertex_buffer,
             index_buffer,
+            instance_buffer,
             uniform_buffer,
             uniform_bind_group,
             material_bind_groups,
@@ -315,9 +335,12 @@ impl WorldRender {
             .graph
             .node_indices()
             .enumerate()
-            .for_each(|(ubo_index, _)| {
-                mesh_ubos[ubo_index] = DynamicUniform {
-                    object_index: ubo_index as u32,
+            .for_each(|(index, graph_node_index)| {
+                mesh_ubos[index] = DynamicUniform {
+                    object_index: index as u32,
+                    number_of_instances: world.nodes[scene.graph[graph_node_index]].instances.len()
+                        as _,
+                    ..Default::default()
                 };
             });
         gpu.queue
@@ -343,6 +366,7 @@ impl WorldRender {
         render_pass.set_bind_group(3, &self.object_buffer_bind_group, &[]);
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
         // TODO: Refactor this to first sort by material, then sort materials by alpha mode and render Opaque, Mask, then Blend
@@ -398,6 +422,12 @@ impl WorldRender {
                                 &[],
                             );
 
+                            let instance_range = if node.instances.is_empty() {
+                                0..1
+                            } else {
+                                0..(node.instances.len() as u32)
+                            };
+
                             if primitive.number_of_indices > 0 {
                                 let index_offset = primitive.index_offset as u32;
                                 let number_of_indices =
@@ -405,16 +435,13 @@ impl WorldRender {
                                 render_pass.draw_indexed(
                                     index_offset..number_of_indices,
                                     primitive.vertex_offset as i32,
-                                    0..1, // TODO: support multiple instances per primitive
+                                    instance_range,
                                 );
                             } else {
                                 let vertex_offset = primitive.vertex_offset as u32;
                                 let number_of_vertices =
                                     vertex_offset + primitive.number_of_vertices as u32;
-                                render_pass.draw(
-                                    vertex_offset..number_of_vertices,
-                                    0..1, // TODO: support multiple instances per primitive
-                                );
+                                render_pass.draw(vertex_offset..number_of_vertices, instance_range);
                             }
                         }
                     }
@@ -526,9 +553,10 @@ fn create_pipeline(
             vertex: wgpu::VertexState {
                 module: &shader_module,
                 entry_point: "vertex_main",
-                buffers: &[crate::world::Vertex::description(
-                    &crate::world::Vertex::attributes(),
-                )],
+                buffers: &[
+                    crate::world::Vertex::description(&crate::world::Vertex::attributes()),
+                    crate::world::Instance::description(&crate::world::Instance::attributes()),
+                ],
             },
             primitive: wgpu::PrimitiveState {
                 front_face: wgpu::FrontFace::Ccw,
@@ -589,6 +617,21 @@ impl crate::world::Vertex {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<crate::world::Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
+            attributes,
+        }
+    }
+}
+
+impl crate::world::Instance {
+    pub fn attributes() -> Vec<wgpu::VertexAttribute> {
+        wgpu::vertex_attr_array![7 => Float32x4, 8 => Float32x4, 9 => Float32x4, 10 => Float32x4]
+            .to_vec()
+    }
+
+    pub fn description(attributes: &[wgpu::VertexAttribute]) -> wgpu::VertexBufferLayout {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<nalgebra_glm::Mat4>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
             attributes,
         }
     }
@@ -716,6 +759,8 @@ fn create_dynamic_uniform(
 #[derive(Default, Copy, Clone, Debug, bytemuck::Zeroable)]
 pub struct DynamicUniform {
     pub object_index: u32,
+    pub number_of_instances: u32,
+    pub padding: nalgebra_glm::Vec2,
 }
 
 const SHADER_SOURCE: &str = "
@@ -730,6 +775,7 @@ var<uniform> ubo: Uniform;
 
 struct DynamicUniform {
     object_index: u32,
+    number_of_instances: u32,
 };
 
 @group(1) @binding(0)
@@ -765,19 +811,35 @@ struct VertexInput {
     @location(4) joint_0: vec4<f32>,
     @location(5) weight_0: vec4<f32>,
     @location(6) color_0: vec3<f32>,
-};
+}
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) normal: vec3<f32>,
     @location(1) color: vec3<f32>,
     @location(2) tex_coord: vec2<f32>,
-};
+}
+
+struct InstanceInput {
+    @location(7) model_matrix_0: vec4<f32>,
+    @location(8) model_matrix_1: vec4<f32>,
+    @location(9) model_matrix_2: vec4<f32>,
+    @location(10) model_matrix_3: vec4<f32>,
+}
 
 @vertex
-fn vertex_main(vert: VertexInput) -> VertexOutput {
+fn vertex_main(vert: VertexInput, instance: InstanceInput) -> VertexOutput {
     var out: VertexOutput;
-    let mvp = ubo.projection * ubo.view * objects[mesh_ubo.object_index].matrix;
+    var mvp = ubo.projection * ubo.view * objects[mesh_ubo.object_index].matrix; 
+    if mesh_ubo.number_of_instances > 0 {
+        let model_matrix = mat4x4<f32>(
+            instance.model_matrix_0,
+            instance.model_matrix_1,
+            instance.model_matrix_2,
+            instance.model_matrix_3,
+        );
+        mvp *=  model_matrix;
+    }
     out.position = mvp * vec4(vert.position, 1.0);
     out.normal = vec4((mvp * vec4(vert.normal, 0.0)).xyz, 1.0).xyz;
     out.color = vert.color_0;

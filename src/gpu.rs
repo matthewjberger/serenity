@@ -88,8 +88,17 @@ impl<'window> Gpu<'window> {
                 .request_device(
                     &wgpu::DeviceDescriptor {
                         label: Some("WGPU Device"),
+
                         required_features: wgpu::Features::all_webgpu_mask(),
+
+                        #[cfg(target_arch = "wasm32")]
                         required_limits: wgpu::Limits::downlevel_defaults(),
+
+                        #[cfg(not(target_arch = "wasm32"))]
+                        required_limits: wgpu::Limits {
+                            max_texture_dimension_2d: 4096, // Allow higher resolutions on native
+                            ..Default::default()
+                        },
                     },
                     None,
                 )

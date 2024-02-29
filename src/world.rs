@@ -16,6 +16,7 @@ pub struct World {
     pub textures: Vec<Texture>,
     pub transforms: Vec<Transform>,
     pub vertices: Vec<Vertex>,
+    pub instances: Vec<Instance>,
 }
 
 impl World {
@@ -46,14 +47,17 @@ impl World {
         let node = crate::world::Node {
             transform_index,
             metadata_index,
-            camera_index: None,
-            mesh_index: None,
-            light_index: None,
-            rigid_body_index: None,
-            primitive_mesh_index: None,
+            ..Default::default()
         };
         self.nodes.push(node);
         node_index
+    }
+
+    pub fn add_node_instance(&mut self, node_index: usize, instance: Instance) -> usize {
+        let instance_index = self.instances.len();
+        self.instances.push(instance);
+        self.nodes[node_index].instances.push(instance_index);
+        instance_index
     }
 
     pub fn add_camera_to_scenegraph(&mut self, scene_index: usize) {
@@ -185,7 +189,12 @@ pub struct Mesh {
     pub primitives: Vec<Primitive>,
 }
 
-#[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize, bytemuck::Zeroable)]
+pub struct Instance {
+    pub transform: Transform,
+}
+
+#[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize, bytemuck::Zeroable)]
 pub struct Transform {
     pub translation: nalgebra_glm::Vec3,
     pub rotation: nalgebra_glm::Quat,
@@ -549,6 +558,7 @@ pub struct Node {
     pub light_index: Option<usize>,
     pub rigid_body_index: Option<usize>,
     pub primitive_mesh_index: Option<usize>,
+    pub instances: Vec<usize>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

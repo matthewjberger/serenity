@@ -3,20 +3,26 @@ pub struct Renderer<'window> {
     pub view: Option<crate::view::WorldRender>,
     pub depth_texture_view: wgpu::TextureView,
     pub hdr_pipeline: crate::hdr::HdrPipeline,
+    pub gui_renderer: egui_wgpu::Renderer,
 }
 
 impl<'window> Renderer<'window> {
     pub fn new(window: impl Into<wgpu::SurfaceTarget<'window>>, width: u32, height: u32) -> Self {
         let gpu = pollster::block_on(crate::gpu::Gpu::new_async(window, width, height));
-        let depth_texture_view =
-            gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
-        let hdr_pipeline =
-            crate::hdr::HdrPipeline::new(&gpu, gpu.surface_config.width, gpu.surface_config.height);
+        let depth_texture_view = gpu.create_depth_texture(width, height);
+        let hdr_pipeline = crate::hdr::HdrPipeline::new(&gpu, width, height);
+        let gui_renderer = egui_wgpu::Renderer::new(
+            &gpu.device,
+            wgpu::TextureFormat::Rgba16Float,
+            Some(wgpu::TextureFormat::Depth32Float),
+            1,
+        );
         Self {
             gpu,
             view: None,
             depth_texture_view,
             hdr_pipeline,
+            gui_renderer,
         }
     }
 
@@ -29,19 +35,40 @@ impl<'window> Renderer<'window> {
 
     pub fn resize(&mut self, width: u32, height: u32) {
         self.gpu.resize(width, height);
-        self.depth_texture_view = self.gpu.create_depth_texture(
-            self.gpu.surface_config.width,
-            self.gpu.surface_config.height,
-        );
+        self.hdr_pipeline = crate::hdr::HdrPipeline::new(&self.gpu, width, height);
+        self.depth_texture_view = self.gpu.create_depth_texture(width, height);
     }
 
-    pub fn render_frame(&mut self, context: &mut crate::app::Context) {
+    pub fn render_frame(
+        &mut self,
+        context: &mut crate::app::Context,
+        textures_delta: &egui::epaint::textures::TexturesDelta,
+        paint_jobs: Vec<egui::ClippedPrimitive>,
+        screen_descriptor: egui_wgpu::ScreenDescriptor,
+    ) {
         let mut encoder = self
             .gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
+
+        for (id, image_delta) in &textures_delta.set {
+            self.gui_renderer
+                .update_texture(&self.gpu.device, &self.gpu.queue, *id, image_delta);
+        }
+
+        for id in &textures_delta.free {
+            self.gui_renderer.free_texture(id);
+        }
+
+        self.gui_renderer.update_buffers(
+            &self.gpu.device,
+            &self.gpu.queue,
+            &mut encoder,
+            &paint_jobs,
+            &screen_descriptor,
+        );
 
         let surface_texture = self
             .gpu
@@ -100,6 +127,9 @@ impl<'window> Renderer<'window> {
             if let Some(view) = self.view.as_mut() {
                 view.render(&mut render_pass, &self.gpu, &context.world);
             }
+
+            self.gui_renderer
+                .render(&mut render_pass, &paint_jobs, &screen_descriptor);
         }
 
         self.hdr_pipeline.render_to_texture(
