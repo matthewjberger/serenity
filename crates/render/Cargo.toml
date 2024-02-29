@@ -8,15 +8,11 @@ bytemuck = { version = "1.14.0", features = ["derive"] }
 egui = "0.26.2"
 egui-wgpu = { version = "0.26.2", features = ["winit"] }
 log = "0.4.20"
-nalgebra = "0.32.3"
 nalgebra-glm = { version = "0.18.0", features = [
     "serde-serialize",
     "convert-bytemuck",
 ] }
-petgraph = { version = "0.6.4", features = ["serde-1"] }
 pollster = "0.3.0"
-serde = { version = "1.0.193", features = ["derive"] }
 wgpu = "0.19.1"
-winit = "0.29.10"
 
 world = { path = "../world" }

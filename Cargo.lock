@@ -766,13 +766,10 @@ dependencies = [
 name = "gltf"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
  "gltf 1.4.0",
  "image",
- "nalgebra",
  "nalgebra-glm",
  "petgraph",
- "serde",
  "world",
 ]
 
@@ -1218,7 +1215,6 @@ dependencies = [
  "approx",
  "bytemuck",
  "matrixmultiply",
- "nalgebra-macros",
  "num-complex",
  "num-rational",
  "num-traits",
@@ -1237,17 +1233,6 @@ dependencies = [
  "nalgebra",
  "num-traits",
  "simba",
-]
-
-[[package]]
-name = "nalgebra-macros"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91761aed67d03ad966ef783ae962ef9bbaca728d2dd7ceb7939ec110fffad998"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -1652,13 +1637,9 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "log",
- "nalgebra",
  "nalgebra-glm",
- "petgraph",
  "pollster",
- "serde",
  "wgpu",
- "winit",
  "world",
 ]
 
@@ -1771,21 +1752,15 @@ dependencies = [
 name = "serenity"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
  "egui",
  "egui-wgpu",
  "egui-winit",
  "gltf 0.1.0",
- "image",
  "log",
- "nalgebra",
  "nalgebra-glm",
  "petgraph",
- "pollster",
  "render",
- "serde",
  "uuid",
- "wgpu",
  "winit",
  "world",
 ]
@@ -2808,7 +2783,6 @@ name = "world"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
- "nalgebra",
  "nalgebra-glm",
  "petgraph",
  "serde",
