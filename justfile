@@ -26,7 +26,7 @@ run $project="editor":
     cargo run -r -p {{project}}
 
 udeps:
-    cargo +nightly udeps --all
+    cargo machete
 
 test:
     cargo test --all -- --nocapture
