@@ -152,23 +152,6 @@ pub struct Context {
     pub should_reload_view: bool,
 }
 
-impl Context {
-    pub fn import_file(&mut self, path: &str) {
-        self.world = gltf::import_gltf(path);
-
-        if self.world.scenes.is_empty() {
-            self.world.scenes.push(world::Scene::default());
-            self.world.default_scene_index = Some(0);
-        }
-
-        if let Some(scene_index) = self.world.default_scene_index {
-            self.world.add_camera_to_scenegraph(scene_index);
-        }
-
-        self.should_reload_view = true;
-    }
-}
-
 pub fn window_aspect_ratio(window: &winit::window::Window) -> f32 {
     let winit::dpi::PhysicalSize { width, height } = window.inner_size();
     width as f32 / height.max(1) as f32

@@ -89,6 +89,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "app"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "egui-winit",
+ "log",
+ "nalgebra-glm",
+ "petgraph",
+ "render",
+ "uuid",
+ "winit",
+ "world",
+]
+
+[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2360,16 +2376,8 @@ dependencies = [
 name = "serenity"
 version = "0.1.0"
 dependencies = [
- "egui",
- "egui-wgpu",
- "egui-winit",
+ "app",
  "gltf 0.1.0",
- "log",
- "nalgebra-glm",
- "petgraph",
- "render",
- "uuid",
- "winit",
  "world",
 ]
 

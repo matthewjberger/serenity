@@ -1,5 +1,5 @@
 fn main() {
-    serenity::run(Sandbox);
+    serenity::app::run(Sandbox);
 }
 
 #[derive(Default)]

@@ -1,5 +1,5 @@
 mod editor;
 
 fn main() {
-    serenity::run(editor::Editor::new());
+    serenity::app::run(editor::Editor::new());
 }

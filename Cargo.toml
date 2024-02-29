@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "apps/editor",
-    "apps/template",
+    "apps/template", "crates/app",
     "crates/engine",
     "crates/gltf",
     "crates/render",

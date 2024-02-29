@@ -1,12 +1,12 @@
-pub mod app;
-pub use app::run;
+pub use app;
+pub use app::egui;
+pub use app::log;
+pub use app::nalgebra_glm;
+pub use app::petgraph;
+pub use app::uuid;
+pub use app::winit;
 
-pub use egui;
 pub use gltf;
-pub use log;
-pub use nalgebra_glm;
-pub use petgraph;
-pub use uuid;
-pub use winit;
+
 pub use world;
 pub use world::serde;

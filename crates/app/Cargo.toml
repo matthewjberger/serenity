@@ -1,0 +1,20 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+egui = "0.26.2"
+egui-wgpu = { version = "0.26.2", features = ["winit"] }
+egui-winit = "0.26.2"
+log = "0.4.20"
+nalgebra-glm = { version = "0.18.0", features = [
+    "serde-serialize",
+    "convert-bytemuck",
+] }
+petgraph = { version = "0.6.4", features = ["serde-1"] }
+uuid = { version = "1.6.1", features = ["v4"] }
+winit = "0.29.10"
+
+render = { path = "../render" }
+world = { path = "../world" }

@@ -7,6 +7,21 @@ pub struct Editor {
     gizmo_mode: egui_gizmo::GizmoMode,
 }
 
+pub fn import_file(context: &mut serenity::app::Context, path: &str) {
+    context.world = serenity::gltf::import_gltf(path);
+
+    if context.world.scenes.is_empty() {
+        context.world.scenes.push(serenity::world::Scene::default());
+        context.world.default_scene_index = Some(0);
+    }
+
+    if let Some(scene_index) = context.world.default_scene_index {
+        context.world.add_camera_to_scenegraph(scene_index);
+    }
+
+    context.should_reload_view = true;
+}
+
 impl Editor {
     pub fn new() -> Self {
         Self {
@@ -37,7 +52,7 @@ impl Editor {
                             self.selected_graph_node_index = None;
                             self.redo_stack = Vec::new();
                             self.command_history = std::collections::VecDeque::new();
-                            context.import_file(&path);
+                            import_file(context, &path);
                             let light_node = context.world.add_node();
                             context.world.add_light_to_node(light_node);
                             context.world.add_root_node_to_scenegraph(0, light_node);
@@ -51,7 +66,7 @@ impl Editor {
 
 impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        context.import_file("glb/helmet.glb");
+        import_file(context, "glb/helmet.glb");
         let light_node = context.world.add_node();
         context.world.add_light_to_node(light_node);
         context.world.add_root_node_to_scenegraph(0, light_node);
