@@ -159,7 +159,7 @@ pub fn window_aspect_ratio(window: &winit::window::Window) -> f32 {
 
 pub trait State {
     fn title(&self) -> &str {
-        "Serenity App"
+        "Phantom App"
     }
 
     /// Called once before the main loop

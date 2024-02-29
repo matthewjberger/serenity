@@ -793,8 +793,8 @@ name = "editor"
 version = "0.1.0"
 dependencies = [
  "egui-gizmo",
+ "phantom",
  "rfd",
- "serenity",
 ]
 
 [[package]]
@@ -1974,6 +1974,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "phantom"
+version = "0.1.0"
+dependencies = [
+ "app",
+ "gltf 0.1.0",
+ "world",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2373,15 +2382,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serenity"
-version = "0.1.0"
-dependencies = [
- "app",
- "gltf 0.1.0",
- "world",
-]
-
-[[package]]
 name = "sha1"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2558,7 +2558,7 @@ dependencies = [
 name = "template"
 version = "0.1.0"
 dependencies = [
- "serenity",
+ "phantom",
 ]
 
 [[package]]

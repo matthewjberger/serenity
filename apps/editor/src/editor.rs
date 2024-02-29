@@ -1,17 +1,17 @@
 pub struct Editor {
     pending_messages: Vec<Message>,
-    selected_graph_node_index: Option<serenity::petgraph::graph::NodeIndex>,
+    selected_graph_node_index: Option<phantom::petgraph::graph::NodeIndex>,
     redo_stack: Vec<Command>,
     command_history: std::collections::VecDeque<Command>,
     gizmo_orientation: egui_gizmo::GizmoOrientation,
     gizmo_mode: egui_gizmo::GizmoMode,
 }
 
-pub fn import_file(context: &mut serenity::app::Context, path: &str) {
-    context.world = serenity::gltf::import_gltf(path);
+pub fn import_file(context: &mut phantom::app::Context, path: &str) {
+    context.world = phantom::gltf::import_gltf(path);
 
     if context.world.scenes.is_empty() {
-        context.world.scenes.push(serenity::world::Scene::default());
+        context.world.scenes.push(phantom::world::Scene::default());
         context.world.default_scene_index = Some(0);
     }
 
@@ -34,7 +34,7 @@ impl Editor {
         }
     }
 
-    fn receive_messages(&mut self, context: &mut serenity::app::Context) {
+    fn receive_messages(&mut self, context: &mut phantom::app::Context) {
         let messages = self.pending_messages.drain(..).collect::<Vec<_>>();
         for message in messages.into_iter() {
             match message {
@@ -64,8 +64,8 @@ impl Editor {
     }
 }
 
-impl serenity::app::State for Editor {
-    fn initialize(&mut self, context: &mut serenity::app::Context) {
+impl phantom::app::State for Editor {
+    fn initialize(&mut self, context: &mut phantom::app::Context) {
         import_file(context, "glb/helmet.glb");
         let light_node = context.world.add_node();
         context.world.add_light_to_node(light_node);
@@ -74,15 +74,15 @@ impl serenity::app::State for Editor {
 
     fn receive_event(
         &mut self,
-        context: &mut serenity::app::Context,
-        event: &serenity::winit::event::Event<()>,
+        context: &mut phantom::app::Context,
+        event: &phantom::winit::event::Event<()>,
     ) {
-        if let serenity::winit::event::Event::WindowEvent {
+        if let phantom::winit::event::Event::WindowEvent {
             event:
-                serenity::winit::event::WindowEvent::KeyboardInput {
+                phantom::winit::event::WindowEvent::KeyboardInput {
                     event:
-                        serenity::winit::event::KeyEvent {
-                            physical_key: serenity::winit::keyboard::PhysicalKey::Code(key_code),
+                        phantom::winit::event::KeyEvent {
+                            physical_key: phantom::winit::keyboard::PhysicalKey::Code(key_code),
                             state,
                             ..
                         },
@@ -94,8 +94,8 @@ impl serenity::app::State for Editor {
             if matches!(
                 (key_code, state),
                 (
-                    serenity::winit::keyboard::KeyCode::Escape,
-                    serenity::winit::event::ElementState::Pressed
+                    phantom::winit::keyboard::KeyCode::Escape,
+                    phantom::winit::event::ElementState::Pressed
                 )
             ) {
                 context.should_exit = true;
@@ -103,11 +103,11 @@ impl serenity::app::State for Editor {
         }
     }
 
-    fn update(&mut self, context: &mut serenity::app::Context, ui: &serenity::egui::Context) {
+    fn update(&mut self, context: &mut phantom::app::Context, ui: &phantom::egui::Context) {
         self.receive_messages(context);
 
-        serenity::egui::Area::new("viewport").show(ui, |ui| {
-            ui.with_layer_id(serenity::egui::LayerId::background(), |ui| {
+        phantom::egui::Area::new("viewport").show(ui, |ui| {
+            ui.with_layer_id(phantom::egui::LayerId::background(), |ui| {
                 if let Some(selected_graph_node_index) = self.selected_graph_node_index {
                     if let Some(scene_index) = context.world.default_scene_index {
                         let scene = &context.world.scenes[scene_index];
@@ -123,7 +123,7 @@ impl serenity::app::State for Editor {
 
                             ui.group(|ui| {
                                 let (_camera_position, projection, view) =
-                                    serenity::world::create_camera_matrices(
+                                    phantom::world::create_camera_matrices(
                                         &context.world,
                                         scene,
                                         4.0 / 3.0, // TODO: use a real aspect ratio here
@@ -146,11 +146,11 @@ impl serenity::app::State for Editor {
             });
         });
 
-        serenity::egui::TopBottomPanel::top("top_panel")
+        phantom::egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .show(ui, |ui| {
-                serenity::egui::menu::bar(ui, |ui| {
-                    serenity::egui::global_dark_light_mode_switch(ui);
+                phantom::egui::menu::bar(ui, |ui| {
+                    phantom::egui::global_dark_light_mode_switch(ui);
                     ui.menu_button("File", |ui| {
                         if ui.button("Import asset (gltf/glb)...").clicked() {
                             if let Some(path) = rfd::FileDialog::new()
@@ -167,7 +167,7 @@ impl serenity::app::State for Editor {
 
                     ui.separator();
 
-                    serenity::egui::ComboBox::from_label("Mode")
+                    phantom::egui::ComboBox::from_label("Mode")
                         .selected_text(format!("{:?}", self.gizmo_mode))
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
@@ -189,7 +189,7 @@ impl serenity::app::State for Editor {
 
                     ui.separator();
 
-                    serenity::egui::ComboBox::from_label("Orientation")
+                    phantom::egui::ComboBox::from_label("Orientation")
                         .selected_text(format!("{:?}", self.gizmo_orientation))
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
@@ -208,7 +208,7 @@ impl serenity::app::State for Editor {
                 });
             });
 
-        serenity::egui::SidePanel::left("left_panel")
+        phantom::egui::SidePanel::left("left_panel")
             .resizable(true)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -216,7 +216,7 @@ impl serenity::app::State for Editor {
                 if let Some(scene_index) = context.world.default_scene_index {
                     let scene = &context.world.scenes[scene_index];
                     ui.group(|ui| {
-                        serenity::egui::ScrollArea::vertical()
+                        phantom::egui::ScrollArea::vertical()
                             .id_source(ui.next_auto_id())
                             .show(ui, |ui| {
                                 node_ui(
@@ -237,7 +237,7 @@ impl serenity::app::State for Editor {
     }
 }
 
-fn camera_system(context: &mut serenity::app::Context) {
+fn camera_system(context: &mut phantom::app::Context) {
     let Some(scene_index) = context.world.default_scene_index else {
         return;
     };
@@ -262,7 +262,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::keyboard::KeyCode::KeyW)
+        .is_key_pressed(phantom::winit::keyboard::KeyCode::KeyW)
     {
         camera.orientation.offset -= camera.orientation.direction() * speed;
         sync_transform = true;
@@ -270,7 +270,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::keyboard::KeyCode::KeyA)
+        .is_key_pressed(phantom::winit::keyboard::KeyCode::KeyA)
     {
         camera.orientation.offset += camera.orientation.right() * speed;
         sync_transform = true;
@@ -278,7 +278,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::keyboard::KeyCode::KeyS)
+        .is_key_pressed(phantom::winit::keyboard::KeyCode::KeyS)
     {
         camera.orientation.offset += camera.orientation.direction() * speed;
         sync_transform = true;
@@ -286,7 +286,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::keyboard::KeyCode::KeyD)
+        .is_key_pressed(phantom::winit::keyboard::KeyCode::KeyD)
     {
         camera.orientation.offset -= camera.orientation.right() * speed;
         sync_transform = true;
@@ -294,7 +294,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::keyboard::KeyCode::Space)
+        .is_key_pressed(phantom::winit::keyboard::KeyCode::Space)
     {
         camera.orientation.offset += camera.orientation.up() * speed;
         sync_transform = true;
@@ -302,7 +302,7 @@ fn camera_system(context: &mut serenity::app::Context) {
 
     if context
         .io
-        .is_key_pressed(serenity::winit::keyboard::KeyCode::ShiftLeft)
+        .is_key_pressed(phantom::winit::keyboard::KeyCode::ShiftLeft)
     {
         camera.orientation.offset -= camera.orientation.up() * speed;
         sync_transform = true;
@@ -334,17 +334,17 @@ fn camera_system(context: &mut serenity::app::Context) {
 }
 
 fn node_ui(
-    world: &serenity::world::World,
-    ui: &mut serenity::egui::Ui,
-    graph: &serenity::world::SceneGraph,
-    graph_node_index: serenity::petgraph::graph::NodeIndex,
-    selected_graph_node_index: &mut Option<serenity::petgraph::graph::NodeIndex>,
+    world: &phantom::world::World,
+    ui: &mut phantom::egui::Ui,
+    graph: &phantom::world::SceneGraph,
+    graph_node_index: phantom::petgraph::graph::NodeIndex,
+    selected_graph_node_index: &mut Option<phantom::petgraph::graph::NodeIndex>,
 ) {
     let id = ui.make_persistent_id(ui.next_auto_id());
-    serenity::egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+    phantom::egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
         .show_header(ui, |ui| {
             let node_index = graph[graph_node_index];
-            let serenity::world::NodeMetadata { name } = &world.metadata[node_index];
+            let phantom::world::NodeMetadata { name } = &world.metadata[node_index];
             let selected = selected_graph_node_index
                 .as_ref()
                 .map(|index| *index == graph_node_index)
@@ -361,7 +361,7 @@ fn node_ui(
         })
         .body(|ui| {
             graph
-                .neighbors_directed(graph_node_index, serenity::petgraph::Direction::Outgoing)
+                .neighbors_directed(graph_node_index, phantom::petgraph::Direction::Outgoing)
                 .for_each(|child_index| {
                     node_ui(world, ui, graph, child_index, selected_graph_node_index);
                 });
@@ -373,15 +373,15 @@ pub enum Message {
     Command(Command),
 }
 
-#[derive(Debug, Clone, serenity::serde::Serialize, serenity::serde::Deserialize)]
-#[serde(crate = "serenity::serde")]
+#[derive(Debug, Clone, phantom::serde::Serialize, phantom::serde::Deserialize)]
+#[serde(crate = "phantom::serde")]
 pub enum Command {
     Exit,
     ImportGltfFile(String),
 }
 
-#[derive(Debug, Clone, serenity::serde::Serialize, serenity::serde::Deserialize)]
-#[serde(crate = "serenity::serde")]
+#[derive(Debug, Clone, phantom::serde::Serialize, phantom::serde::Deserialize)]
+#[serde(crate = "phantom::serde")]
 pub enum Topic {
     Command,
     Toast,

@@ -1,22 +1,22 @@
 fn main() {
-    serenity::app::run(Sandbox);
+    phantom::app::run(Sandbox);
 }
 
 #[derive(Default)]
 pub struct Sandbox;
 
-impl serenity::app::State for Sandbox {
+impl phantom::app::State for Sandbox {
     fn receive_event(
         &mut self,
-        context: &mut serenity::app::Context,
-        event: &serenity::winit::event::Event<()>,
+        context: &mut phantom::app::Context,
+        event: &phantom::winit::event::Event<()>,
     ) {
-        if let serenity::winit::event::Event::WindowEvent {
+        if let phantom::winit::event::Event::WindowEvent {
             event:
-                serenity::winit::event::WindowEvent::KeyboardInput {
+                phantom::winit::event::WindowEvent::KeyboardInput {
                     event:
-                        serenity::winit::event::KeyEvent {
-                            physical_key: serenity::winit::keyboard::PhysicalKey::Code(key_code),
+                        phantom::winit::event::KeyEvent {
+                            physical_key: phantom::winit::keyboard::PhysicalKey::Code(key_code),
                             state,
                             ..
                         },
@@ -28,8 +28,8 @@ impl serenity::app::State for Sandbox {
             if matches!(
                 (key_code, state),
                 (
-                    serenity::winit::keyboard::KeyCode::Escape,
-                    serenity::winit::event::ElementState::Pressed
+                    phantom::winit::keyboard::KeyCode::Escape,
+                    phantom::winit::event::ElementState::Pressed
                 )
             ) {
                 context.should_exit = true;
@@ -37,8 +37,8 @@ impl serenity::app::State for Sandbox {
         }
     }
 
-    fn update(&mut self, _context: &mut serenity::app::Context, ui: &serenity::egui::Context) {
-        serenity::egui::Window::new("Sandbox").show(ui, |ui| {
+    fn update(&mut self, _context: &mut phantom::app::Context, ui: &phantom::egui::Context) {
+        phantom::egui::Window::new("Sandbox").show(ui, |ui| {
             ui.label("Place ui controls here");
         });
     }
