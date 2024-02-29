@@ -1,3 +1,9 @@
 [workspace]
-members = ["apps/editor", "crates/serenity"]
+members = [
+    "apps/editor",
+    "crates/gltf",
+    "crates/engine",
+    "crates/world",
+    "apps/template",
+]
 resolver = "2"

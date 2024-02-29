@@ -764,6 +764,20 @@ dependencies = [
 
 [[package]]
 name = "gltf"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "gltf 1.4.0",
+ "image",
+ "nalgebra",
+ "nalgebra-glm",
+ "petgraph",
+ "serde",
+ "world",
+]
+
+[[package]]
+name = "gltf"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b78f069cf941075835822953c345b9e1edd67ae347b81ace3aea9de38c2ef33"
@@ -1743,7 +1757,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui-winit",
- "gltf",
+ "gltf 0.1.0",
  "image",
  "log",
  "nalgebra",
@@ -1754,6 +1768,7 @@ dependencies = [
  "uuid",
  "wgpu",
  "winit",
+ "world",
 ]
 
 [[package]]
@@ -1894,6 +1909,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "template"
+version = "0.1.0"
+dependencies = [
+ "serenity",
 ]
 
 [[package]]
@@ -2760,6 +2782,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97a4882e6b134d6c28953a387571f1acdd3496830d5e36c5e3a1075580ea641c"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "world"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "nalgebra",
+ "nalgebra-glm",
+ "petgraph",
+ "serde",
 ]
 
 [[package]]

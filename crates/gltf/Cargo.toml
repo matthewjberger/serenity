@@ -1,0 +1,17 @@
+[package]
+name = "gltf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytemuck = { version = "1.14.0", features = ["derive"] }
+gltf = { version = "1.4.0", features = ["KHR_lights_punctual", "names"] }
+image = "0.24.7"
+nalgebra = "0.32.3"
+nalgebra-glm = { version = "0.18.0", features = [
+    "serde-serialize",
+    "convert-bytemuck",
+] }
+petgraph = { version = "0.6.4", features = ["serde-1"] }
+serde = { version = "1.0.193", features = ["derive"] }
+world = { path = "../world" }

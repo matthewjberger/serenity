@@ -9,31 +9,10 @@ pub struct Editor {
 
 impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
-        context.import_file("resources/gltf/helmet.glb");
+        context.import_file("glb/helmet.glb");
         let light_node = context.world.add_node();
         context.world.add_light_to_node(light_node);
         context.world.add_root_node_to_scenegraph(0, light_node);
-
-        // Add a grid of instanced meshes to the first visible node in the scene
-        let grid_size = 10;
-        let spacing = 4.0;
-        (0..grid_size).for_each(|x| {
-            (0..grid_size).for_each(|y| {
-                context.world.add_node_instance(
-                    1,
-                    serenity::world::Instance {
-                        transform: serenity::world::Transform {
-                            translation: serenity::nalgebra_glm::Vec3::new(
-                                x as f32 * spacing,
-                                y as f32 * spacing,
-                                0.0,
-                            ),
-                            ..Default::default()
-                        },
-                    },
-                );
-            });
-        });
     }
 
     fn receive_event(
