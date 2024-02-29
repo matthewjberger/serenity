@@ -4,6 +4,6 @@ members = [
     "crates/gltf",
     "crates/engine",
     "crates/world",
-    "apps/template",
+    "apps/template", "crates/render",
 ]
 resolver = "2"

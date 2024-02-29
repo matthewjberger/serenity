@@ -59,7 +59,7 @@ pub fn run(mut state: impl State + 'static) {
 
     let window_size = window.inner_size();
     let (width, height) = (window_size.width, window_size.height);
-    let mut renderer = crate::render::Renderer::new(window.clone(), width, height);
+    let mut renderer = render::Renderer::new(window.clone(), width, height);
 
     let mut context = Context {
         io: crate::io::Io::default(),
@@ -175,7 +175,7 @@ pub fn run(mut state: impl State + 'static) {
                         }
                     };
                     renderer.render_frame(
-                        &mut context,
+                        &mut context.world,
                         &textures_delta,
                         paint_jobs,
                         screen_descriptor,

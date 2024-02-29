@@ -1645,6 +1645,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "render"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "egui",
+ "egui-wgpu",
+ "log",
+ "nalgebra",
+ "nalgebra-glm",
+ "petgraph",
+ "pollster",
+ "serde",
+ "wgpu",
+ "winit",
+ "world",
+]
+
+[[package]]
 name = "renderdoc-sys"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1764,6 +1782,7 @@ dependencies = [
  "nalgebra-glm",
  "petgraph",
  "pollster",
+ "render",
  "serde",
  "uuid",
  "wgpu",

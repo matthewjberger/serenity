@@ -41,7 +41,7 @@ impl<'window> Renderer<'window> {
 
     pub fn render_frame(
         &mut self,
-        context: &mut crate::app::Context,
+        world: &mut world::World,
         textures_delta: &egui::epaint::textures::TexturesDelta,
         paint_jobs: Vec<egui::ClippedPrimitive>,
         screen_descriptor: egui_wgpu::ScreenDescriptor,
@@ -125,7 +125,7 @@ impl<'window> Renderer<'window> {
             });
 
             if let Some(view) = self.view.as_mut() {
-                view.render(&mut render_pass, &self.gpu, &context.world);
+                view.render(&mut render_pass, &self.gpu, world);
             }
 
             self.gui_renderer
@@ -143,53 +143,51 @@ impl<'window> Renderer<'window> {
     }
 }
 
-// impl From<world::Sampler> for wgpu::SamplerDescriptor<'static> {
-//     fn from(sampler: world::Sampler) -> Self {
-//         let min_filter = match sampler.min_filter {
-//             world::MinFilter::Linear
-//             | world::MinFilter::LinearMipmapLinear
-//             | world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
-//             world::MinFilter::Nearest
-//             | world::MinFilter::NearestMipmapLinear
-//             | world::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
-//         };
+pub fn map_sampler(sampler: &world::Sampler) -> wgpu::SamplerDescriptor<'static> {
+    let min_filter = match sampler.min_filter {
+        world::MinFilter::Linear
+        | world::MinFilter::LinearMipmapLinear
+        | world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
+        world::MinFilter::Nearest
+        | world::MinFilter::NearestMipmapLinear
+        | world::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
+    };
 
-//         let mipmap_filter = match sampler.min_filter {
-//             world::MinFilter::Linear
-//             | world::MinFilter::LinearMipmapLinear
-//             | world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
-//             world::MinFilter::Nearest
-//             | world::MinFilter::NearestMipmapLinear
-//             | world::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
-//         };
+    let mipmap_filter = match sampler.min_filter {
+        world::MinFilter::Linear
+        | world::MinFilter::LinearMipmapLinear
+        | world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
+        world::MinFilter::Nearest
+        | world::MinFilter::NearestMipmapLinear
+        | world::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
+    };
 
-//         let mag_filter = match sampler.mag_filter {
-//             world::MagFilter::Linear => wgpu::FilterMode::Linear,
-//             world::MagFilter::Nearest => wgpu::FilterMode::Nearest,
-//         };
+    let mag_filter = match sampler.mag_filter {
+        world::MagFilter::Linear => wgpu::FilterMode::Linear,
+        world::MagFilter::Nearest => wgpu::FilterMode::Nearest,
+    };
 
-//         let address_mode_u = match sampler.wrap_s {
-//             world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-//             world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-//             world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
-//         };
+    let address_mode_u = match sampler.wrap_s {
+        world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+        world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+        world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+    };
 
-//         let address_mode_v = match sampler.wrap_t {
-//             world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-//             world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-//             world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
-//         };
+    let address_mode_v = match sampler.wrap_t {
+        world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+        world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+        world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+    };
 
-//         let address_mode_w = wgpu::AddressMode::Repeat;
+    let address_mode_w = wgpu::AddressMode::Repeat;
 
-//         wgpu::SamplerDescriptor {
-//             address_mode_u,
-//             address_mode_v,
-//             address_mode_w,
-//             mag_filter,
-//             min_filter,
-//             mipmap_filter,
-//             ..Default::default()
-//         }
-//     }
-// }
+    wgpu::SamplerDescriptor {
+        address_mode_u,
+        address_mode_v,
+        address_mode_w,
+        mag_filter,
+        min_filter,
+        mipmap_filter,
+        ..Default::default()
+    }
+}
