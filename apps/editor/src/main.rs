@@ -1,11 +1,13 @@
 fn main() {
-    serenity::app::run(Game);
+    serenity::app::run(Editor::default());
 }
 
 #[derive(Default)]
-pub struct Game;
+pub struct Editor {
+    selected_graph_node_index: Option<serenity::petgraph::graph::NodeIndex>,
+}
 
-impl serenity::app::State for Game {
+impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
         context.import_file("resources/gltf/helmet.glb");
         let light_node = context.world.add_node();
@@ -66,12 +68,31 @@ impl serenity::app::State for Game {
     }
 
     fn update(&mut self, context: &mut serenity::app::Context, ui: &serenity::egui::Context) {
-        serenity::egui::Window::new("wgpu")
-            .resizable(false)
-            .fixed_pos((10.0, 10.0))
+        serenity::egui::SidePanel::left("left_panel")
+            .resizable(true)
             .show(ui, |ui| {
-                ui.heading("Hello, world!");
+                ui.set_width(ui.available_width());
+                ui.heading("Scene Tree");
+                if let Some(scene_index) = context.world.default_scene_index {
+                    let scene = &context.world.scenes[scene_index];
+                    ui.group(|ui| {
+                        serenity::egui::ScrollArea::vertical()
+                            .id_source(ui.next_auto_id())
+                            .show(ui, |ui| {
+                                node_ui(
+                                    &context.world,
+                                    ui,
+                                    &scene.graph,
+                                    0.into(),
+                                    &mut self.selected_graph_node_index,
+                                );
+                            });
+                    });
+                }
+
+                ui.allocate_space(ui.available_size());
             });
+
         camera_system(context);
     }
 }
@@ -170,4 +191,39 @@ fn camera_system(context: &mut serenity::app::Context) {
         transform.translation = camera.orientation.position();
         transform.rotation = camera.orientation.look_at_offset();
     }
+}
+
+fn node_ui(
+    world: &serenity::world::World,
+    ui: &mut serenity::egui::Ui,
+    graph: &serenity::world::SceneGraph,
+    graph_node_index: serenity::petgraph::graph::NodeIndex,
+    selected_graph_node_index: &mut Option<serenity::petgraph::graph::NodeIndex>,
+) {
+    let id = ui.make_persistent_id(ui.next_auto_id());
+    serenity::egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+        .show_header(ui, |ui| {
+            let node_index = graph[graph_node_index];
+            let serenity::world::NodeMetadata { name } = &world.metadata[node_index];
+            let selected = selected_graph_node_index
+                .as_ref()
+                .map(|index| *index == graph_node_index)
+                .unwrap_or_default();
+            let response = ui.selectable_label(selected, format!("🔴 {name}"));
+            if response.clicked() {
+                *selected_graph_node_index = Some(graph_node_index);
+            }
+            response.context_menu(|ui| {
+                if ui.button("Add child node").clicked() {
+                    //
+                }
+            });
+        })
+        .body(|ui| {
+            graph
+                .neighbors_directed(graph_node_index, serenity::petgraph::Direction::Outgoing)
+                .for_each(|child_index| {
+                    node_ui(world, ui, graph, child_index, selected_graph_node_index);
+                });
+        });
 }
