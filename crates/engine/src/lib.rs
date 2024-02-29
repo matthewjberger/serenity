@@ -9,3 +9,4 @@ pub use petgraph;
 pub use uuid;
 pub use winit;
 pub use world;
+pub use world::serde;

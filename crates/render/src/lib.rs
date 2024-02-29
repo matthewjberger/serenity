@@ -1,6 +1,6 @@
-pub mod gpu;
-pub mod hdr;
-pub mod render;
-pub mod view;
+mod gpu;
+mod hdr;
+mod render;
+mod view;
 
 pub use render::Renderer;

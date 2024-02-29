@@ -128,6 +128,7 @@ impl<'window> Renderer<'window> {
                 view.render(&mut render_pass, &self.gpu, world);
             }
 
+            // TODO: move this to a another pass that runs after the scene is rendered and post-processed
             self.gui_renderer
                 .render(&mut render_pass, &paint_jobs, &screen_descriptor);
         }
@@ -143,6 +144,7 @@ impl<'window> Renderer<'window> {
     }
 }
 
+#[allow(dead_code)]
 pub fn map_sampler(sampler: &world::Sampler) -> wgpu::SamplerDescriptor<'static> {
     let min_filter = match sampler.min_filter {
         world::MinFilter::Linear

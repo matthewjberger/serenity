@@ -59,6 +59,12 @@ pub fn run(mut state: impl State + 'static) {
                 .receive_event(&event, renderer.gpu.window_center());
             state.receive_event(&mut context, &event);
 
+            if context.should_reload_view {
+                renderer.load_world(&context.world);
+                context.should_reload_view = false;
+                return;
+            }
+
             match event {
                 winit::event::Event::WindowEvent { ref event, .. } => {
                     match event {
@@ -100,11 +106,6 @@ pub fn run(mut state: impl State + 'static) {
 
                     if context.should_exit {
                         elwt.exit();
-                    }
-
-                    if context.should_reload_view {
-                        renderer.load_world(&context.world);
-                        context.should_reload_view = false;
                     }
 
                     let gui_input = gui_state.take_egui_input(&window);

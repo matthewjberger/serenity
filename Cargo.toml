@@ -1,9 +1,10 @@
 [workspace]
 members = [
     "apps/editor",
-    "crates/gltf",
+    "apps/template",
     "crates/engine",
+    "crates/gltf",
+    "crates/render",
     "crates/world",
-    "apps/template", "crates/render",
 ]
 resolver = "2"
