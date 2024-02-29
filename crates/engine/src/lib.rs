@@ -1,5 +1,5 @@
 pub mod app;
-pub mod io;
+pub use app::run;
 
 pub use egui;
 pub use gltf;

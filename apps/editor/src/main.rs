@@ -1,5 +1,5 @@
 fn main() {
-    serenity::app::run(Editor::default());
+    serenity::run(Editor::default());
 }
 
 #[derive(Default)]
