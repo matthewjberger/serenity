@@ -12,7 +12,8 @@ nalgebra-glm = { version = "0.18.0", features = [
     "serde-serialize",
     "convert-bytemuck",
 ] }
-pollster = "0.3.0"
 wgpu = "0.19.1"
-
 world = { path = "../world" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = "=0.3.67"

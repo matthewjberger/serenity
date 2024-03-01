@@ -6,7 +6,7 @@ pub use app::petgraph;
 pub use app::uuid;
 pub use app::winit;
 
-pub use gltf;
+pub use phantom_gltf as gltf;
 
 pub use world;
 pub use world::serde;

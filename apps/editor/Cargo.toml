@@ -8,3 +8,4 @@ egui-gizmo = "0.16.1"
 rfd = "0.14.0"
 
 phantom = { path = "../../crates/engine" }
+camera = { path = "../../crates/camera" }

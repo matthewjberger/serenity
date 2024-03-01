@@ -3,4 +3,4 @@ mod hdr;
 mod render;
 mod view;
 
-pub use render::Renderer;
+pub use render::{Renderer, ScreenDescriptor};

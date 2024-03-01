@@ -1,10 +1,43 @@
-pub fn run(mut state: impl State + 'static) {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run(state: impl State + 'static) {
+    env_logger::init();
+    pollster::block_on(run_async(state));
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn run(state: impl State + 'static) {
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    console_log::init().expect("could not initialize logger");
+    wasm_bindgen_futures::spawn_local(run_async(state));
+}
+
+pub async fn run_async(mut state: impl State + 'static) {
     let event_loop =
         winit::event_loop::EventLoop::new().expect("Failed to create winit event loop!");
 
-    let window = winit::window::WindowBuilder::new()
-        .with_title(state.title())
-        .with_transparent(true)
+    #[allow(unused_mut)]
+    let mut builder = winit::window::WindowBuilder::new();
+
+    if !cfg!(target_arch = "wasm32") {
+        builder = builder.with_title(state.title());
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use web_sys::wasm_bindgen::JsCast;
+        use winit::platform::web::WindowBuilderExtWebSys;
+        let canvas = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .get_element_by_id("canvas")
+            .unwrap()
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .unwrap();
+        builder = builder.with_canvas(Some(canvas));
+    }
+
+    let window = builder
         .build(&event_loop)
         .expect("Failed to create winit window!");
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
@@ -13,12 +46,12 @@ pub fn run(mut state: impl State + 'static) {
 
     let window_size = window.inner_size();
     let (width, height) = (window_size.width, window_size.height);
-    let mut renderer = render::Renderer::new(window.clone(), width, height);
+    let mut renderer = render::Renderer::new(window.clone(), width, height).await;
 
     let mut context = Context {
         io: Io::default(),
         delta_time: 0.01,
-        last_frame: std::time::Instant::now(),
+        last_frame: chrono::Utc::now(),
         world: world::World::default(),
         should_exit: false,
         should_reload_view: false,
@@ -40,11 +73,11 @@ pub fn run(mut state: impl State + 'static) {
     event_loop
         .run(move |event, elwt| {
             if let winit::event::Event::NewEvents(..) = &event {
-                context.delta_time = (std::time::Instant::now()
-                    .duration_since(context.last_frame)
-                    .as_micros() as f64)
-                    / 1_000_000_f64;
-                context.last_frame = std::time::Instant::now();
+                let now = chrono::Utc::now();
+                let duration_since_last_frame = now.signed_duration_since(context.last_frame);
+                context.delta_time =
+                    duration_since_last_frame.num_microseconds().unwrap() as f64 / 1_000_000.0;
+                context.last_frame = now;
             }
 
             if let winit::event::Event::WindowEvent { ref event, .. } = &event {
@@ -124,7 +157,7 @@ pub fn run(mut state: impl State + 'static) {
 
                     let screen_descriptor = {
                         let window_size = window.inner_size();
-                        egui_wgpu::ScreenDescriptor {
+                        render::ScreenDescriptor {
                             size_in_pixels: [window_size.width, window_size.height],
                             pixels_per_point: window.scale_factor() as f32,
                         }
@@ -146,7 +179,7 @@ pub fn run(mut state: impl State + 'static) {
 pub struct Context {
     pub io: Io,
     pub delta_time: f64,
-    pub last_frame: std::time::Instant,
+    pub last_frame: chrono::DateTime<chrono::Utc>,
     pub world: world::World,
     pub should_exit: bool,
     pub should_reload_view: bool,

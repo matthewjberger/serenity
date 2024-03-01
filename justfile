@@ -13,6 +13,9 @@ check:
     cargo check --all --tests
     cargo fmt --all --check
 
+docs $project="phantom":
+    cargo doc --open -p {{project}}
+
 format:
     cargo fmt --all
 
@@ -24,6 +27,9 @@ lint:
 
 run $project="editor":
     cargo run -r -p {{project}}
+
+run-web $project="editor":
+    trunk serve --open --config apps/{{project}}/Trunk.toml
 
 udeps:
     cargo machete

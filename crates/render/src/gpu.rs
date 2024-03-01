@@ -92,7 +92,7 @@ impl<'window> Gpu<'window> {
                         required_features: wgpu::Features::all_webgpu_mask(),
 
                         #[cfg(target_arch = "wasm32")]
-                        required_limits: wgpu::Limits::downlevel_defaults(),
+                        required_limits: wgpu::Limits::default(),
 
                         #[cfg(not(target_arch = "wasm32"))]
                         required_limits: wgpu::Limits {

@@ -7,8 +7,12 @@ pub struct Renderer<'window> {
 }
 
 impl<'window> Renderer<'window> {
-    pub fn new(window: impl Into<wgpu::SurfaceTarget<'window>>, width: u32, height: u32) -> Self {
-        let gpu = pollster::block_on(crate::gpu::Gpu::new_async(window, width, height));
+    pub async fn new(
+        window: impl Into<wgpu::SurfaceTarget<'window>>,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let gpu = crate::gpu::Gpu::new_async(window, width, height).await;
         let depth_texture_view = gpu.create_depth_texture(width, height);
         let hdr_pipeline = crate::hdr::HdrPipeline::new(&gpu, width, height);
         let gui_renderer = egui_wgpu::Renderer::new(
@@ -44,7 +48,7 @@ impl<'window> Renderer<'window> {
         world: &mut world::World,
         textures_delta: &egui::epaint::textures::TexturesDelta,
         paint_jobs: Vec<egui::ClippedPrimitive>,
-        screen_descriptor: egui_wgpu::ScreenDescriptor,
+        screen_descriptor: ScreenDescriptor,
     ) {
         let mut encoder = self
             .gpu
@@ -62,6 +66,10 @@ impl<'window> Renderer<'window> {
             self.gui_renderer.free_texture(id);
         }
 
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: screen_descriptor.size_in_pixels,
+            pixels_per_point: screen_descriptor.pixels_per_point,
+        };
         self.gui_renderer.update_buffers(
             &self.gpu.device,
             &self.gpu.queue,
@@ -191,5 +199,24 @@ pub fn map_sampler(sampler: &world::Sampler) -> wgpu::SamplerDescriptor<'static>
         min_filter,
         mipmap_filter,
         ..Default::default()
+    }
+}
+
+/// Information about the screen used for rendering.
+pub struct ScreenDescriptor {
+    /// Size of the window in physical pixels.
+    pub size_in_pixels: [u32; 2],
+
+    /// HiDPI scale factor (pixels per point).
+    pub pixels_per_point: f32,
+}
+
+impl ScreenDescriptor {
+    /// size in "logical" points
+    pub fn screen_size_in_points(&self) -> [f32; 2] {
+        [
+            self.size_in_pixels[0] as f32 / self.pixels_per_point,
+            self.size_in_pixels[1] as f32 / self.pixels_per_point,
+        ]
     }
 }
