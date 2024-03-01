@@ -1,13 +1,5 @@
 [workspace]
-members = [
-    "apps/editor",
-    "apps/template",
-    "crates/app", "crates/camera",
-    "crates/engine",
-    "crates/gltf",
-    "crates/render",
-    "crates/world",
-]
+members = ["apps/*", "crates/*"]
 resolver = "2"
 
 [profile.release]
