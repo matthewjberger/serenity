@@ -17,7 +17,7 @@ impl<'window> Renderer<'window> {
         let hdr_pipeline = crate::hdr::HdrPipeline::new(&gpu, width, height);
         let gui_renderer = egui_wgpu::Renderer::new(
             &gpu.device,
-            wgpu::TextureFormat::Rgba16Float,
+            wgpu::TextureFormat::Bgra8UnormSrgb,
             Some(wgpu::TextureFormat::Depth32Float),
             1,
         );
@@ -135,17 +135,38 @@ impl<'window> Renderer<'window> {
             if let Some(view) = self.view.as_mut() {
                 view.render(&mut render_pass, &self.gpu, world);
             }
+        }
 
-            // TODO: move this to a another pass that runs after the scene is rendered and post-processed
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Hdr::render_to_texture"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_texture_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            render_pass.set_pipeline(&self.hdr_pipeline.pipeline);
+            render_pass.set_bind_group(0, &self.hdr_pipeline.bind_group, &[]);
+            render_pass.draw(0..3, 0..1);
+
             self.gui_renderer
                 .render(&mut render_pass, &paint_jobs, &screen_descriptor);
         }
 
-        self.hdr_pipeline.render_to_texture(
-            &mut encoder,
-            &surface_texture_view,
-            &self.depth_texture_view,
-        );
         self.gpu.queue.submit(std::iter::once(encoder.finish()));
 
         surface_texture.present();
