@@ -2,6 +2,22 @@
 pub struct Game;
 
 impl phantom::app::State for Game {
+    fn initialize(&mut self, context: &mut phantom::app::Context) {
+        context.world = phantom::gltf::import_gltf_slice(include_bytes!("../level.glb"));
+        if context.world.scenes.is_empty() {
+            context.world.scenes.push(phantom::world::Scene::default());
+            context.world.default_scene_index = Some(0);
+        }
+        if let Some(scene_index) = context.world.default_scene_index {
+            context.world.add_camera_to_scenegraph(scene_index);
+        }
+        context.should_reload_view = true;
+
+        let light_node = context.world.add_node();
+        context.world.add_light_to_node(light_node);
+        context.world.add_root_node_to_scenegraph(0, light_node);
+    }
+
     fn receive_event(
         &mut self,
         context: &mut phantom::app::Context,
@@ -33,9 +49,7 @@ impl phantom::app::State for Game {
         }
     }
 
-    fn update(&mut self, _context: &mut phantom::app::Context, ui: &phantom::egui::Context) {
-        phantom::egui::Window::new("Game").show(ui, |ui| {
-            ui.label("Place ui controls here");
-        });
+    fn update(&mut self, context: &mut phantom::app::Context, _ui: &phantom::egui::Context) {
+        camera::camera_system(context);
     }
 }

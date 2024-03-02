@@ -202,7 +202,7 @@ impl phantom::app::State for Editor {
                 });
             });
 
-        phantom::egui::SidePanel::left("left_panel")
+        phantom::egui::Window::new("Scene Tree")
             .resizable(true)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());

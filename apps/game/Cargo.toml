@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 phantom = { path = "../../crates/engine" }
+camera = { path = "../../crates/camera" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2.91"
