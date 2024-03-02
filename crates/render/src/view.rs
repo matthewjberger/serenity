@@ -7,6 +7,7 @@ pub struct WorldRender {
     pub object_buffer: wgpu::Buffer,
     pub object_buffer_bind_group: wgpu::BindGroup,
     pub pipeline: wgpu::RenderPipeline,
+    pub instance_id_buffer: wgpu::Buffer,
 }
 
 impl WorldRender {
@@ -107,10 +108,21 @@ impl WorldRender {
             wgpu::PolygonMode::Fill,
         );
 
+        let instance_ids: Vec<u32> = (0..objects.len() as u32).collect();
+        let instance_id_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            &gpu.device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Instance ID Buffer"),
+                contents: bytemuck::cast_slice(&instance_ids),
+                usage: wgpu::BufferUsages::VERTEX,
+            },
+        );
+
         Self {
             vertex_buffer,
             index_buffer,
             indirect_draw_buffer,
+            instance_id_buffer,
             uniform_buffer,
             uniform_bind_group,
             object_buffer,
@@ -147,6 +159,7 @@ impl WorldRender {
         render_pass.set_bind_group(1, &self.object_buffer_bind_group, &[]);
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.instance_id_buffer.slice(..));
 
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_pipeline(&self.pipeline);
@@ -243,7 +256,10 @@ fn create_pipeline(
             vertex: wgpu::VertexState {
                 module: &shader_module,
                 entry_point: "vertex_main",
-                buffers: &[vertex_description(&vertex_attributes())],
+                buffers: &[
+                    vertex_description(&vertex_attributes()),
+                    index_description(&index_attributes()),
+                ],
             },
             primitive: wgpu::PrimitiveState {
                 front_face: wgpu::FrontFace::Ccw,
@@ -302,6 +318,21 @@ pub fn vertex_attributes() -> Vec<wgpu::VertexAttribute> {
 pub fn vertex_description(attributes: &[wgpu::VertexAttribute]) -> wgpu::VertexBufferLayout {
     wgpu::VertexBufferLayout {
         array_stride: std::mem::size_of::<world::Vertex>() as wgpu::BufferAddress,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes,
+    }
+}
+
+pub fn index_attributes() -> Vec<wgpu::VertexAttribute> {
+    wgpu::vertex_attr_array![
+        7 => Uint32, // instance_id
+    ]
+    .to_vec()
+}
+
+pub fn index_description(attributes: &[wgpu::VertexAttribute]) -> wgpu::VertexBufferLayout {
+    wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<u32>() as wgpu::BufferAddress,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes,
     }
@@ -373,6 +404,8 @@ struct VertexInput {
     @location(4) joint_0: vec4<f32>,
     @location(5) weight_0: vec4<f32>,
     @location(6) color_0: vec3<f32>,
+    @location(7) instance_id: u32,
+
 }
 
 struct VertexOutput {
@@ -383,8 +416,8 @@ struct VertexOutput {
 }
 
 @vertex
-fn vertex_main(@builtin(instance_index) instance_index: u32, vert: VertexInput) -> VertexOutput {
-    let mvp = ubo.projection * ubo.view * objects[instance_index].matrix; 
+fn vertex_main(vert: VertexInput) -> VertexOutput {
+    let mvp = ubo.projection * ubo.view * objects[vert.instance_id].matrix; 
     var out: VertexOutput;
     out.position = mvp * vec4(vert.position, 1.0);
     out.normal = vec4((mvp * vec4(vert.normal, 0.0)).xyz, 1.0).xyz;

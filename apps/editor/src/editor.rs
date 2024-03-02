@@ -51,7 +51,7 @@ impl Editor {
 
 impl phantom::app::State for Editor {
     fn initialize(&mut self, context: &mut phantom::app::Context) {
-        context.world = phantom::gltf::import_gltf_slice(include_bytes!("../glb/helmet.glb"));
+        context.world = phantom::gltf::import_gltf_slice(include_bytes!("../glb/Lantern.glb"));
         if context.world.scenes.is_empty() {
             context.world.scenes.push(phantom::world::Scene::default());
             context.world.default_scene_index = Some(0);
