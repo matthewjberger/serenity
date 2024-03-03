@@ -13,7 +13,7 @@ nalgebra-glm = { version = "0.18.0", features = [
     "convert-bytemuck",
 ] }
 wgpu = "0.19.1"
-world = { path = "../world" }
+asset = { path = "../asset" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = "=0.3.67"

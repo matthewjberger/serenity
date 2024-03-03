@@ -8,5 +8,5 @@ pub use app::winit;
 
 pub use phantom_gltf as gltf;
 
-pub use world;
-pub use world::serde;
+pub use asset;
+pub use asset::serde;

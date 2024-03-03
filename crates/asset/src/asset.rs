@@ -1,5 +1,6 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct World {
+pub struct Asset {
+    pub name: String,
     pub default_scene_index: Option<usize>,
     pub animations: Vec<Animation>,
     pub cameras: Vec<Camera>,
@@ -19,7 +20,7 @@ pub struct World {
     pub instances: Vec<Instance>,
 }
 
-impl World {
+impl Asset {
     pub fn add_child_node_to_scenegraph(
         &mut self,
         scene_index: usize,
@@ -36,15 +37,15 @@ impl World {
 
     pub fn add_node(&mut self) -> usize {
         let transform_index = self.transforms.len();
-        self.transforms.push(crate::world::Transform::default());
+        self.transforms.push(crate::asset::Transform::default());
 
         let metadata_index = self.metadata.len();
-        self.metadata.push(crate::world::NodeMetadata {
+        self.metadata.push(crate::asset::NodeMetadata {
             name: "Node".to_string(),
         });
 
         let node_index = self.nodes.len();
-        let node = crate::world::Node {
+        let node = crate::asset::Node {
             transform_index,
             metadata_index,
             ..Default::default()
@@ -88,7 +89,7 @@ impl World {
 
     pub fn add_camera_to_node(&mut self, node_index: usize) {
         let node = &mut self.nodes[node_index];
-        let camera = crate::world::Camera::default();
+        let camera = crate::asset::Camera::default();
         let transform = &mut self.transforms[node.transform_index];
         transform.translation = camera.orientation.position();
         transform.rotation = camera.orientation.look_at_offset();
@@ -305,19 +306,19 @@ impl Default for Projection {
 }
 
 pub fn create_camera_matrices(
-    world: &crate::world::World,
-    scene: &crate::world::Scene,
+    asset: &crate::asset::Asset,
+    scene: &crate::asset::Scene,
     aspect_ratio: f32,
 ) -> (nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4) {
     let camera_graph_node_index = scene
         .default_camera_graph_node_index
         .expect("No default camera is configured for the scene!");
     let camera_node_index = scene.graph[camera_graph_node_index];
-    let camera_node = &world.nodes[camera_node_index];
-    let camera = &world.cameras[camera_node
+    let camera_node = &asset.nodes[camera_node_index];
+    let camera = &asset.cameras[camera_node
         .camera_index
         .expect("Every scene requires a camera")];
-    let transform = Transform::from(world.global_transform(&scene.graph, camera_graph_node_index));
+    let transform = Transform::from(asset.global_transform(&scene.graph, camera_graph_node_index));
     (
         transform.translation,
         camera.projection_matrix(aspect_ratio),

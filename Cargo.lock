@@ -146,6 +146,7 @@ dependencies = [
 name = "app"
 version = "0.1.0"
 dependencies = [
+ "asset",
  "chrono",
  "console_error_panic_hook",
  "console_log",
@@ -162,7 +163,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "winit",
- "world",
 ]
 
 [[package]]
@@ -217,6 +217,16 @@ dependencies = [
  "serde_repr",
  "url",
  "zbus",
+]
+
+[[package]]
+name = "asset"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "nalgebra-glm",
+ "petgraph",
+ "serde",
 ]
 
 [[package]]
@@ -877,7 +887,6 @@ name = "editor"
 version = "0.1.0"
 dependencies = [
  "camera",
- "egui-gizmo",
  "phantom",
  "rfd",
 ]
@@ -892,17 +901,6 @@ dependencies = [
  "epaint",
  "log",
  "nohash-hasher",
-]
-
-[[package]]
-name = "egui-gizmo"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cdd96a8bc62d5a7dbc03fe08db7bb44b50ac4167c2620d482530d9af6e27634"
-dependencies = [
- "egui",
- "glam",
- "mint",
 ]
 
 [[package]]
@@ -1309,15 +1307,6 @@ dependencies = [
  "khronos_api",
  "log",
  "xml-rs",
-]
-
-[[package]]
-name = "glam"
-version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "151665d9be52f9bb40fc7966565d39666f2d1e69233571b71b87791c7e0528b3"
-dependencies = [
- "mint",
 ]
 
 [[package]]
@@ -2098,19 +2087,19 @@ name = "phantom"
 version = "0.1.0"
 dependencies = [
  "app",
+ "asset",
  "phantom_gltf",
- "world",
 ]
 
 [[package]]
 name = "phantom_gltf"
 version = "0.1.0"
 dependencies = [
+ "asset",
  "gltf",
  "image",
  "nalgebra-glm",
  "petgraph",
- "world",
 ]
 
 [[package]]
@@ -2357,6 +2346,7 @@ checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
 name = "render"
 version = "0.1.0"
 dependencies = [
+ "asset",
  "bytemuck",
  "egui",
  "egui-wgpu",
@@ -2364,7 +2354,6 @@ dependencies = [
  "nalgebra-glm",
  "web-sys",
  "wgpu",
- "world",
 ]
 
 [[package]]
@@ -3558,16 +3547,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97a4882e6b134d6c28953a387571f1acdd3496830d5e36c5e3a1075580ea641c"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "world"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "nalgebra-glm",
- "petgraph",
- "serde",
 ]
 
 [[package]]

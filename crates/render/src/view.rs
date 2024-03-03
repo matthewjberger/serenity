@@ -28,11 +28,11 @@ pub struct WorldRender {
 }
 
 impl WorldRender {
-    pub fn new(gpu: &crate::gpu::Gpu, world: &world::World) -> Self {
+    pub fn new(gpu: &crate::gpu::Gpu, asset: &asset::Asset) -> Self {
         let (vertex_buffer, index_buffer) =
-            create_geometry_buffers(&gpu.device, &world.vertices, &world.indices);
+            create_geometry_buffers(&gpu.device, &asset.vertices, &asset.indices);
 
-        let mut instances = world
+        let mut instances = asset
             .instances
             .iter()
             .map(|instance| instance.transform.matrix())
@@ -51,54 +51,54 @@ impl WorldRender {
 
         let (uniform_buffer, uniform_bind_group_layout, uniform_bind_group) = create_uniform(gpu);
         let (dynamic_uniform_buffer, dynamic_uniform_bind_group_layout, dynamic_uniform_bind_group) =
-            create_dynamic_uniform(gpu, world.transforms.len() as _);
+            create_dynamic_uniform(gpu, asset.transforms.len() as _);
 
-        let samplers = world
+        let samplers = asset
             .samplers
             .iter()
             .map(|sampler| {
                 gpu.device.create_sampler(&wgpu::SamplerDescriptor {
                     address_mode_u: match sampler.wrap_s {
-                        world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-                        world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-                        world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+                        asset::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+                        asset::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+                        asset::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
                     },
                     address_mode_v: match sampler.wrap_t {
-                        world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-                        world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-                        world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+                        asset::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+                        asset::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+                        asset::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
                     },
                     address_mode_w: wgpu::AddressMode::ClampToEdge,
                     mag_filter: match sampler.mag_filter {
-                        world::MagFilter::Nearest => wgpu::FilterMode::Nearest,
-                        world::MagFilter::Linear => wgpu::FilterMode::Linear,
+                        asset::MagFilter::Nearest => wgpu::FilterMode::Nearest,
+                        asset::MagFilter::Linear => wgpu::FilterMode::Linear,
                     },
                     min_filter: match sampler.min_filter {
-                        world::MinFilter::Nearest
-                        | world::MinFilter::NearestMipmapLinear
-                        | world::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
-                        world::MinFilter::Linear
-                        | world::MinFilter::LinearMipmapLinear
-                        | world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
+                        asset::MinFilter::Nearest
+                        | asset::MinFilter::NearestMipmapLinear
+                        | asset::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
+                        asset::MinFilter::Linear
+                        | asset::MinFilter::LinearMipmapLinear
+                        | asset::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
                     },
                     mipmap_filter: match sampler.min_filter {
-                        world::MinFilter::Nearest
-                        | world::MinFilter::NearestMipmapLinear
-                        | world::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
-                        world::MinFilter::Linear
-                        | world::MinFilter::LinearMipmapLinear
-                        | world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
+                        asset::MinFilter::Nearest
+                        | asset::MinFilter::NearestMipmapLinear
+                        | asset::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
+                        asset::MinFilter::Linear
+                        | asset::MinFilter::LinearMipmapLinear
+                        | asset::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
                     },
                     ..Default::default()
                 })
             })
             .collect::<Vec<_>>();
 
-        let textures = world
+        let textures = asset
             .textures
             .iter()
             .map(|texture| {
-                let image = &world.images[texture.image_index];
+                let image = &asset.images[texture.image_index];
                 create_texture(gpu, image)
             })
             .collect::<Vec<_>>();
@@ -145,7 +145,7 @@ impl WorldRender {
                     ],
                 });
 
-        let material_bind_groups = world
+        let material_bind_groups = asset
             .materials
             .iter()
             .map(|material| {
@@ -190,7 +190,7 @@ impl WorldRender {
                         wgpu::BindGroupEntry {
                             binding: 2,
                             resource: wgpu::BindingResource::Sampler(
-                                &samplers[world.textures[material.base_color_texture_index]
+                                &samplers[asset.textures[material.base_color_texture_index]
                                     .sampler_index
                                     .unwrap()],
                             ),
@@ -203,7 +203,7 @@ impl WorldRender {
 
         let object_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("object_buffer"),
-            size: (std::mem::size_of::<nalgebra_glm::Mat4>() * world.transforms.len())
+            size: (std::mem::size_of::<nalgebra_glm::Mat4>() * asset.transforms.len())
                 as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -302,15 +302,15 @@ impl WorldRender {
         &'rp mut self,
         render_pass: &mut wgpu::RenderPass<'rp>,
         gpu: &crate::gpu::Gpu,
-        world: &world::World,
+        asset: &asset::Asset,
     ) {
-        let Some(scene_index) = world.default_scene_index else {
+        let Some(scene_index) = asset.default_scene_index else {
             return;
         };
-        let scene = &world.scenes[scene_index];
+        let scene = &asset.scenes[scene_index];
 
         let (camera_position, projection, view) =
-            world::create_camera_matrices(world, scene, gpu.aspect_ratio());
+            asset::create_camera_matrices(asset, scene, gpu.aspect_ratio());
 
         gpu.queue.write_buffer(
             &self.uniform_buffer,
@@ -322,7 +322,7 @@ impl WorldRender {
             }]),
         );
 
-        let mut mesh_ubos = vec![DynamicUniform::default(); world.transforms.len()];
+        let mut mesh_ubos = vec![DynamicUniform::default(); asset.transforms.len()];
         scene
             .graph
             .node_indices()
@@ -330,7 +330,7 @@ impl WorldRender {
             .for_each(|(index, graph_node_index)| {
                 mesh_ubos[index] = DynamicUniform {
                     object_index: index as u32,
-                    number_of_instances: world.nodes[scene.graph[graph_node_index]].instances.len()
+                    number_of_instances: asset.nodes[scene.graph[graph_node_index]].instances.len()
                         as _,
                     ..Default::default()
                 };
@@ -344,7 +344,7 @@ impl WorldRender {
             });
 
         for (ubo_index, graph_node_index) in scene.graph.node_indices().enumerate() {
-            let transform = world.global_transform(&scene.graph, graph_node_index);
+            let transform = asset.global_transform(&scene.graph, graph_node_index);
             let offset =
                 (ubo_index * std::mem::size_of::<nalgebra_glm::Mat4>()) as wgpu::BufferAddress;
             gpu.queue.write_buffer(
@@ -363,9 +363,9 @@ impl WorldRender {
 
         // TODO: Refactor this to first sort by material, then sort materials by alpha mode and render Opaque, Mask, then Blend
         for alpha_mode in [
-            world::AlphaMode::Opaque,
-            world::AlphaMode::Mask,
-            world::AlphaMode::Blend,
+            asset::AlphaMode::Opaque,
+            asset::AlphaMode::Mask,
+            asset::AlphaMode::Blend,
         ]
         .iter()
         {
@@ -375,30 +375,30 @@ impl WorldRender {
                 .enumerate()
                 .for_each(|(ubo_index, graph_node_index)| {
                     let node_index = scene.graph[graph_node_index];
-                    let node = &world.nodes[node_index];
+                    let node = &asset.nodes[node_index];
                     if let Some(mesh_index) = node.mesh_index {
                         let offset = (ubo_index as u64 * gpu.alignment()) as wgpu::DynamicOffset;
                         render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
 
-                        let mesh = &world.meshes[mesh_index];
+                        let mesh = &asset.meshes[mesh_index];
 
                         for primitive in mesh.primitives.iter() {
                             match primitive.topology {
-                                world::PrimitiveTopology::Lines => {
+                                asset::PrimitiveTopology::Lines => {
                                     render_pass.set_pipeline(&self.line_pipeline);
                                 }
-                                world::PrimitiveTopology::LineStrip => {
+                                asset::PrimitiveTopology::LineStrip => {
                                     render_pass.set_pipeline(&self.line_strip_pipeline);
                                 }
-                                world::PrimitiveTopology::Triangles => match alpha_mode {
-                                    world::AlphaMode::Opaque | world::AlphaMode::Mask => {
+                                asset::PrimitiveTopology::Triangles => match alpha_mode {
+                                    asset::AlphaMode::Opaque | asset::AlphaMode::Mask => {
                                         render_pass.set_pipeline(&self.triangle_filled_pipeline);
                                     }
-                                    world::AlphaMode::Blend => {
+                                    asset::AlphaMode::Blend => {
                                         render_pass.set_pipeline(&self.triangle_blended_pipeline);
                                     }
                                 },
-                                world::PrimitiveTopology::TriangleStrip => {
+                                asset::PrimitiveTopology::TriangleStrip => {
                                     render_pass.set_pipeline(&self.triangle_strip_pipeline);
                                 }
 
@@ -485,7 +485,7 @@ fn create_uniform(gpu: &crate::gpu::Gpu) -> (wgpu::Buffer, wgpu::BindGroupLayout
 
 fn create_geometry_buffers(
     device: &wgpu::Device,
-    vertices: &[world::Vertex],
+    vertices: &[asset::Vertex],
     indices: &[u32],
 ) -> (wgpu::Buffer, wgpu::Buffer) {
     let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
@@ -605,7 +605,7 @@ pub fn vertex_attributes() -> Vec<wgpu::VertexAttribute> {
 
 pub fn vertex_description(attributes: &[wgpu::VertexAttribute]) -> wgpu::VertexBufferLayout {
     wgpu::VertexBufferLayout {
-        array_stride: std::mem::size_of::<world::Vertex>() as wgpu::BufferAddress,
+        array_stride: std::mem::size_of::<asset::Vertex>() as wgpu::BufferAddress,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes,
     }
@@ -644,7 +644,7 @@ impl Default for Material {
     }
 }
 
-pub fn create_texture(gpu: &crate::gpu::Gpu, image: &world::Image) -> wgpu::Texture {
+pub fn create_texture(gpu: &crate::gpu::Gpu, image: &asset::Image) -> wgpu::Texture {
     let size = wgpu::Extent3d {
         width: image.width,
         height: image.height,

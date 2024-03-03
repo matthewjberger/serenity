@@ -11,4 +11,4 @@ nalgebra-glm = { version = "0.18.0", features = [
     "convert-bytemuck",
 ] }
 petgraph = { version = "0.6.4", features = ["serde-1"] }
-world = { path = "../world" }
+asset = { path = "../asset" }

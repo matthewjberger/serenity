@@ -30,10 +30,10 @@ impl<'window> Renderer<'window> {
         }
     }
 
-    pub fn load_world(&mut self, world: &world::World) {
+    pub fn load_world(&mut self, asset: &asset::Asset) {
         let _ = std::mem::replace(
             &mut self.view,
-            Some(crate::view::WorldRender::new(&self.gpu, world)),
+            Some(crate::view::WorldRender::new(&self.gpu, asset)),
         );
     }
 
@@ -45,7 +45,7 @@ impl<'window> Renderer<'window> {
 
     pub fn render_frame(
         &mut self,
-        world: &mut world::World,
+        asset: &mut asset::Asset,
         textures_delta: &egui::epaint::textures::TexturesDelta,
         paint_jobs: Vec<egui::ClippedPrimitive>,
         screen_descriptor: ScreenDescriptor,
@@ -133,7 +133,7 @@ impl<'window> Renderer<'window> {
             });
 
             if let Some(view) = self.view.as_mut() {
-                view.render(&mut render_pass, &self.gpu, world);
+                view.render(&mut render_pass, &self.gpu, asset);
             }
         }
 
@@ -174,40 +174,40 @@ impl<'window> Renderer<'window> {
 }
 
 #[allow(dead_code)]
-pub fn map_sampler(sampler: &world::Sampler) -> wgpu::SamplerDescriptor<'static> {
+pub fn map_sampler(sampler: &asset::Sampler) -> wgpu::SamplerDescriptor<'static> {
     let min_filter = match sampler.min_filter {
-        world::MinFilter::Linear
-        | world::MinFilter::LinearMipmapLinear
-        | world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
-        world::MinFilter::Nearest
-        | world::MinFilter::NearestMipmapLinear
-        | world::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
+        asset::MinFilter::Linear
+        | asset::MinFilter::LinearMipmapLinear
+        | asset::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
+        asset::MinFilter::Nearest
+        | asset::MinFilter::NearestMipmapLinear
+        | asset::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
     };
 
     let mipmap_filter = match sampler.min_filter {
-        world::MinFilter::Linear
-        | world::MinFilter::LinearMipmapLinear
-        | world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
-        world::MinFilter::Nearest
-        | world::MinFilter::NearestMipmapLinear
-        | world::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
+        asset::MinFilter::Linear
+        | asset::MinFilter::LinearMipmapLinear
+        | asset::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
+        asset::MinFilter::Nearest
+        | asset::MinFilter::NearestMipmapLinear
+        | asset::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
     };
 
     let mag_filter = match sampler.mag_filter {
-        world::MagFilter::Linear => wgpu::FilterMode::Linear,
-        world::MagFilter::Nearest => wgpu::FilterMode::Nearest,
+        asset::MagFilter::Linear => wgpu::FilterMode::Linear,
+        asset::MagFilter::Nearest => wgpu::FilterMode::Nearest,
     };
 
     let address_mode_u = match sampler.wrap_s {
-        world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-        world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-        world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+        asset::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+        asset::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+        asset::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
     };
 
     let address_mode_v = match sampler.wrap_t {
-        world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-        world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-        world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+        asset::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+        asset::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+        asset::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
     };
 
     let address_mode_w = wgpu::AddressMode::Repeat;

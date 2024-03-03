@@ -52,7 +52,7 @@ pub async fn run_async(mut state: impl State + 'static) {
         io: Io::default(),
         delta_time: 0.01,
         last_frame: chrono::Utc::now(),
-        world: world::World::default(),
+        world: asset::Asset::default(),
         should_exit: false,
         should_reload_view: false,
     };
@@ -180,7 +180,7 @@ pub struct Context {
     pub io: Io,
     pub delta_time: f64,
     pub last_frame: chrono::DateTime<chrono::Utc>,
-    pub world: world::World,
+    pub world: asset::Asset,
     pub should_exit: bool,
     pub should_reload_view: bool,
 }

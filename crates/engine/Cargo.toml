@@ -10,4 +10,4 @@ repository = "https://github.com/matthewjberger/phantom"
 [dependencies]
 app = { path = "../app" }
 phantom_gltf = { path = "../gltf" }
-world = { path = "../world" }
+asset = { path = "../asset" }

@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-egui-gizmo = "0.16.1"
 rfd = "0.14.0"
 
 phantom = { path = "../../crates/engine" }

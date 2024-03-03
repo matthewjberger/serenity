@@ -1,11 +1,11 @@
 // .gltf / .glb
-pub fn import_gltf_file(path: impl AsRef<std::path::Path>) -> world::World {
+pub fn import_gltf_file(path: impl AsRef<std::path::Path>) -> asset::Asset {
     let (gltf, buffers, raw_images) = gltf::import(path.as_ref()).expect("Failed to import gltf");
     import_gltf(raw_images, gltf, buffers)
 }
 
 // .glb only
-pub fn import_gltf_slice(bytes: &[u8]) -> world::World {
+pub fn import_gltf_slice(bytes: &[u8]) -> asset::Asset {
     let (gltf, buffers, raw_images) = gltf::import_slice(bytes).expect("Failed to import gltf");
     import_gltf(raw_images, gltf, buffers)
 }
@@ -14,19 +14,19 @@ fn import_gltf(
     raw_images: Vec<gltf::image::Data>,
     gltf: gltf::Document,
     buffers: Vec<gltf::buffer::Data>,
-) -> world::World {
+) -> asset::Asset {
     let images = raw_images.into_iter().map(map_image).collect::<Vec<_>>();
     let samplers = gltf.samplers().map(map_sampler).collect::<Vec<_>>();
     let textures = gltf
         .textures()
-        .map(|texture| world::Texture {
+        .map(|texture| asset::Texture {
             image_index: texture.source().index(),
             sampler_index: texture.sampler().index(),
         })
         .collect::<Vec<_>>();
     let materials = gltf
         .materials()
-        .map(|material| world::Material {
+        .map(|material| asset::Material {
             base_color_factor: nalgebra_glm::Vec4::from(
                 material.pbr_metallic_roughness().base_color_factor(),
             ),
@@ -50,11 +50,11 @@ fn import_gltf(
         let meshes = gltf
             .meshes()
             .map(|mesh| {
-                world::Mesh {
+                asset::Mesh {
                     primitives: mesh
                         .primitives()
                         .map(|primitive| {
-                            let primitive_vertices: Vec<world::Vertex> = {
+                            let primitive_vertices: Vec<asset::Vertex> = {
                                 let reader =
                                     primitive.reader(|buffer| Some(&*buffers[buffer.index()]));
 
@@ -137,7 +137,7 @@ fn import_gltf(
                                 positions
                                     .into_iter()
                                     .enumerate()
-                                    .map(|(index, position)| world::Vertex {
+                                    .map(|(index, position)| asset::Vertex {
                                         position,
                                         normal: normals[index],
                                         uv_0: uv_0[index],
@@ -156,7 +156,7 @@ fn import_gltf(
                                 .map(|read_indices| read_indices.into_u32().collect())
                                 .unwrap_or_default();
 
-                            let primitive = world::Primitive {
+                            let primitive = asset::Primitive {
                                 topology: map_mesh_mode(primitive.mode()),
                                 material_index: primitive.material().index(),
                                 vertex_offset: vertices.len(),
@@ -187,21 +187,21 @@ fn import_gltf(
                 fn visit_node(
                     parent_graph_node_index: Option<petgraph::graph::NodeIndex>,
                     node: &gltf::Node,
-                    scene: &mut world::Scene,
-                    nodes: &mut Vec<world::Node>,
-                    transforms: &mut Vec<world::Transform>,
-                    metadata: &mut Vec<world::NodeMetadata>,
+                    scene: &mut asset::Scene,
+                    nodes: &mut Vec<asset::Node>,
+                    transforms: &mut Vec<asset::Transform>,
+                    metadata: &mut Vec<asset::NodeMetadata>,
                 ) {
                     let transform_index = transforms.len();
-                    transforms.push(world::Transform::from(node.transform().decomposed()));
+                    transforms.push(asset::Transform::from(node.transform().decomposed()));
 
                     let metadata_index = metadata.len();
-                    metadata.push(world::NodeMetadata {
+                    metadata.push(asset::NodeMetadata {
                         name: node.name().unwrap_or("Node").to_string(),
                     });
 
                     let node_index = nodes.len();
-                    nodes.push(world::Node {
+                    nodes.push(asset::Node {
                         metadata_index,
                         transform_index,
                         camera_index: node.camera().map(|camera| camera.index()),
@@ -229,18 +229,18 @@ fn import_gltf(
                     });
                 }
 
-                let mut scene = world::Scene::default();
+                let mut scene = asset::Scene::default();
 
                 let transform_index = transforms.len();
-                transforms.push(world::Transform::default());
+                transforms.push(asset::Transform::default());
 
                 let metadata_index = metadata.len();
-                metadata.push(world::NodeMetadata {
+                metadata.push(asset::NodeMetadata {
                     name: "Scene Root".to_string(),
                 });
 
                 let node_index = nodes.len();
-                nodes.push(world::Node {
+                nodes.push(asset::Node {
                     transform_index,
                     metadata_index,
                     ..Default::default()
@@ -279,13 +279,13 @@ fn import_gltf(
                     let inverse_bind_matrix = *inverse_bind_matrices
                         .get(index)
                         .unwrap_or(&nalgebra_glm::Mat4::identity());
-                    world::Joint {
+                    asset::Joint {
                         inverse_bind_matrix,
                         target_node_index: joint_node.index(),
                     }
                 })
                 .collect();
-            world::Skin { joints }
+            asset::Skin { joints }
         })
         .collect::<Vec<_>>();
 
@@ -309,29 +309,29 @@ fn import_gltf(
                             let translations = translations
                                 .map(nalgebra_glm::Vec3::from)
                                 .collect::<Vec<_>>();
-                            world::TransformationSet::Translations(translations)
+                            asset::TransformationSet::Translations(translations)
                         }
                         gltf::animation::util::ReadOutputs::Rotations(rotations) => {
                             let rotations = rotations
                                 .into_f32()
                                 .map(nalgebra_glm::Vec4::from)
                                 .collect::<Vec<_>>();
-                            world::TransformationSet::Rotations(rotations)
+                            asset::TransformationSet::Rotations(rotations)
                         }
                         gltf::animation::util::ReadOutputs::Scales(scales) => {
                             let scales = scales.map(nalgebra_glm::Vec3::from).collect::<Vec<_>>();
-                            world::TransformationSet::Scales(scales)
+                            asset::TransformationSet::Scales(scales)
                         }
                         gltf::animation::util::ReadOutputs::MorphTargetWeights(weights) => {
                             let morph_target_weights = weights.into_f32().collect::<Vec<_>>();
-                            world::TransformationSet::MorphTargetWeights(morph_target_weights)
+                            asset::TransformationSet::MorphTargetWeights(morph_target_weights)
                         }
                     };
-                    world::Channel {
+                    asset::Channel {
                         target_node_index,
                         inputs,
                         transformations,
-                        interpolation: world::Interpolation::default(),
+                        interpolation: asset::Interpolation::default(),
                     }
                 })
                 .collect::<Vec<_>>();
@@ -339,7 +339,7 @@ fn import_gltf(
                 .iter()
                 .flat_map(|channel| channel.inputs.iter().copied())
                 .fold(0.0, f32::max);
-            world::Animation {
+            asset::Animation {
                 channels,
                 time: 0.0,
                 max_animation_time,
@@ -356,7 +356,7 @@ fn import_gltf(
 
     let default_scene_index = if !scenes.is_empty() { Some(0) } else { None };
 
-    world::World {
+    asset::Asset {
         default_scene_index,
         animations,
         cameras,
@@ -377,50 +377,50 @@ fn import_gltf(
     }
 }
 
-fn map_alpha_mode(mode: gltf::material::AlphaMode) -> world::AlphaMode {
+fn map_alpha_mode(mode: gltf::material::AlphaMode) -> asset::AlphaMode {
     match mode {
-        gltf::material::AlphaMode::Opaque => world::AlphaMode::Opaque,
-        gltf::material::AlphaMode::Mask => world::AlphaMode::Mask,
-        gltf::material::AlphaMode::Blend => world::AlphaMode::Blend,
+        gltf::material::AlphaMode::Opaque => asset::AlphaMode::Opaque,
+        gltf::material::AlphaMode::Mask => asset::AlphaMode::Mask,
+        gltf::material::AlphaMode::Blend => asset::AlphaMode::Blend,
     }
 }
 
-fn map_sampler(gltf_sampler: gltf::texture::Sampler) -> world::Sampler {
+fn map_sampler(gltf_sampler: gltf::texture::Sampler) -> asset::Sampler {
     let min_filter = gltf_sampler
         .min_filter()
         .map(|filter| match filter {
-            gltf::texture::MinFilter::Nearest => world::MinFilter::Nearest,
+            gltf::texture::MinFilter::Nearest => asset::MinFilter::Nearest,
             gltf::texture::MinFilter::NearestMipmapNearest => {
-                world::MinFilter::NearestMipmapNearest
+                asset::MinFilter::NearestMipmapNearest
             }
-            gltf::texture::MinFilter::LinearMipmapNearest => world::MinFilter::LinearMipmapNearest,
-            gltf::texture::MinFilter::Linear => world::MinFilter::Linear,
-            gltf::texture::MinFilter::LinearMipmapLinear => world::MinFilter::LinearMipmapLinear,
-            gltf::texture::MinFilter::NearestMipmapLinear => world::MinFilter::NearestMipmapLinear,
+            gltf::texture::MinFilter::LinearMipmapNearest => asset::MinFilter::LinearMipmapNearest,
+            gltf::texture::MinFilter::Linear => asset::MinFilter::Linear,
+            gltf::texture::MinFilter::LinearMipmapLinear => asset::MinFilter::LinearMipmapLinear,
+            gltf::texture::MinFilter::NearestMipmapLinear => asset::MinFilter::NearestMipmapLinear,
         })
         .unwrap_or_default();
 
     let mag_filter = gltf_sampler
         .mag_filter()
         .map(|filter| match filter {
-            gltf::texture::MagFilter::Linear => world::MagFilter::Linear,
-            gltf::texture::MagFilter::Nearest => world::MagFilter::Nearest,
+            gltf::texture::MagFilter::Linear => asset::MagFilter::Linear,
+            gltf::texture::MagFilter::Nearest => asset::MagFilter::Nearest,
         })
         .unwrap_or_default();
 
     let wrap_s = match gltf_sampler.wrap_s() {
-        gltf::texture::WrappingMode::ClampToEdge => world::WrappingMode::ClampToEdge,
-        gltf::texture::WrappingMode::MirroredRepeat => world::WrappingMode::MirroredRepeat,
-        gltf::texture::WrappingMode::Repeat => world::WrappingMode::Repeat,
+        gltf::texture::WrappingMode::ClampToEdge => asset::WrappingMode::ClampToEdge,
+        gltf::texture::WrappingMode::MirroredRepeat => asset::WrappingMode::MirroredRepeat,
+        gltf::texture::WrappingMode::Repeat => asset::WrappingMode::Repeat,
     };
 
     let wrap_t = match gltf_sampler.wrap_t() {
-        gltf::texture::WrappingMode::ClampToEdge => world::WrappingMode::ClampToEdge,
-        gltf::texture::WrappingMode::MirroredRepeat => world::WrappingMode::MirroredRepeat,
-        gltf::texture::WrappingMode::Repeat => world::WrappingMode::Repeat,
+        gltf::texture::WrappingMode::ClampToEdge => asset::WrappingMode::ClampToEdge,
+        gltf::texture::WrappingMode::MirroredRepeat => asset::WrappingMode::MirroredRepeat,
+        gltf::texture::WrappingMode::Repeat => asset::WrappingMode::Repeat,
     };
 
-    world::Sampler {
+    asset::Sampler {
         min_filter,
         mag_filter,
         wrap_s,
@@ -428,7 +428,7 @@ fn map_sampler(gltf_sampler: gltf::texture::Sampler) -> world::Sampler {
     }
 }
 
-fn map_image(data: gltf::image::Data) -> world::Image {
+fn map_image(data: gltf::image::Data) -> asset::Image {
     let img = match data.format {
         gltf::image::Format::R8 => image::DynamicImage::ImageLuma8(
             image::ImageBuffer::from_raw(data.width, data.height, data.pixels.to_vec()).unwrap(),
@@ -446,19 +446,19 @@ fn map_image(data: gltf::image::Data) -> world::Image {
     };
     let rgba_img = img.to_rgba8();
     let pixels = rgba_img.into_raw();
-    world::Image {
+    asset::Image {
         pixels,
-        format: world::ImageFormat::R8G8B8A8,
+        format: asset::ImageFormat::R8G8B8A8,
         width: data.width,
         height: data.height,
     }
 }
 
-fn map_camera(camera: gltf::Camera) -> world::Camera {
-    world::Camera {
+fn map_camera(camera: gltf::Camera) -> asset::Camera {
+    asset::Camera {
         projection: match camera.projection() {
             gltf::camera::Projection::Perspective(camera) => {
-                world::Projection::Perspective(world::PerspectiveCamera {
+                asset::Projection::Perspective(asset::PerspectiveCamera {
                     aspect_ratio: camera.aspect_ratio(),
                     y_fov_rad: camera.yfov(),
                     z_far: camera.zfar(),
@@ -466,7 +466,7 @@ fn map_camera(camera: gltf::Camera) -> world::Camera {
                 })
             }
             gltf::camera::Projection::Orthographic(camera) => {
-                world::Projection::Orthographic(world::OrthographicCamera {
+                asset::Projection::Orthographic(asset::OrthographicCamera {
                     x_mag: camera.xmag(),
                     y_mag: camera.ymag(),
                     z_far: camera.zfar(),
@@ -474,12 +474,12 @@ fn map_camera(camera: gltf::Camera) -> world::Camera {
                 })
             }
         },
-        orientation: world::Orientation::default(),
+        orientation: asset::Orientation::default(),
     }
 }
 
-fn map_light(light: gltf::khr_lights_punctual::Light) -> world::Light {
-    world::Light {
+fn map_light(light: gltf::khr_lights_punctual::Light) -> asset::Light {
+    asset::Light {
         color: light.color().into(),
         intensity: light.intensity(),
         range: light.range().unwrap_or(0.0),
@@ -487,28 +487,28 @@ fn map_light(light: gltf::khr_lights_punctual::Light) -> world::Light {
     }
 }
 
-fn map_light_kind(kind: gltf::khr_lights_punctual::Kind) -> world::LightKind {
+fn map_light_kind(kind: gltf::khr_lights_punctual::Kind) -> asset::LightKind {
     match kind {
-        gltf::khr_lights_punctual::Kind::Directional => world::LightKind::Directional,
-        gltf::khr_lights_punctual::Kind::Point => world::LightKind::Point,
+        gltf::khr_lights_punctual::Kind::Directional => asset::LightKind::Directional,
+        gltf::khr_lights_punctual::Kind::Point => asset::LightKind::Point,
         gltf::khr_lights_punctual::Kind::Spot {
             inner_cone_angle,
             outer_cone_angle,
-        } => world::LightKind::Spot {
+        } => asset::LightKind::Spot {
             inner_cone_angle,
             outer_cone_angle,
         },
     }
 }
 
-fn map_mesh_mode(mode: gltf::mesh::Mode) -> world::PrimitiveTopology {
+fn map_mesh_mode(mode: gltf::mesh::Mode) -> asset::PrimitiveTopology {
     match mode {
-        gltf::mesh::Mode::Points => world::PrimitiveTopology::Points,
-        gltf::mesh::Mode::Lines => world::PrimitiveTopology::Lines,
-        gltf::mesh::Mode::LineStrip => world::PrimitiveTopology::LineStrip,
-        gltf::mesh::Mode::TriangleStrip => world::PrimitiveTopology::TriangleStrip,
-        gltf::mesh::Mode::LineLoop => world::PrimitiveTopology::LineLoop,
-        gltf::mesh::Mode::TriangleFan => world::PrimitiveTopology::TriangleFan,
-        gltf::mesh::Mode::Triangles => world::PrimitiveTopology::Triangles,
+        gltf::mesh::Mode::Points => asset::PrimitiveTopology::Points,
+        gltf::mesh::Mode::Lines => asset::PrimitiveTopology::Lines,
+        gltf::mesh::Mode::LineStrip => asset::PrimitiveTopology::LineStrip,
+        gltf::mesh::Mode::TriangleStrip => asset::PrimitiveTopology::TriangleStrip,
+        gltf::mesh::Mode::LineLoop => asset::PrimitiveTopology::LineLoop,
+        gltf::mesh::Mode::TriangleFan => asset::PrimitiveTopology::TriangleFan,
+        gltf::mesh::Mode::Triangles => asset::PrimitiveTopology::Triangles,
     }
 }
