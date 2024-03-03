@@ -18,7 +18,7 @@ impl<'window> Renderer<'window> {
         let gui_renderer = egui_wgpu::Renderer::new(
             &gpu.device,
             wgpu::TextureFormat::Bgra8UnormSrgb,
-            Some(wgpu::TextureFormat::Depth32Float),
+            Some(wgpu::TextureFormat::Depth24PlusStencil8),
             1,
         );
         Self {
@@ -154,13 +154,17 @@ impl<'window> Renderer<'window> {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
                     }),
-                    stencil_ops: None,
+                    stencil_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0),
+                        store: wgpu::StoreOp::Store,
+                    }),
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
             render_pass.set_pipeline(&self.hdr_pipeline.pipeline);
             render_pass.set_bind_group(0, &self.hdr_pipeline.bind_group, &[]);
+            render_pass.set_stencil_reference(1);
             render_pass.draw(0..3, 0..1);
 
             self.gui_renderer

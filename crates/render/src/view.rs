@@ -245,6 +245,7 @@ impl WorldRender {
             false,
             wgpu::PrimitiveTopology::LineList,
             wgpu::PolygonMode::Fill,
+            wgpu::StencilState::default(),
         );
 
         let line_strip_pipeline = create_pipeline(
@@ -253,14 +254,49 @@ impl WorldRender {
             false,
             wgpu::PrimitiveTopology::LineStrip,
             wgpu::PolygonMode::Fill,
+            wgpu::StencilState::default(),
         );
 
+        // Sets the stencil buffer, render first
+        let outline_stencil_state = wgpu::StencilFaceState {
+            compare: wgpu::CompareFunction::Always,
+            fail_op: wgpu::StencilOperation::Keep,
+            depth_fail_op: wgpu::StencilOperation::Keep,
+            pass_op: wgpu::StencilOperation::Replace,
+        };
+        let triangle_filled_pipeline_outline = create_pipeline(
+            gpu,
+            bind_group_layouts,
+            false,
+            wgpu::PrimitiveTopology::TriangleList,
+            wgpu::PolygonMode::Fill,
+            wgpu::StencilState {
+                front: outline_stencil_state.clone(),
+                back: outline_stencil_state.clone(),
+                read_mask: 0xFF,
+                write_mask: 0xFF,
+            },
+        );
+
+        // Discard if written to by the stencil buffer
+        let outline_stencil_state = wgpu::StencilFaceState {
+            compare: wgpu::CompareFunction::Always,
+            fail_op: wgpu::StencilOperation::Keep,
+            depth_fail_op: wgpu::StencilOperation::Keep,
+            pass_op: wgpu::StencilOperation::Replace,
+        };
         let triangle_filled_pipeline = create_pipeline(
             gpu,
             bind_group_layouts,
             false,
             wgpu::PrimitiveTopology::TriangleList,
             wgpu::PolygonMode::Fill,
+            wgpu::StencilState {
+                front: outline_stencil_state.clone(),
+                back: outline_stencil_state.clone(),
+                read_mask: 0xFF,
+                write_mask: 0xFF,
+            },
         );
 
         let triangle_blended_pipeline = create_pipeline(
@@ -269,6 +305,7 @@ impl WorldRender {
             true,
             wgpu::PrimitiveTopology::TriangleList,
             wgpu::PolygonMode::Fill,
+            wgpu::StencilState::default(),
         );
 
         let triangle_strip_pipeline = create_pipeline(
@@ -277,6 +314,7 @@ impl WorldRender {
             true,
             wgpu::PrimitiveTopology::TriangleStrip,
             wgpu::PolygonMode::Fill,
+            wgpu::StencilState::default(),
         );
 
         Self {
@@ -521,6 +559,7 @@ fn create_pipeline(
     blending_enabled: bool,
     topology: wgpu::PrimitiveTopology,
     polygon_mode: wgpu::PolygonMode,
+    stencil: wgpu::StencilState,
 ) -> wgpu::RenderPipeline {
     let shader_module = gpu
         .device
@@ -562,10 +601,10 @@ fn create_pipeline(
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
+                format: wgpu::TextureFormat::Depth24PlusStencil8,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
+                stencil,
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {

@@ -7,8 +7,6 @@ pub struct Gpu<'window> {
 }
 
 impl<'window> Gpu<'window> {
-    pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-
     pub fn alignment(&self) -> u64 {
         self.device.limits().min_uniform_buffer_offset_alignment as wgpu::BufferAddress
     }
@@ -43,7 +41,7 @@ impl<'window> Gpu<'window> {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Depth32Float,
+                format: wgpu::TextureFormat::Depth24PlusStencil8,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
@@ -51,7 +49,7 @@ impl<'window> Gpu<'window> {
         );
         texture.create_view(&wgpu::TextureViewDescriptor {
             label: None,
-            format: Some(wgpu::TextureFormat::Depth32Float),
+            format: Some(wgpu::TextureFormat::Depth24PlusStencil8),
             dimension: Some(wgpu::TextureViewDimension::D2),
             aspect: wgpu::TextureAspect::All,
             base_mip_level: 0,
