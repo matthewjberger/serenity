@@ -47,6 +47,34 @@ impl Editor {
     }
 
     fn ui(&mut self, ui: &phantom::egui::Context, context: &mut phantom::app::Context) {
+        self.top_bar_ui(ui);
+        self.scene_tree_ui(ui, context);
+    }
+
+    fn scene_tree_ui(&mut self, ui: &phantom::egui::Context, context: &mut phantom::app::Context) {
+        phantom::egui::Window::new("Scene Tree")
+            .resizable(true)
+            .show(ui, |ui| {
+                if let Some(scene_index) = context.world.default_scene_index {
+                    let scene = &context.world.scenes[scene_index];
+                    ui.group(|ui| {
+                        phantom::egui::ScrollArea::vertical()
+                            .id_source(ui.next_auto_id())
+                            .show(ui, |ui| {
+                                node_ui(
+                                    &context.world,
+                                    ui,
+                                    &scene.graph,
+                                    0.into(),
+                                    &mut self.selected_graph_node_index,
+                                );
+                            });
+                    });
+                }
+            });
+    }
+
+    fn top_bar_ui(&mut self, ui: &phantom::egui::Context) {
         phantom::egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .show(ui, |ui| {
@@ -70,52 +98,6 @@ impl Editor {
 
                     ui.separator();
                 });
-            });
-
-        phantom::egui::Window::new("Scene Tree")
-            .resizable(true)
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.heading("Scene Tree");
-                if let Some(scene_index) = context.world.default_scene_index {
-                    let scene = &context.world.scenes[scene_index];
-                    ui.group(|ui| {
-                        phantom::egui::ScrollArea::vertical()
-                            .id_source(ui.next_auto_id())
-                            .show(ui, |ui| {
-                                node_ui(
-                                    &context.world,
-                                    ui,
-                                    &scene.graph,
-                                    0.into(),
-                                    &mut self.selected_graph_node_index,
-                                );
-                            });
-                    });
-                }
-                ui.allocate_space(ui.available_size());
-            });
-
-        phantom::egui::Window::new("Assets")
-            .resizable(true)
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.heading("Assets");
-                if let Some(scene_index) = context.world.default_scene_index {
-                    let _scene = &context.world.scenes[scene_index];
-                    ui.group(|ui| {
-                        for asset in &self.assets {
-                            ui.group(|ui| {
-                                ui.label(&asset.name);
-                                if ui.button("Add to world").clicked() {
-                                    //
-                                }
-                            });
-                        }
-                    });
-                }
-
-                ui.allocate_space(ui.available_size());
             });
     }
 }
