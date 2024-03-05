@@ -2,7 +2,7 @@ pub struct Renderer<'window> {
     pub gpu: crate::gpu::Gpu<'window>,
     pub view: Option<crate::view::WorldRender>,
     pub depth_texture_view: wgpu::TextureView,
-    pub hdr_pipeline: crate::hdr::HdrPipeline,
+    pub postprocess_pipeline: crate::postprocess::PostprocessingPipeline,
     pub gui_renderer: egui_wgpu::Renderer,
 }
 
@@ -14,7 +14,8 @@ impl<'window> Renderer<'window> {
     ) -> Self {
         let gpu = crate::gpu::Gpu::new_async(window, width, height).await;
         let depth_texture_view = gpu.create_depth_texture(width, height);
-        let hdr_pipeline = crate::hdr::HdrPipeline::new(&gpu, width, height);
+        let postprocess_pipeline =
+            crate::postprocess::PostprocessingPipeline::new(&gpu, width, height);
         let gui_renderer = egui_wgpu::Renderer::new(
             &gpu.device,
             wgpu::TextureFormat::Bgra8UnormSrgb,
@@ -25,7 +26,7 @@ impl<'window> Renderer<'window> {
             gpu,
             view: None,
             depth_texture_view,
-            hdr_pipeline,
+            postprocess_pipeline,
             gui_renderer,
         }
     }
@@ -39,7 +40,8 @@ impl<'window> Renderer<'window> {
 
     pub fn resize(&mut self, width: u32, height: u32) {
         self.gpu.resize(width, height);
-        self.hdr_pipeline = crate::hdr::HdrPipeline::new(&self.gpu, width, height);
+        self.postprocess_pipeline =
+            crate::postprocess::PostprocessingPipeline::new(&self.gpu, width, height);
         self.depth_texture_view = self.gpu.create_depth_texture(width, height);
     }
 
@@ -108,7 +110,7 @@ impl<'window> Renderer<'window> {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.hdr_pipeline.texture_view,
+                    view: &self.postprocess_pipeline.texture_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -139,7 +141,7 @@ impl<'window> Renderer<'window> {
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Hdr::render_to_texture"),
+                label: Some("PostProcess::render_to_texture"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &surface_texture_view,
                     resolve_target: None,
@@ -159,8 +161,8 @@ impl<'window> Renderer<'window> {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            render_pass.set_pipeline(&self.hdr_pipeline.pipeline);
-            render_pass.set_bind_group(0, &self.hdr_pipeline.bind_group, &[]);
+            render_pass.set_pipeline(&self.postprocess_pipeline.pipeline);
+            render_pass.set_bind_group(0, &self.postprocess_pipeline.bind_group, &[]);
             render_pass.draw(0..3, 0..1);
 
             self.gui_renderer

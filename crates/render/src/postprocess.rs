@@ -1,4 +1,4 @@
-pub struct HdrPipeline {
+pub struct PostprocessingPipeline {
     pub pipeline: wgpu::RenderPipeline,
     pub bind_group: wgpu::BindGroup,
     pub texture: wgpu::Texture,
@@ -8,7 +8,7 @@ pub struct HdrPipeline {
     pub format: wgpu::TextureFormat,
 }
 
-impl HdrPipeline {
+impl PostprocessingPipeline {
     pub fn new(gpu: &crate::gpu::Gpu, width: u32, height: u32) -> Self {
         let format = wgpu::TextureFormat::Rgba16Float;
         let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
