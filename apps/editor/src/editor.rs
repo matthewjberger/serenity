@@ -82,17 +82,17 @@ impl Editor {
                     phantom::egui::global_dark_light_mode_switch(ui);
                     ui.menu_button("File", |ui| {
                         if ui.button("Import asset (gltf/glb)...").clicked() {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("GLTF / GLB", &["gltf", "glb"])
-                                .pick_file()
-                            {
-                                self.pending_messages.push(Message::Command(
-                                    Command::ImportGltfFile {
-                                        path: path.display().to_string(),
-                                    },
-                                ));
-                                ui.close_menu();
-                            }
+                            // if let Some(path) = rfd::FileDialog::new()
+                            //     .add_filter("GLTF / GLB", &["gltf", "glb"])
+                            //     .pick_file()
+                            // {
+                            //     self.pending_messages.push(Message::Command(
+                            //         Command::ImportGltfFile {
+                            //             path: path.display().to_string(),
+                            //         },
+                            //     ));
+                            //     ui.close_menu();
+                            // }
                         }
                     });
 
