@@ -644,7 +644,7 @@ impl Default for Material {
     }
 }
 
-pub fn create_texture(gpu: &crate::gpu::Gpu, image: &asset::Image) -> wgpu::Texture {
+fn create_texture(gpu: &crate::gpu::Gpu, image: &asset::Image) -> wgpu::Texture {
     let size = wgpu::Extent3d {
         width: image.width,
         height: image.height,

@@ -7,6 +7,7 @@ edition = "2021"
 bytemuck = { version = "1.14.0", features = ["derive"] }
 egui = "0.26.2"
 egui-wgpu = { version = "0.26.2", features = ["winit"] }
+image = "0.24.7"
 log = "0.4.20"
 nalgebra-glm = { version = "0.18.0", features = [
     "serde-serialize",
@@ -14,6 +15,7 @@ nalgebra-glm = { version = "0.18.0", features = [
 ] }
 wgpu = "0.19.1"
 asset = { path = "../asset" }
+anyhow = "1.0.80"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = "=0.3.67"

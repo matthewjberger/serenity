@@ -1,9 +1,10 @@
 pub struct Renderer<'window> {
     pub gpu: crate::gpu::Gpu<'window>,
-    pub view: Option<crate::view::WorldRender>,
-    pub depth_texture_view: wgpu::TextureView,
-    pub postprocess_pipeline: crate::postprocess::PostprocessingPipeline,
-    pub gui_renderer: egui_wgpu::Renderer,
+    view: Option<crate::view::WorldRender>,
+    depth_texture_view: wgpu::TextureView,
+    postprocess_pipeline: crate::postprocess::PostprocessingPipeline,
+    gui_renderer: egui_wgpu::Renderer,
+    hdri: crate::hdri::HdriLoader,
 }
 
 impl<'window> Renderer<'window> {
@@ -22,12 +23,15 @@ impl<'window> Renderer<'window> {
             Some(wgpu::TextureFormat::Depth32Float),
             1,
         );
+        let hdri = crate::hdri::HdriLoader::new(&gpu);
+        hdri.convert_equirectangular_map_to_cubemap(&gpu, 1024);
         Self {
             gpu,
             view: None,
             depth_texture_view,
             postprocess_pipeline,
             gui_renderer,
+            hdri,
         }
     }
 

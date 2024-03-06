@@ -1,4 +1,5 @@
 mod gpu;
+mod hdri;
 mod postprocess;
 mod render;
 mod view;
