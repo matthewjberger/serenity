@@ -20,15 +20,21 @@ pub struct WorldRender {
 
     pub material_bind_groups: Vec<wgpu::BindGroup>,
 
+    pub environment_bind_group: wgpu::BindGroup,
+
     pub triangle_filled_pipeline: wgpu::RenderPipeline,
     pub triangle_blended_pipeline: wgpu::RenderPipeline,
     pub line_pipeline: wgpu::RenderPipeline,
     pub line_strip_pipeline: wgpu::RenderPipeline,
     pub triangle_strip_pipeline: wgpu::RenderPipeline,
+
+    pub sky: crate::sky::SkyRender,
 }
 
 impl WorldRender {
     pub fn new(gpu: &crate::gpu::Gpu, asset: &asset::Asset) -> Self {
+        let sky = crate::sky::SkyRender::new(gpu);
+
         let (vertex_buffer, index_buffer) =
             create_geometry_buffers(&gpu.device, &asset.vertices, &asset.indices);
 
@@ -279,6 +285,49 @@ impl WorldRender {
             wgpu::PolygonMode::Fill,
         );
 
+        let environment_layout =
+            gpu.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("environment_layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                view_dimension: wgpu::TextureViewDimension::D2Array,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                            count: None,
+                        },
+                    ],
+                });
+
+        let hdri = crate::hdri::HdriLoader::new(&gpu);
+        let (_sky_texture, sky_texture_view, sky_texture_sampler) =
+            hdri.convert_equirectangular_map_to_cubemap(&gpu, 1024);
+
+        let environment_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &environment_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&sky_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sky_texture_sampler),
+                },
+            ],
+            label: Some("environment_bind_group"),
+        });
+
         Self {
             vertex_buffer,
             index_buffer,
@@ -295,6 +344,11 @@ impl WorldRender {
             line_pipeline,
             line_strip_pipeline,
             triangle_strip_pipeline,
+            environment_bind_group,
+<<<<<<< HEAD
+            sky,
+=======
+>>>>>>> ddf09dff025bd5e736d48308b0515c72bede5244
         }
     }
 
@@ -312,13 +366,27 @@ impl WorldRender {
         let (camera_position, projection, view) =
             asset::create_camera_matrices(asset, scene, gpu.aspect_ratio());
 
+        let camera_position = nalgebra_glm::vec3_to_vec4(&camera_position);
         gpu.queue.write_buffer(
             &self.uniform_buffer,
             0,
             bytemuck::cast_slice(&[Uniform {
                 view,
                 projection,
-                camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
+                camera_position,
+            }]),
+        );
+
+        gpu.queue.write_buffer(
+            &self.sky.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[crate::sky::SkyUniform {
+                view_position: camera_position,
+                view,
+                view_projection: projection * view,
+                inverse_projection: nalgebra_glm::inverse(&projection),
+                inverse_view: nalgebra_glm::inverse(&view),
+                // inverse_view: nalgebra_glm::transpose(&view),
             }]),
         );
 
@@ -438,6 +506,8 @@ impl WorldRender {
                     }
                 });
         }
+
+        self.sky.render(render_pass);
     }
 }
 

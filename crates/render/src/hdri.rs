@@ -65,7 +65,11 @@ impl HdriLoader {
         }
     }
 
-    pub fn convert_equirectangular_map_to_cubemap(&self, gpu: &crate::gpu::Gpu, dimension: u32) {
+    pub fn convert_equirectangular_map_to_cubemap(
+        &self,
+        gpu: &crate::gpu::Gpu,
+        dimension: u32,
+    ) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
         let (metadata, pixels) = load_hdri_bytes(gpu, include_bytes!("hdr/pure-sky.hdr"));
         let texture = {
             let image = &asset::Image {
@@ -138,7 +142,6 @@ impl HdriLoader {
         let cubemap_view = cubemap.create_view(&wgpu::TextureViewDescriptor {
             label: None,
             dimension: Some(wgpu::TextureViewDimension::D2Array),
-            array_layer_count: Some(6),
             ..Default::default()
         });
 
@@ -178,6 +181,8 @@ impl HdriLoader {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
         pass.dispatch_workgroups(num_workgroups, num_workgroups, 6);
+
+        (cubemap, cubemap_view, cubemap_sampler)
     }
 }
 
