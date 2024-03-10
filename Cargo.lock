@@ -2103,6 +2103,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "physics"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "nalgebra-glm",
+ "petgraph",
+ "serde",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
