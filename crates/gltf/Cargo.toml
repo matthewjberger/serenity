@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 gltf = { version = "1.4.0", features = ["KHR_lights_punctual", "names"] }
-image = "0.24.7"
+image = "0.24.9"
 nalgebra-glm = { version = "0.18.0", features = [
     "serde-serialize",
     "convert-bytemuck",
