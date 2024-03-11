@@ -43,6 +43,7 @@ pub async fn run_async(mut state: impl State + 'static) {
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
     let window = std::sync::Arc::new(window);
+    let world = asset::Asset::default();
 
     let window_size = window.inner_size();
     let (width, height) = (window_size.width, window_size.height);
@@ -52,7 +53,7 @@ pub async fn run_async(mut state: impl State + 'static) {
         io: Io::default(),
         delta_time: 0.01,
         last_frame: chrono::Utc::now(),
-        world: asset::Asset::default(),
+        world,
         should_exit: false,
         should_reload_view: false,
     };

@@ -4,6 +4,7 @@ pub struct Renderer<'window> {
     depth_texture_view: wgpu::TextureView,
     postprocess_pipeline: crate::postprocess::PostprocessingPipeline,
     gui_renderer: egui_wgpu::Renderer,
+    debug: crate::debug::DebugRender,
 }
 
 impl<'window> Renderer<'window> {
@@ -22,12 +23,14 @@ impl<'window> Renderer<'window> {
             Some(wgpu::TextureFormat::Depth32Float),
             1,
         );
+        let debug = crate::debug::DebugRender::new(&gpu);
         Self {
             gpu,
             view: None,
             depth_texture_view,
             postprocess_pipeline,
             gui_renderer,
+            debug,
         }
     }
 
@@ -52,6 +55,14 @@ impl<'window> Renderer<'window> {
         paint_jobs: Vec<egui::ClippedPrimitive>,
         screen_descriptor: ScreenDescriptor,
     ) {
+        if let Some(scene_index) = asset.default_scene_index {
+            let scene = &asset.scenes[scene_index];
+            let (camera_position, projection, view) =
+                asset::create_camera_matrices(asset, scene, self.gpu.aspect_ratio());
+            self.debug
+                .sync_camera(&self.gpu, projection, view, camera_position);
+        };
+
         let mut encoder = self
             .gpu
             .device
@@ -136,6 +147,7 @@ impl<'window> Renderer<'window> {
 
             if let Some(view) = self.view.as_mut() {
                 view.render(&mut render_pass, &self.gpu, asset);
+                self.debug.render(&mut render_pass);
             }
         }
 

@@ -1,3 +1,4 @@
+mod debug;
 mod gpu;
 mod postprocess;
 mod render;
