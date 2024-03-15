@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bytemuck = { version = "1.14.3", features = ["derive"] }
+bytemuck = { version = "1.15.0", features = ["derive"] }
 nalgebra-glm = { version = "0.18.0", features = [
     "serde-serialize",
     "convert-bytemuck",

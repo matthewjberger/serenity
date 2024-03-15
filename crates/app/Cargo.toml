@@ -15,7 +15,7 @@ nalgebra-glm = { version = "0.18.0", features = [
 petgraph = { version = "0.6.4", features = ["serde-1"] }
 pollster = "0.3.0"
 uuid = { version = "1.7.0", features = ["v4", "js"] }
-winit = "0.29.14"
+winit = "0.29.15"
 
 render = { path = "../render" }
 asset = { path = "../asset" }
