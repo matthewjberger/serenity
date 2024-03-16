@@ -11,4 +11,5 @@ nalgebra-glm = { version = "0.18.0", features = [
     "convert-mint",
 ] }
 petgraph = { version = "0.6.4", features = ["serde-1"] }
+physics = { path = "../physics" }
 serde = { version = "1.0.197", features = ["derive"] }

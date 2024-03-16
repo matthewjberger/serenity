@@ -233,6 +233,7 @@ dependencies = [
  "bytemuck",
  "nalgebra-glm",
  "petgraph",
+ "physics",
  "serde",
 ]
 

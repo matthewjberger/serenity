@@ -1,4 +1,4 @@
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Asset {
     pub name: String,
     pub default_scene_index: Option<usize>,
@@ -18,9 +18,65 @@ pub struct Asset {
     pub transforms: Vec<Transform>,
     pub vertices: Vec<Vertex>,
     pub instances: Vec<Instance>,
+    pub physics: physics::World,
+}
+
+impl Default for Asset {
+    fn default() -> Self {
+        let mut asset = Self {
+            name: "Asset".to_string(),
+            default_scene_index: None,
+            animations: Vec::new(),
+            cameras: Vec::new(),
+            images: Vec::new(),
+            indices: Vec::new(),
+            lights: Vec::new(),
+            materials: Vec::new(),
+            meshes: Vec::new(),
+            nodes: Vec::new(),
+            metadata: Vec::new(),
+            samplers: Vec::new(),
+            scenes: Vec::new(),
+            skins: Vec::new(),
+            textures: Vec::new(),
+            transforms: Vec::new(),
+            vertices: Vec::new(),
+            instances: Vec::new(),
+            physics: physics::World::default(),
+        };
+        asset.add_default_material();
+        asset
+    }
 }
 
 impl Asset {
+    pub fn add_default_material(&mut self) -> usize {
+        let image_index = self.images.len();
+        let image = Image {
+            pixels: vec![255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255],
+            format: ImageFormat::R8G8B8A8,
+            width: 2,
+            height: 2,
+        };
+        self.images.push(image);
+
+        let sampler_index = self.samplers.len();
+        self.samplers.push(Sampler::default());
+
+        let texture_index = self.textures.len();
+        self.textures.push(Texture {
+            image_index,
+            sampler_index: Some(sampler_index),
+        });
+
+        let material_index = self.materials.len();
+        self.materials.push(Material {
+            base_color_texture_index: texture_index,
+            ..Default::default()
+        });
+        material_index
+    }
+
     pub fn add_child_node_to_scenegraph(
         &mut self,
         scene_index: usize,
@@ -103,6 +159,14 @@ impl Asset {
         self.lights.push(Light::default());
         self.nodes[node_index].light_index = Some(light_index);
         node_index
+    }
+
+    pub fn add_rigid_body_to_node(&mut self, node_index: usize) {
+        let node = &mut self.nodes[node_index];
+        let rigid_body_index = self
+            .physics
+            .add_rigid_body(nalgebra_glm::Vec3::new(0.0, 0.0, 0.0));
+        node.rigid_body_index = Some(rigid_body_index);
     }
 
     pub fn global_transform(

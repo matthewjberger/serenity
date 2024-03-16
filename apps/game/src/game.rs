@@ -3,7 +3,7 @@ pub struct Game;
 
 impl phantom::app::State for Game {
     fn initialize(&mut self, context: &mut phantom::app::Context) {
-        context.world = phantom::gltf::import_gltf_slice(include_bytes!("../level.glb"));
+        context.world = phantom::gltf::import_gltf_slice(include_bytes!("../physics.glb"));
         if context.world.scenes.is_empty() {
             context.world.scenes.push(phantom::asset::Scene::default());
             context.world.default_scene_index = Some(0);
@@ -16,6 +16,28 @@ impl phantom::app::State for Game {
         let light_node = context.world.add_node();
         context.world.add_light_to_node(light_node);
         context.world.add_root_node_to_scenegraph(0, light_node);
+
+        // Add rigid body and aabb to player
+        let mut player_graph_node_index = None;
+        let scene = &context.world.scenes[0];
+        for graph_node_index in scene.graph.node_indices() {
+            let node_index = scene.graph[graph_node_index];
+            let metadata_index = context.world.nodes[node_index].metadata_index;
+            let is_player = &context.world.metadata[metadata_index].name == &"Player";
+            if is_player {
+                player_graph_node_index = Some(graph_node_index);
+                break;
+            }
+        }
+        if let Some(graph_node_index) = player_graph_node_index {
+            let node_index = scene.graph[graph_node_index];
+            let (translation, _rotation) = context
+                .world
+                .global_isometry(&scene.graph, graph_node_index);
+            let node = &mut context.world.nodes[node_index];
+            let rigid_body_index = context.world.physics.add_rigid_body(translation);
+            node.rigid_body_index = Some(rigid_body_index);
+        }
     }
 
     fn receive_event(

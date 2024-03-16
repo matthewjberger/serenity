@@ -53,7 +53,6 @@ pub async fn run_async(mut state: impl State + 'static) {
         delta_time: 0.01,
         last_frame: chrono::Utc::now(),
         world: asset::Asset::default(),
-        physics_world: physics::World::default(),
         should_exit: false,
         should_reload_view: false,
     };
@@ -142,6 +141,26 @@ pub async fn run_async(mut state: impl State + 'static) {
                         elwt.exit();
                     }
 
+                    context.world.physics.step(context.delta_time as f32);
+
+                    // Synchronize render transforms with rigid body positions
+                    if let Some(scene_index) = context.world.default_scene_index {
+                        let scene = &mut context.world.scenes[scene_index];
+                        scene.graph.node_indices().for_each(|graph_node_index| {
+                            let node_index = scene.graph[graph_node_index];
+                            if let Some(rigid_body_index) =
+                                context.world.nodes[node_index].rigid_body_index
+                            {
+                                let transform_index =
+                                    context.world.nodes[node_index].transform_index;
+                                let transform = &mut context.world.transforms[transform_index];
+                                let rigid_body = &context.world.physics.bodies[rigid_body_index];
+                                transform.translation =
+                                    context.world.physics.positions[rigid_body.position_index];
+                            }
+                        });
+                    }
+
                     let gui_input = gui_state.take_egui_input(&window);
                     gui_state.egui_ctx().begin_frame(gui_input);
 
@@ -182,7 +201,6 @@ pub struct Context {
     pub delta_time: f64,
     pub last_frame: chrono::DateTime<chrono::Utc>,
     pub world: asset::Asset,
-    pub physics_world: physics::World,
     pub should_exit: bool,
     pub should_reload_view: bool,
 }
