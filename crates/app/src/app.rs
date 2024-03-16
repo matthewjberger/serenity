@@ -53,6 +53,7 @@ pub async fn run_async(mut state: impl State + 'static) {
         delta_time: 0.01,
         last_frame: chrono::Utc::now(),
         world: asset::Asset::default(),
+        physics_world: physics::World::default(),
         should_exit: false,
         should_reload_view: false,
     };
@@ -181,6 +182,7 @@ pub struct Context {
     pub delta_time: f64,
     pub last_frame: chrono::DateTime<chrono::Utc>,
     pub world: asset::Asset,
+    pub physics_world: physics::World,
     pub should_exit: bool,
     pub should_reload_view: bool,
 }

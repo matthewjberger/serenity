@@ -162,6 +162,7 @@ dependencies = [
  "log",
  "nalgebra-glm",
  "petgraph",
+ "physics",
  "pollster",
  "render",
  "uuid",
@@ -2100,6 +2101,15 @@ dependencies = [
  "image",
  "nalgebra-glm",
  "petgraph",
+]
+
+[[package]]
+name = "physics"
+version = "0.1.0"
+dependencies = [
+ "nalgebra-glm",
+ "petgraph",
+ "serde",
 ]
 
 [[package]]
