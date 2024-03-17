@@ -1,62 +1,156 @@
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Asset {
-    pub name: String,
-    pub default_scene_index: Option<usize>,
     pub animations: Vec<Animation>,
     pub cameras: Vec<Camera>,
+    pub default_scene_index: Option<usize>,
     pub images: Vec<Image>,
     pub indices: Vec<u32>,
+    pub instances: Vec<Instance>,
     pub lights: Vec<Light>,
     pub materials: Vec<Material>,
     pub meshes: Vec<Mesh>,
-    pub nodes: Vec<Node>,
     pub metadata: Vec<NodeMetadata>,
+    pub name: String,
+    pub nodes: Vec<Node>,
+    pub physics: physics::World,
     pub samplers: Vec<Sampler>,
     pub scenes: Vec<Scene>,
     pub skins: Vec<Skin>,
     pub textures: Vec<Texture>,
     pub transforms: Vec<Transform>,
     pub vertices: Vec<Vertex>,
-    pub instances: Vec<Instance>,
-    pub physics: physics::World,
-}
-
-impl Default for Asset {
-    fn default() -> Self {
-        let mut asset = Self {
-            name: "Asset".to_string(),
-            default_scene_index: None,
-            animations: Vec::new(),
-            cameras: Vec::new(),
-            images: Vec::new(),
-            indices: Vec::new(),
-            lights: Vec::new(),
-            materials: Vec::new(),
-            meshes: Vec::new(),
-            nodes: Vec::new(),
-            metadata: Vec::new(),
-            samplers: Vec::new(),
-            scenes: Vec::new(),
-            skins: Vec::new(),
-            textures: Vec::new(),
-            transforms: Vec::new(),
-            vertices: Vec::new(),
-            instances: Vec::new(),
-            physics: physics::World::default(),
-        };
-        asset.add_default_material();
-        asset
-    }
 }
 
 impl Asset {
+    pub fn merge(&mut self, asset: Self) {
+        let Self {
+            animations,
+            cameras,
+            images,
+            indices,
+            instances,
+            lights,
+            materials,
+            meshes,
+            metadata,
+            nodes,
+            physics,
+            samplers,
+            scenes,
+            skins,
+            textures,
+            transforms,
+            vertices,
+            ..
+        } = asset;
+
+        let transform_offset = self.transforms.len();
+        let mesh_offset = self.meshes.len();
+        let material_offset = self.materials.len();
+        let image_offset = self.images.len();
+        let texture_offset = self.textures.len();
+        let sampler_offset = self.samplers.len();
+        let vertex_offset = self.vertices.len();
+        let index_offset = self.indices.len();
+        let camera_offset = self.cameras.len();
+        let node_offset = self.nodes.len();
+        let rigid_body_offset = self.physics.bodies.len();
+
+        animations.into_iter().for_each(|mut animation| {
+            animation.channels.iter_mut().for_each(|channel| {
+                channel.target_node_index += node_offset;
+            });
+            self.animations.push(animation);
+        });
+
+        cameras.into_iter().for_each(|camera| {
+            self.cameras.push(camera);
+        });
+
+        images.into_iter().for_each(|image| {
+            self.images.push(image);
+        });
+
+        instances.into_iter().for_each(|instance| {
+            self.instances.push(instance);
+        });
+
+        metadata.into_iter().for_each(|metadata| {
+            self.metadata.push(metadata);
+        });
+
+        lights.into_iter().for_each(|light| {
+            self.lights.push(light);
+        });
+
+        indices
+            .into_iter()
+            .for_each(|index| self.indices.push(index + vertex_offset as u32));
+
+        materials.into_iter().for_each(|mut material| {
+            material.base_color_texture_index = material.base_color_texture_index + texture_offset;
+            self.materials.push(material);
+        });
+
+        meshes.into_iter().for_each(|mut mesh| {
+            mesh.primitives.iter_mut().for_each(|primitive| {
+                primitive.vertex_offset += vertex_offset;
+                primitive.index_offset += index_offset;
+                primitive.material_index = primitive.material_index.map(|i| i + material_offset);
+            });
+            self.meshes.push(mesh);
+        });
+
+        nodes.into_iter().for_each(|mut node| {
+            node.transform_index = node.transform_index + transform_offset;
+            node.mesh_index = node.mesh_index.map(|i| i + mesh_offset);
+            node.camera_index = node.camera_index.map(|i| i + camera_offset);
+            node.rigid_body_index = node.rigid_body_index.map(|i| i + rigid_body_offset);
+            self.nodes.push(node);
+        });
+
+        samplers.into_iter().for_each(|sampler| {
+            self.samplers.push(sampler);
+        });
+
+        scenes.into_iter().for_each(|mut scene| {
+            scene.graph.node_indices().for_each(|graph_node_index| {
+                scene.graph[graph_node_index] += node_offset;
+            });
+            self.scenes.push(scene);
+        });
+
+        skins.into_iter().for_each(|mut skin| {
+            skin.joints.iter_mut().for_each(|joint| {
+                joint.target_node_index += node_offset;
+            });
+            self.skins.push(skin);
+        });
+
+        textures.into_iter().for_each(|mut texture| {
+            texture.image_index += image_offset;
+            texture.sampler_index = texture.sampler_index.map(|i| i + sampler_offset);
+            self.textures.push(texture);
+        });
+
+        transforms.into_iter().for_each(|transform| {
+            self.transforms.push(transform);
+        });
+
+        vertices.into_iter().for_each(|vertex| {
+            self.vertices.push(vertex);
+        });
+
+        self.physics.merge(physics);
+    }
+
     pub fn add_default_material(&mut self) -> usize {
         let image_index = self.images.len();
         let image = Image {
-            pixels: vec![255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255],
+            pixels: vec![255, 255, 255, 255],
             format: ImageFormat::R8G8B8A8,
-            width: 2,
-            height: 2,
+            width: 1,
+            height: 1,
         };
         self.images.push(image);
 
@@ -622,7 +716,6 @@ pub struct Node {
     pub mesh_index: Option<usize>,
     pub light_index: Option<usize>,
     pub rigid_body_index: Option<usize>,
-    pub primitive_mesh_index: Option<usize>,
     pub instances: Vec<usize>,
 }
 

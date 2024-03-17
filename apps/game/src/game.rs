@@ -4,6 +4,7 @@ pub struct Game;
 impl phantom::app::State for Game {
     fn initialize(&mut self, context: &mut phantom::app::Context) {
         context.world = phantom::gltf::import_gltf_slice(include_bytes!("../physics.glb"));
+        context.world.add_default_material();
         if context.world.scenes.is_empty() {
             context.world.scenes.push(phantom::asset::Scene::default());
             context.world.default_scene_index = Some(0);
@@ -17,7 +18,7 @@ impl phantom::app::State for Game {
         context.world.add_light_to_node(light_node);
         context.world.add_root_node_to_scenegraph(0, light_node);
 
-        // Add rigid body and aabb to player
+        // add rigid body and aabb to player
         let mut player_graph_node_index = None;
         let scene = &context.world.scenes[0];
         for graph_node_index in scene.graph.node_indices() {

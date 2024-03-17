@@ -11,7 +11,7 @@ pub struct World {
 impl Default for World {
     fn default() -> Self {
         Self {
-            gravity: nalgebra_glm::vec3(0.0, -2.8, 0.0),
+            gravity: nalgebra_glm::vec3(0.0, -1.8, 0.0),
             positions: Vec::new(),
             velocities: Vec::new(),
             forces: Vec::new(),
@@ -22,6 +22,40 @@ impl Default for World {
 }
 
 impl World {
+    pub fn merge(&mut self, world: Self) {
+        let Self {
+            bodies,
+            forces,
+            masses,
+            positions,
+            velocities,
+            ..
+        } = world;
+
+        let force_offset = bodies.len();
+        let mass_offset = masses.len();
+        let position_offset = positions.len();
+        let velocity_offset = velocities.len();
+
+        bodies.into_iter().for_each(|mut body| {
+            body.position_index += position_offset;
+            body.velocity_index += velocity_offset;
+            body.force_index += force_offset;
+            body.mass_index += mass_offset;
+            self.bodies.push(body);
+        });
+
+        forces.into_iter().for_each(|force| self.forces.push(force));
+
+        masses.into_iter().for_each(|mass| self.masses.push(mass));
+        positions
+            .into_iter()
+            .for_each(|position| self.positions.push(position));
+        velocities
+            .into_iter()
+            .for_each(|velocity| self.velocities.push(velocity));
+    }
+
     pub fn add_rigid_body(&mut self, position: nalgebra_glm::Vec3) -> usize {
         let position_index = self.positions.len();
         self.positions.push(position);
@@ -46,7 +80,6 @@ impl World {
     }
 
     pub fn step(&mut self, delta_time: f32) {
-        // Integrate bodies
         self.bodies.iter().for_each(|body| {
             let force = self.forces[body.force_index];
             let mass = self.masses[body.mass_index];
