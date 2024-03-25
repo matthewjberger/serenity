@@ -5,6 +5,4 @@ edition = "2021"
 
 [dependencies]
 rfd = "0.14.0"
-
-phantom = { path = "../../crates/engine" }
-camera = { path = "../../crates/camera" }
+phantom = { path = "../../crates/phantom" }

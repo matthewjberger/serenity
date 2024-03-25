@@ -155,7 +155,7 @@ impl phantom::app::State for Editor {
     fn update(&mut self, context: &mut phantom::app::Context, ui: &phantom::egui::Context) {
         self.receive_messages(context);
         self.ui(ui, context);
-        camera::camera_system(context);
+        phantom::camera::camera_system(context);
     }
 }
 

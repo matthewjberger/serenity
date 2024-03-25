@@ -149,29 +149,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0952808a6c2afd1aa8947271f3a60f1a6763c7b912d210184c5149b5cf147247"
 
 [[package]]
-name = "app"
-version = "0.1.0"
-dependencies = [
- "asset",
- "chrono",
- "console_error_panic_hook",
- "console_log",
- "egui",
- "egui-winit",
- "env_logger",
- "log",
- "nalgebra-glm",
- "petgraph",
- "pollster",
- "render",
- "uuid",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "winit",
-]
-
-[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -223,16 +200,6 @@ dependencies = [
  "serde_repr",
  "url",
  "zbus",
-]
-
-[[package]]
-name = "asset"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "nalgebra-glm",
- "petgraph",
- "serde",
 ]
 
 [[package]]
@@ -565,14 +532,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "camera"
-version = "0.1.0"
-dependencies = [
- "app",
- "phantom",
-]
-
-[[package]]
 name = "cc"
 version = "1.0.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -684,26 +643,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d16048cd947b08fa32c24458a22f5dc5e835264f689f4f5653210c69fd107363"
 dependencies = [
  "crossbeam-utils",
-]
-
-[[package]]
-name = "console_error_panic_hook"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
-dependencies = [
- "cfg-if",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "console_log"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be8aed40e4edbf4d3b4431ab260b63fdc40f5780a4766824329ea0f1eefe3c0f"
-dependencies = [
- "log",
- "web-sys",
 ]
 
 [[package]]
@@ -886,7 +825,6 @@ dependencies = [
 name = "editor"
 version = "0.1.0"
 dependencies = [
- "camera",
  "phantom",
  "rfd",
 ]
@@ -1243,16 +1181,6 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
-]
-
-[[package]]
-name = "game"
-version = "0.1.0"
-dependencies = [
- "camera",
- "phantom",
- "wasm-bindgen",
- "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -1770,12 +1698,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mint"
-version = "0.5.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e53debba6bda7a793e5f99b8dacf19e626084f525f7829104ba9898f367d85ff"
-
-[[package]]
 name = "naga"
 version = "0.19.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1804,7 +1726,6 @@ dependencies = [
  "approx",
  "bytemuck",
  "matrixmultiply",
- "mint",
  "num-complex",
  "num-rational",
  "num-traits",
@@ -2086,20 +2007,23 @@ dependencies = [
 name = "phantom"
 version = "0.1.0"
 dependencies = [
- "app",
- "asset",
- "phantom_gltf",
-]
-
-[[package]]
-name = "phantom_gltf"
-version = "0.1.0"
-dependencies = [
- "asset",
+ "anyhow",
+ "bytemuck",
+ "chrono",
+ "egui",
+ "egui-wgpu",
+ "egui-winit",
+ "env_logger",
  "gltf",
  "image",
+ "log",
  "nalgebra-glm",
  "petgraph",
+ "pollster",
+ "serde",
+ "uuid",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]
@@ -2341,22 +2265,6 @@ name = "regex-syntax"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
-
-[[package]]
-name = "render"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "asset",
- "bytemuck",
- "egui",
- "egui-wgpu",
- "image",
- "log",
- "nalgebra-glm",
- "web-sys",
- "wgpu",
-]
 
 [[package]]
 name = "renderdoc-sys"
@@ -2656,15 +2564,6 @@ dependencies = [
  "fastrand",
  "rustix",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "template"
-version = "0.1.0"
-dependencies = [
- "phantom",
- "wasm-bindgen",
- "wasm-bindgen-futures",
 ]
 
 [[package]]
