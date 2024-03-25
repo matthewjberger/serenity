@@ -82,23 +82,21 @@ impl<'window> Gpu<'window> {
             .await
             .expect("Failed to request adapter!");
 
-        #[cfg(target_arch = "wasm32")]
-        let required_limits = wgpu::Limits::downlevel_defaults();
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let required_limits = wgpu::Limits {
-            max_texture_dimension_2d: 4096, // Allow higher resolutions on native
-            ..wgpu::Limits::downlevel_defaults()
-        };
-
         let (device, queue) = {
             log::info!("WGPU Adapter Features: {:#?}", adapter.features());
             adapter
                 .request_device(
                     &wgpu::DeviceDescriptor {
                         label: Some("WGPU Device"),
-                        required_features: wgpu::Features::all_webgpu_mask(),
-                        required_limits,
+                        required_features: wgpu::Features::default()
+                            | wgpu::Features::PUSH_CONSTANTS
+                            | wgpu::Features::TEXTURE_BINDING_ARRAY,
+                        required_limits: wgpu::Limits {
+                            max_texture_dimension_2d: 4096,
+                            max_sampled_textures_per_shader_stage: 128,
+                            max_push_constant_size: 256,
+                            ..wgpu::Limits::downlevel_defaults()
+                        },
                     },
                     None,
                 )

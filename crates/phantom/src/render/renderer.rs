@@ -47,7 +47,7 @@ impl<'window> Renderer<'window> {
 
     pub fn render_frame(
         &mut self,
-        asset: &mut crate::asset::Asset,
+        context: &mut crate::app::Context,
         textures_delta: &egui::epaint::textures::TexturesDelta,
         paint_jobs: Vec<egui::ClippedPrimitive>,
         screen_descriptor: ScreenDescriptor,
@@ -135,7 +135,7 @@ impl<'window> Renderer<'window> {
             });
 
             if let Some(view) = self.view.as_mut() {
-                view.render(&mut render_pass, &self.gpu, asset);
+                view.render(&mut render_pass, &self.gpu, context);
             }
         }
 

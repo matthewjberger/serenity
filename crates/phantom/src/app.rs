@@ -1,43 +1,14 @@
-#[cfg(not(target_arch = "wasm32"))]
 pub fn run(state: impl State + 'static) {
     env_logger::init();
     pollster::block_on(run_async(state));
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn run(state: impl State + 'static) {
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init().expect("could not initialize logger");
-    wasm_bindgen_futures::spawn_local(run_async(state));
 }
 
 pub async fn run_async(mut state: impl State + 'static) {
     let event_loop =
         winit::event_loop::EventLoop::new().expect("Failed to create winit event loop!");
 
-    #[allow(unused_mut)]
-    let mut builder = winit::window::WindowBuilder::new();
-
-    if !cfg!(target_arch = "wasm32") {
-        builder = builder.with_title(state.title());
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        use web_sys::wasm_bindgen::JsCast;
-        use winit::platform::web::WindowBuilderExtWebSys;
-        let canvas = web_sys::window()
-            .unwrap()
-            .document()
-            .unwrap()
-            .get_element_by_id("canvas")
-            .unwrap()
-            .dyn_into::<web_sys::HtmlCanvasElement>()
-            .unwrap();
-        builder = builder.with_canvas(Some(canvas));
-    }
-
-    let window = builder
+    let window = winit::window::WindowBuilder::new()
+        .with_title(state.title())
         .build(&event_loop)
         .expect("Failed to create winit window!");
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
@@ -162,12 +133,14 @@ pub async fn run_async(mut state: impl State + 'static) {
                             pixels_per_point: window.scale_factor() as f32,
                         }
                     };
-                    renderer.render_frame(
-                        &mut context.world,
-                        &textures_delta,
-                        paint_jobs,
-                        screen_descriptor,
-                    );
+                    if !context.should_reload_view {
+                        renderer.render_frame(
+                            &mut context,
+                            &textures_delta,
+                            paint_jobs,
+                            screen_descriptor,
+                        );
+                    }
                 }
 
                 _ => {}

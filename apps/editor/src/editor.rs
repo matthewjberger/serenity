@@ -36,8 +36,23 @@ impl Editor {
                             self.redo_stack = Vec::new();
                             self.command_history = std::collections::VecDeque::new();
                             let name = path.to_string();
+
                             let mut asset = phantom::gltf::import_gltf_file(path);
                             asset.name = name;
+
+                            if asset.scenes.is_empty() {
+                                asset.scenes.push(phantom::asset::Scene::default());
+                                asset.default_scene_index = Some(0);
+                            }
+                            if let Some(scene_index) = asset.default_scene_index.as_ref() {
+                                asset.add_camera_to_scenegraph(*scene_index);
+                            }
+                            context.should_reload_view = true;
+
+                            let light_node = asset.add_node();
+                            asset.add_light_to_node(light_node);
+                            asset.add_root_node_to_scenegraph(0, light_node);
+                            context.world = asset.clone();
                             self.assets.push(asset);
                         }
                     }
@@ -82,17 +97,17 @@ impl Editor {
                     phantom::egui::global_dark_light_mode_switch(ui);
                     ui.menu_button("File", |ui| {
                         if ui.button("Import asset (gltf/glb)...").clicked() {
-                            // if let Some(path) = rfd::FileDialog::new()
-                            //     .add_filter("GLTF / GLB", &["gltf", "glb"])
-                            //     .pick_file()
-                            // {
-                            //     self.pending_messages.push(Message::Command(
-                            //         Command::ImportGltfFile {
-                            //             path: path.display().to_string(),
-                            //         },
-                            //     ));
-                            //     ui.close_menu();
-                            // }
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("GLTF / GLB", &["gltf", "glb"])
+                                .pick_file()
+                            {
+                                self.pending_messages.push(Message::Command(
+                                    Command::ImportGltfFile {
+                                        path: path.display().to_string(),
+                                    },
+                                ));
+                                ui.close_menu();
+                            }
                         }
                     });
 
