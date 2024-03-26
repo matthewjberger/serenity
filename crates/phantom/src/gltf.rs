@@ -482,7 +482,6 @@ fn map_camera(camera: gltf::Camera) -> crate::asset::Camera {
                 })
             }
         },
-        orientation: crate::asset::Orientation::default(),
     }
 }
 

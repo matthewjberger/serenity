@@ -18,6 +18,8 @@ pub struct Asset {
     pub transforms: Vec<Transform>,
     pub vertices: Vec<Vertex>,
     pub instances: Vec<Instance>,
+    pub orientations: Vec<Orientation>,
+    pub physics: crate::physics::PhysicsWorld,
 }
 
 impl Asset {
@@ -87,15 +89,36 @@ impl Asset {
         )
     }
 
-    pub fn add_camera_to_node(&mut self, node_index: usize) {
-        let node = &mut self.nodes[node_index];
-        let camera = crate::asset::Camera::default();
-        let transform = &mut self.transforms[node.transform_index];
-        transform.translation = camera.orientation.position();
-        transform.rotation = camera.orientation.look_at_offset();
+    pub fn add_orientation(&mut self) -> usize {
+        let orientation_index = self.orientations.len();
+        self.orientations.push(crate::asset::Orientation::default());
+        orientation_index
+    }
+
+    pub fn add_orientation_to_node(&mut self, node_index: usize) -> usize {
+        let orientation_index = self.add_orientation();
+        self.nodes[node_index].orientation_index = Some(orientation_index);
+        orientation_index
+    }
+
+    pub fn add_camera(&mut self) -> usize {
         let camera_index = self.cameras.len();
-        self.cameras.push(camera);
+        self.cameras.push(crate::asset::Camera::default());
+        camera_index
+    }
+
+    pub fn add_camera_to_node(&mut self, node_index: usize) -> usize {
+        let orientation_index = self.add_orientation_to_node(node_index);
+        let camera_index = self.add_camera();
+
+        let node = &mut self.nodes[node_index];
+        let transform = &mut self.transforms[node.transform_index];
+        let orientation = &self.orientations[orientation_index];
+        transform.translation = orientation.position();
+        transform.rotation = orientation.look_at_offset();
+
         node.camera_index = Some(camera_index);
+        camera_index
     }
 
     pub fn add_light_to_node(&mut self, node_index: usize) -> usize {
@@ -281,7 +304,6 @@ impl Transform {
 #[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Camera {
     pub projection: Projection,
-    pub orientation: Orientation,
 }
 
 impl Camera {
@@ -555,6 +577,7 @@ pub struct Node {
     pub metadata_index: usize,
     pub transform_index: usize,
     pub camera_index: Option<usize>,
+    pub orientation_index: Option<usize>,
     pub mesh_index: Option<usize>,
     pub light_index: Option<usize>,
     pub rigid_body_index: Option<usize>,

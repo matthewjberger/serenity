@@ -16,33 +16,33 @@ pub fn camera_system(context: &mut crate::app::Context) {
     }
 
     let transform = &mut context.world.transforms[camera_node.transform_index];
-    let camera = &mut context.world.cameras[camera_node.camera_index.unwrap()];
+    let orientation = &mut context.world.orientations[camera_node.orientation_index.unwrap()];
 
     let mut sync_transform = false;
     let speed = 10.0 * context.delta_time as f32;
 
     if context.io.is_key_pressed(winit::keyboard::KeyCode::KeyW) {
-        camera.orientation.offset -= camera.orientation.direction() * speed;
+        orientation.offset -= orientation.direction() * speed;
         sync_transform = true;
     }
 
     if context.io.is_key_pressed(winit::keyboard::KeyCode::KeyA) {
-        camera.orientation.offset += camera.orientation.right() * speed;
+        orientation.offset += orientation.right() * speed;
         sync_transform = true;
     }
 
     if context.io.is_key_pressed(winit::keyboard::KeyCode::KeyS) {
-        camera.orientation.offset += camera.orientation.direction() * speed;
+        orientation.offset += orientation.direction() * speed;
         sync_transform = true;
     }
 
     if context.io.is_key_pressed(winit::keyboard::KeyCode::KeyD) {
-        camera.orientation.offset -= camera.orientation.right() * speed;
+        orientation.offset -= orientation.right() * speed;
         sync_transform = true;
     }
 
     if context.io.is_key_pressed(winit::keyboard::KeyCode::Space) {
-        camera.orientation.offset += camera.orientation.up() * speed;
+        orientation.offset += orientation.up() * speed;
         sync_transform = true;
     }
 
@@ -50,18 +50,14 @@ pub fn camera_system(context: &mut crate::app::Context) {
         .io
         .is_key_pressed(winit::keyboard::KeyCode::ShiftLeft)
     {
-        camera.orientation.offset -= camera.orientation.up() * speed;
+        orientation.offset -= orientation.up() * speed;
         sync_transform = true;
     }
 
-    camera
-        .orientation
-        .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
+    orientation.zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
 
     if context.io.mouse.is_middle_clicked {
-        camera
-            .orientation
-            .pan(&(context.io.mouse.position_delta * context.delta_time as f32));
+        orientation.pan(&(context.io.mouse.position_delta * context.delta_time as f32));
         sync_transform = true;
     }
 
@@ -69,12 +65,12 @@ pub fn camera_system(context: &mut crate::app::Context) {
         let mut delta = context.io.mouse.position_delta * context.delta_time as f32;
         delta.x *= -1.0;
         delta.y *= -1.0;
-        camera.orientation.rotate(&delta);
+        orientation.rotate(&delta);
         sync_transform = true;
     }
 
     if sync_transform {
-        transform.translation = camera.orientation.position();
-        transform.rotation = camera.orientation.look_at_offset();
+        transform.translation = orientation.position();
+        transform.rotation = orientation.look_at_offset();
     }
 }
