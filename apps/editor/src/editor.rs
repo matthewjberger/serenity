@@ -42,11 +42,8 @@ impl Editor {
 
                             if asset.scenes.is_empty() {
                                 asset.scenes.push(phantom::asset::Scene::default());
-                                asset.default_scene_index = Some(0);
                             }
-                            if let Some(scene_index) = asset.default_scene_index.as_ref() {
-                                asset.add_camera_to_scenegraph(*scene_index);
-                            }
+                            asset.add_main_camera_to_scenegraph(0);
                             context.should_reload_view = true;
 
                             let light_node = asset.add_node();
@@ -70,22 +67,24 @@ impl Editor {
         phantom::egui::Window::new("Scene Tree")
             .resizable(true)
             .show(ui, |ui| {
-                if let Some(scene_index) = context.world.default_scene_index {
-                    let scene = &context.world.scenes[scene_index];
-                    ui.group(|ui| {
-                        phantom::egui::ScrollArea::vertical()
-                            .id_source(ui.next_auto_id())
-                            .show(ui, |ui| {
-                                node_ui(
-                                    &context.world,
-                                    ui,
-                                    &scene.graph,
-                                    0.into(),
-                                    &mut self.selected_graph_node_index,
-                                );
-                            });
-                    });
-                }
+                let scene = &context
+                    .world
+                    .scenes
+                    .first()
+                    .expect("No scene is available!");
+                ui.group(|ui| {
+                    phantom::egui::ScrollArea::vertical()
+                        .id_source(ui.next_auto_id())
+                        .show(ui, |ui| {
+                            node_ui(
+                                &context.world,
+                                ui,
+                                &scene.graph,
+                                0.into(),
+                                &mut self.selected_graph_node_index,
+                            );
+                        });
+                });
             });
     }
 
@@ -121,13 +120,7 @@ impl phantom::app::State for Editor {
     fn initialize(&mut self, context: &mut phantom::app::Context) {
         let mut asset = phantom::gltf::import_gltf_slice(include_bytes!("../glb/helmet.glb"));
 
-        if asset.scenes.is_empty() {
-            asset.scenes.push(phantom::asset::Scene::default());
-            asset.default_scene_index = Some(0);
-        }
-        if let Some(scene_index) = asset.default_scene_index {
-            asset.add_camera_to_scenegraph(scene_index);
-        }
+        asset.add_main_camera_to_scenegraph(0);
         context.should_reload_view = true;
 
         let light_node = asset.add_node();

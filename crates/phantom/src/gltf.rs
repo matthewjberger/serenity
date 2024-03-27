@@ -356,10 +356,7 @@ fn import_gltf(
 
     let cameras = gltf.cameras().map(map_camera).collect::<Vec<_>>();
 
-    let default_scene_index = if !scenes.is_empty() { Some(0) } else { None };
-
     crate::asset::Asset {
-        default_scene_index,
         animations,
         cameras,
         images,

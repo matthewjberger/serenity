@@ -1,7 +1,6 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Asset {
     pub name: String,
-    pub default_scene_index: Option<usize>,
     pub animations: Vec<Animation>,
     pub cameras: Vec<Camera>,
     pub images: Vec<Image>,
@@ -63,7 +62,7 @@ impl Asset {
         instance_index
     }
 
-    pub fn add_camera_to_scenegraph(&mut self, scene_index: usize) {
+    pub fn add_main_camera_to_scenegraph(&mut self, scene_index: usize) {
         let node_index = self.add_node();
         self.add_camera_to_node(node_index);
         let camera_graph_node_index = self.add_child_node_to_scenegraph(

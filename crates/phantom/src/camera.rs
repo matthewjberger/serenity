@@ -1,9 +1,9 @@
 pub fn camera_system(context: &mut crate::app::Context) {
-    let Some(scene_index) = context.world.default_scene_index else {
-        return;
-    };
-
-    let scene = &context.world.scenes[scene_index];
+    let scene = &context
+        .world
+        .scenes
+        .first()
+        .expect("No scene is available!");
 
     let camera_node_index = scene.graph[scene
         .default_camera_graph_node_index
