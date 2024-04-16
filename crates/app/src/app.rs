@@ -40,12 +40,12 @@ pub async fn run_async(mut state: impl State + 'static) {
     let window = builder
         .build(&event_loop)
         .expect("Failed to create winit window!");
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
 
     let window = std::sync::Arc::new(window);
 
     let window_size = window.inner_size();
-    let (width, height) = (window_size.width, window_size.height);
+    let (width, height) = (window_size.width.max(1), window_size.height.max(1));
     let mut renderer = render::Renderer::new(window.clone(), width, height).await;
 
     let mut context = Context {

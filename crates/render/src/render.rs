@@ -18,7 +18,7 @@ impl<'window> Renderer<'window> {
             crate::postprocess::PostprocessingPipeline::new(&gpu, width, height);
         let gui_renderer = egui_wgpu::Renderer::new(
             &gpu.device,
-            wgpu::TextureFormat::Bgra8UnormSrgb,
+            wgpu::TextureFormat::Bgra8Unorm,
             Some(wgpu::TextureFormat::Depth32Float),
             1,
         );
