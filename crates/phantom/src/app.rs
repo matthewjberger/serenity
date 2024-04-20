@@ -28,17 +28,6 @@ pub async fn run_async(mut state: impl State + 'static) {
         should_reload_view: false,
     };
 
-    let gui_context = egui::Context::default();
-    gui_context.set_pixels_per_point(window.scale_factor() as f32);
-    let viewport_id = gui_context.viewport_id();
-    let mut gui_state = egui_winit::State::new(
-        gui_context,
-        viewport_id,
-        &window,
-        Some(window.scale_factor() as _),
-        None,
-    );
-
     state.initialize(&mut context);
 
     event_loop
@@ -49,12 +38,6 @@ pub async fn run_async(mut state: impl State + 'static) {
                 context.delta_time =
                     duration_since_last_frame.num_microseconds().unwrap() as f64 / 1_000_000.0;
                 context.last_frame = now;
-            }
-
-            if let winit::event::Event::WindowEvent { ref event, .. } = &event {
-                if gui_state.on_window_event(&window, event).consumed {
-                    return;
-                }
             }
 
             // TODO: Just give access to window events instead of the whole event, then move these into the match arm
@@ -112,21 +95,10 @@ pub async fn run_async(mut state: impl State + 'static) {
                         elwt.exit();
                     }
 
-                    let gui_input = gui_state.take_egui_input(&window);
-                    gui_state.egui_ctx().begin_frame(gui_input);
+                    state.update(&mut context);
 
-                    state.update(&mut context, gui_state.egui_ctx());
-
-                    let egui::FullOutput {
-                        textures_delta,
-                        shapes,
-                        pixels_per_point,
-                        ..
-                    } = gui_state.egui_ctx().end_frame();
-
-                    let paint_jobs = gui_state.egui_ctx().tessellate(shapes, pixels_per_point);
-
-                    let screen_descriptor = {
+                    // TODO: use this for ui dimensions
+                    let _screen_descriptor = {
                         let window_size = window.inner_size();
                         crate::render::ScreenDescriptor {
                             size_in_pixels: [window_size.width, window_size.height],
@@ -134,12 +106,7 @@ pub async fn run_async(mut state: impl State + 'static) {
                         }
                     };
                     if !context.should_reload_view {
-                        renderer.render_frame(
-                            &mut context,
-                            &textures_delta,
-                            paint_jobs,
-                            screen_descriptor,
-                        );
+                        renderer.render_frame(&mut context);
                     }
                 }
 
@@ -175,7 +142,7 @@ pub trait State {
     fn receive_event(&mut self, _context: &mut Context, _event: &winit::event::Event<()>) {}
 
     /// Called every frame prior to crate::rendering
-    fn update(&mut self, _context: &mut Context, _ui: &egui::Context) {}
+    fn update(&mut self, _context: &mut Context) {}
 }
 
 #[derive(Default)]

@@ -3,7 +3,6 @@ pub struct Renderer<'window> {
     view: Option<crate::render::view::WorldRender>,
     depth_texture_view: wgpu::TextureView,
     postprocess_pipeline: crate::render::postprocess::PostprocessingPipeline,
-    gui_renderer: egui_wgpu::Renderer,
 }
 
 impl<'window> Renderer<'window> {
@@ -16,18 +15,11 @@ impl<'window> Renderer<'window> {
         let depth_texture_view = gpu.create_depth_texture(width, height);
         let postprocess_pipeline =
             crate::render::postprocess::PostprocessingPipeline::new(&gpu, width, height);
-        let gui_renderer = egui_wgpu::Renderer::new(
-            &gpu.device,
-            wgpu::TextureFormat::Bgra8UnormSrgb,
-            Some(wgpu::TextureFormat::Depth32Float),
-            1,
-        );
         Self {
             gpu,
             view: None,
             depth_texture_view,
             postprocess_pipeline,
-            gui_renderer,
         }
     }
 
@@ -45,40 +37,13 @@ impl<'window> Renderer<'window> {
         self.depth_texture_view = self.gpu.create_depth_texture(width, height);
     }
 
-    pub fn render_frame(
-        &mut self,
-        context: &mut crate::app::Context,
-        textures_delta: &egui::epaint::textures::TexturesDelta,
-        paint_jobs: Vec<egui::ClippedPrimitive>,
-        screen_descriptor: ScreenDescriptor,
-    ) {
+    pub fn render_frame(&mut self, context: &mut crate::app::Context) {
         let mut encoder = self
             .gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-
-        for (id, image_delta) in &textures_delta.set {
-            self.gui_renderer
-                .update_texture(&self.gpu.device, &self.gpu.queue, *id, image_delta);
-        }
-
-        for id in &textures_delta.free {
-            self.gui_renderer.free_texture(id);
-        }
-
-        let screen_descriptor = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: screen_descriptor.size_in_pixels,
-            pixels_per_point: screen_descriptor.pixels_per_point,
-        };
-        self.gui_renderer.update_buffers(
-            &self.gpu.device,
-            &self.gpu.queue,
-            &mut encoder,
-            &paint_jobs,
-            &screen_descriptor,
-        );
 
         let surface_texture = self
             .gpu
@@ -164,9 +129,6 @@ impl<'window> Renderer<'window> {
             render_pass.set_pipeline(&self.postprocess_pipeline.pipeline);
             render_pass.set_bind_group(0, &self.postprocess_pipeline.bind_group, &[]);
             render_pass.draw(0..3, 0..1);
-
-            self.gui_renderer
-                .render(&mut render_pass, &paint_jobs, &screen_descriptor);
         }
 
         self.gpu.queue.submit(std::iter::once(encoder.finish()));

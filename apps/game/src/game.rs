@@ -42,7 +42,7 @@ impl phantom::app::State for Game {
         }
     }
 
-    fn update(&mut self, context: &mut phantom::app::Context, _ui: &phantom::egui::Context) {
+    fn update(&mut self, context: &mut phantom::app::Context) {
         phantom::camera::camera_system(context);
         context.world.physics.integrate(context.delta_time as _);
     }
