@@ -468,6 +468,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bmfont"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7464c178da64eeda8bdc1e70378593cba8e37a00a3846d593088db7a590ee3a3"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1918,6 +1927,7 @@ name = "phantom"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bmfont",
  "bytemuck",
  "chrono",
  "env_logger",

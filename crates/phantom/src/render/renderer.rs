@@ -23,7 +23,7 @@ impl<'window> Renderer<'window> {
         }
     }
 
-    pub fn load_world(&mut self, asset: &crate::asset::Asset) {
+    pub fn load_world(&mut self, asset: &crate::world::World) {
         let _ = std::mem::replace(
             &mut self.view,
             Some(crate::render::view::WorldRender::new(&self.gpu, asset)),
@@ -138,40 +138,40 @@ impl<'window> Renderer<'window> {
 }
 
 #[allow(dead_code)]
-pub fn map_sampler(sampler: &crate::asset::Sampler) -> wgpu::SamplerDescriptor<'static> {
+pub fn map_sampler(sampler: &crate::world::Sampler) -> wgpu::SamplerDescriptor<'static> {
     let min_filter = match sampler.min_filter {
-        crate::asset::MinFilter::Linear
-        | crate::asset::MinFilter::LinearMipmapLinear
-        | crate::asset::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
-        crate::asset::MinFilter::Nearest
-        | crate::asset::MinFilter::NearestMipmapLinear
-        | crate::asset::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
+        crate::world::MinFilter::Linear
+        | crate::world::MinFilter::LinearMipmapLinear
+        | crate::world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
+        crate::world::MinFilter::Nearest
+        | crate::world::MinFilter::NearestMipmapLinear
+        | crate::world::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
     };
 
     let mipmap_filter = match sampler.min_filter {
-        crate::asset::MinFilter::Linear
-        | crate::asset::MinFilter::LinearMipmapLinear
-        | crate::asset::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
-        crate::asset::MinFilter::Nearest
-        | crate::asset::MinFilter::NearestMipmapLinear
-        | crate::asset::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
+        crate::world::MinFilter::Linear
+        | crate::world::MinFilter::LinearMipmapLinear
+        | crate::world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
+        crate::world::MinFilter::Nearest
+        | crate::world::MinFilter::NearestMipmapLinear
+        | crate::world::MinFilter::NearestMipmapNearest => wgpu::FilterMode::Nearest,
     };
 
     let mag_filter = match sampler.mag_filter {
-        crate::asset::MagFilter::Linear => wgpu::FilterMode::Linear,
-        crate::asset::MagFilter::Nearest => wgpu::FilterMode::Nearest,
+        crate::world::MagFilter::Linear => wgpu::FilterMode::Linear,
+        crate::world::MagFilter::Nearest => wgpu::FilterMode::Nearest,
     };
 
     let address_mode_u = match sampler.wrap_s {
-        crate::asset::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-        crate::asset::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-        crate::asset::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+        crate::world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+        crate::world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+        crate::world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
     };
 
     let address_mode_v = match sampler.wrap_t {
-        crate::asset::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-        crate::asset::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-        crate::asset::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+        crate::world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+        crate::world::WrappingMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+        crate::world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
     };
 
     let address_mode_w = wgpu::AddressMode::Repeat;

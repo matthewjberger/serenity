@@ -23,7 +23,7 @@ pub async fn run_async(mut state: impl State + 'static) {
         io: Io::default(),
         delta_time: 0.01,
         last_frame: chrono::Utc::now(),
-        world: crate::asset::Asset::default(),
+        world: crate::world::World::default(),
         should_exit: false,
         should_reload_view: false,
     };
@@ -78,9 +78,7 @@ pub async fn run_async(mut state: impl State + 'static) {
                             width,
                             height,
                         }) => {
-                            if *width > 0 && *height > 0 {
-                                renderer.resize(*width, *height);
-                            }
+                            renderer.resize((*width).max(1), (*height).max(1));
                         }
                         _ => {}
                     }
@@ -120,7 +118,7 @@ pub struct Context {
     pub io: Io,
     pub delta_time: f64,
     pub last_frame: chrono::DateTime<chrono::Utc>,
-    pub world: crate::asset::Asset,
+    pub world: crate::world::World,
     pub should_exit: bool,
     pub should_reload_view: bool,
 }

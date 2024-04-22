@@ -3,7 +3,7 @@ pub struct Editor {
     selected_graph_node_index: Option<phantom::petgraph::graph::NodeIndex>,
     redo_stack: Vec<Command>,
     command_history: std::collections::VecDeque<Command>,
-    assets: Vec<phantom::asset::Asset>,
+    assets: Vec<phantom::world::World>,
 }
 
 impl Editor {
@@ -41,7 +41,7 @@ impl Editor {
                             asset.name = name;
 
                             if asset.scenes.is_empty() {
-                                asset.scenes.push(phantom::asset::Scene::default());
+                                asset.scenes.push(phantom::world::Scene::default());
                             }
                             asset.add_main_camera_to_scenegraph(0);
                             context.should_reload_view = true;
@@ -69,6 +69,12 @@ impl phantom::app::State for Editor {
         let light_node = asset.add_node();
         asset.add_light_to_node(light_node);
         asset.add_root_node_to_scenegraph(0, light_node);
+
+        asset.load_sdf_font(
+            "./apps/editor/fonts/font.fnt",
+            "./apps/editor/fonts/font_sdf_rgba.png",
+        );
+
         context.world = asset;
     }
 

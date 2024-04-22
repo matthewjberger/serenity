@@ -1,5 +1,6 @@
 mod gpu;
 mod postprocess;
+mod quad;
 mod renderer;
 mod view;
 

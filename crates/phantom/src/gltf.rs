@@ -1,11 +1,11 @@
 // .gltf / .glb
-pub fn import_gltf_file(path: impl AsRef<std::path::Path>) -> crate::asset::Asset {
+pub fn import_gltf_file(path: impl AsRef<std::path::Path>) -> crate::world::World {
     let (gltf, buffers, raw_images) = gltf::import(path.as_ref()).expect("Failed to import gltf");
     import_gltf(raw_images, gltf, buffers)
 }
 
 // .glb only
-pub fn import_gltf_slice(bytes: &[u8]) -> crate::asset::Asset {
+pub fn import_gltf_slice(bytes: &[u8]) -> crate::world::World {
     let (gltf, buffers, raw_images) = gltf::import_slice(bytes).expect("Failed to import gltf");
     import_gltf(raw_images, gltf, buffers)
 }
@@ -14,19 +14,19 @@ fn import_gltf(
     raw_images: Vec<gltf::image::Data>,
     gltf: gltf::Document,
     buffers: Vec<gltf::buffer::Data>,
-) -> crate::asset::Asset {
+) -> crate::world::World {
     let images = raw_images.into_iter().map(map_image).collect::<Vec<_>>();
     let samplers = gltf.samplers().map(map_sampler).collect::<Vec<_>>();
     let textures = gltf
         .textures()
-        .map(|texture| crate::asset::Texture {
+        .map(|texture| crate::world::Texture {
             image_index: texture.source().index(),
             sampler_index: texture.sampler().index(),
         })
         .collect::<Vec<_>>();
     let materials = gltf
         .materials()
-        .map(|material| crate::asset::Material {
+        .map(|material| crate::world::Material {
             base_color_factor: nalgebra_glm::Vec4::from(
                 material.pbr_metallic_roughness().base_color_factor(),
             ),
@@ -50,11 +50,11 @@ fn import_gltf(
         let meshes = gltf
             .meshes()
             .map(|mesh| {
-                crate::asset::Mesh {
+                crate::world::Mesh {
                     primitives: mesh
                         .primitives()
                         .map(|primitive| {
-                            let primitive_vertices: Vec<crate::asset::Vertex> = {
+                            let primitive_vertices: Vec<crate::world::Vertex> = {
                                 let reader =
                                     primitive.reader(|buffer| Some(&*buffers[buffer.index()]));
 
@@ -137,7 +137,7 @@ fn import_gltf(
                                 positions
                                     .into_iter()
                                     .enumerate()
-                                    .map(|(index, position)| crate::asset::Vertex {
+                                    .map(|(index, position)| crate::world::Vertex {
                                         position,
                                         normal: normals[index],
                                         uv_0: uv_0[index],
@@ -156,7 +156,7 @@ fn import_gltf(
                                 .map(|read_indices| read_indices.into_u32().collect())
                                 .unwrap_or_default();
 
-                            let primitive = crate::asset::Primitive {
+                            let primitive = crate::world::Primitive {
                                 topology: map_mesh_mode(primitive.mode()),
                                 material_index: primitive.material().index(),
                                 vertex_offset: vertices.len(),
@@ -187,21 +187,21 @@ fn import_gltf(
                 fn visit_node(
                     parent_graph_node_index: Option<petgraph::graph::NodeIndex>,
                     node: &gltf::Node,
-                    scene: &mut crate::asset::Scene,
-                    nodes: &mut Vec<crate::asset::Node>,
-                    transforms: &mut Vec<crate::asset::Transform>,
-                    metadata: &mut Vec<crate::asset::NodeMetadata>,
+                    scene: &mut crate::world::Scene,
+                    nodes: &mut Vec<crate::world::Node>,
+                    transforms: &mut Vec<crate::world::Transform>,
+                    metadata: &mut Vec<crate::world::NodeMetadata>,
                 ) {
                     let transform_index = transforms.len();
-                    transforms.push(crate::asset::Transform::from(node.transform().decomposed()));
+                    transforms.push(crate::world::Transform::from(node.transform().decomposed()));
 
                     let metadata_index = metadata.len();
-                    metadata.push(crate::asset::NodeMetadata {
+                    metadata.push(crate::world::NodeMetadata {
                         name: node.name().unwrap_or("Node").to_string(),
                     });
 
                     let node_index = nodes.len();
-                    nodes.push(crate::asset::Node {
+                    nodes.push(crate::world::Node {
                         metadata_index,
                         transform_index,
                         camera_index: node.camera().map(|camera| camera.index()),
@@ -229,18 +229,18 @@ fn import_gltf(
                     });
                 }
 
-                let mut scene = crate::asset::Scene::default();
+                let mut scene = crate::world::Scene::default();
 
                 let transform_index = transforms.len();
-                transforms.push(crate::asset::Transform::default());
+                transforms.push(crate::world::Transform::default());
 
                 let metadata_index = metadata.len();
-                metadata.push(crate::asset::NodeMetadata {
+                metadata.push(crate::world::NodeMetadata {
                     name: "Scene Root".to_string(),
                 });
 
                 let node_index = nodes.len();
-                nodes.push(crate::asset::Node {
+                nodes.push(crate::world::Node {
                     transform_index,
                     metadata_index,
                     ..Default::default()
@@ -279,13 +279,13 @@ fn import_gltf(
                     let inverse_bind_matrix = *inverse_bind_matrices
                         .get(index)
                         .unwrap_or(&nalgebra_glm::Mat4::identity());
-                    crate::asset::Joint {
+                    crate::world::Joint {
                         inverse_bind_matrix,
                         target_node_index: joint_node.index(),
                     }
                 })
                 .collect();
-            crate::asset::Skin { joints }
+            crate::world::Skin { joints }
         })
         .collect::<Vec<_>>();
 
@@ -309,31 +309,31 @@ fn import_gltf(
                             let translations = translations
                                 .map(nalgebra_glm::Vec3::from)
                                 .collect::<Vec<_>>();
-                            crate::asset::TransformationSet::Translations(translations)
+                            crate::world::TransformationSet::Translations(translations)
                         }
                         gltf::animation::util::ReadOutputs::Rotations(rotations) => {
                             let rotations = rotations
                                 .into_f32()
                                 .map(nalgebra_glm::Vec4::from)
                                 .collect::<Vec<_>>();
-                            crate::asset::TransformationSet::Rotations(rotations)
+                            crate::world::TransformationSet::Rotations(rotations)
                         }
                         gltf::animation::util::ReadOutputs::Scales(scales) => {
                             let scales = scales.map(nalgebra_glm::Vec3::from).collect::<Vec<_>>();
-                            crate::asset::TransformationSet::Scales(scales)
+                            crate::world::TransformationSet::Scales(scales)
                         }
                         gltf::animation::util::ReadOutputs::MorphTargetWeights(weights) => {
                             let morph_target_weights = weights.into_f32().collect::<Vec<_>>();
-                            crate::asset::TransformationSet::MorphTargetWeights(
+                            crate::world::TransformationSet::MorphTargetWeights(
                                 morph_target_weights,
                             )
                         }
                     };
-                    crate::asset::Channel {
+                    crate::world::Channel {
                         target_node_index,
                         inputs,
                         transformations,
-                        interpolation: crate::asset::Interpolation::default(),
+                        interpolation: crate::world::Interpolation::default(),
                     }
                 })
                 .collect::<Vec<_>>();
@@ -341,7 +341,7 @@ fn import_gltf(
                 .iter()
                 .flat_map(|channel| channel.inputs.iter().copied())
                 .fold(0.0, f32::max);
-            crate::asset::Animation {
+            crate::world::Animation {
                 channels,
                 time: 0.0,
                 max_animation_time,
@@ -356,7 +356,7 @@ fn import_gltf(
 
     let cameras = gltf.cameras().map(map_camera).collect::<Vec<_>>();
 
-    crate::asset::Asset {
+    crate::world::World {
         animations,
         cameras,
         images,
@@ -376,31 +376,31 @@ fn import_gltf(
     }
 }
 
-fn map_alpha_mode(mode: gltf::material::AlphaMode) -> crate::asset::AlphaMode {
+fn map_alpha_mode(mode: gltf::material::AlphaMode) -> crate::world::AlphaMode {
     match mode {
-        gltf::material::AlphaMode::Opaque => crate::asset::AlphaMode::Opaque,
-        gltf::material::AlphaMode::Mask => crate::asset::AlphaMode::Mask,
-        gltf::material::AlphaMode::Blend => crate::asset::AlphaMode::Blend,
+        gltf::material::AlphaMode::Opaque => crate::world::AlphaMode::Opaque,
+        gltf::material::AlphaMode::Mask => crate::world::AlphaMode::Mask,
+        gltf::material::AlphaMode::Blend => crate::world::AlphaMode::Blend,
     }
 }
 
-fn map_sampler(gltf_sampler: gltf::texture::Sampler) -> crate::asset::Sampler {
+fn map_sampler(gltf_sampler: gltf::texture::Sampler) -> crate::world::Sampler {
     let min_filter = gltf_sampler
         .min_filter()
         .map(|filter| match filter {
-            gltf::texture::MinFilter::Nearest => crate::asset::MinFilter::Nearest,
+            gltf::texture::MinFilter::Nearest => crate::world::MinFilter::Nearest,
             gltf::texture::MinFilter::NearestMipmapNearest => {
-                crate::asset::MinFilter::NearestMipmapNearest
+                crate::world::MinFilter::NearestMipmapNearest
             }
             gltf::texture::MinFilter::LinearMipmapNearest => {
-                crate::asset::MinFilter::LinearMipmapNearest
+                crate::world::MinFilter::LinearMipmapNearest
             }
-            gltf::texture::MinFilter::Linear => crate::asset::MinFilter::Linear,
+            gltf::texture::MinFilter::Linear => crate::world::MinFilter::Linear,
             gltf::texture::MinFilter::LinearMipmapLinear => {
-                crate::asset::MinFilter::LinearMipmapLinear
+                crate::world::MinFilter::LinearMipmapLinear
             }
             gltf::texture::MinFilter::NearestMipmapLinear => {
-                crate::asset::MinFilter::NearestMipmapLinear
+                crate::world::MinFilter::NearestMipmapLinear
             }
         })
         .unwrap_or_default();
@@ -408,24 +408,24 @@ fn map_sampler(gltf_sampler: gltf::texture::Sampler) -> crate::asset::Sampler {
     let mag_filter = gltf_sampler
         .mag_filter()
         .map(|filter| match filter {
-            gltf::texture::MagFilter::Linear => crate::asset::MagFilter::Linear,
-            gltf::texture::MagFilter::Nearest => crate::asset::MagFilter::Nearest,
+            gltf::texture::MagFilter::Linear => crate::world::MagFilter::Linear,
+            gltf::texture::MagFilter::Nearest => crate::world::MagFilter::Nearest,
         })
         .unwrap_or_default();
 
     let wrap_s = match gltf_sampler.wrap_s() {
-        gltf::texture::WrappingMode::ClampToEdge => crate::asset::WrappingMode::ClampToEdge,
-        gltf::texture::WrappingMode::MirroredRepeat => crate::asset::WrappingMode::MirroredRepeat,
-        gltf::texture::WrappingMode::Repeat => crate::asset::WrappingMode::Repeat,
+        gltf::texture::WrappingMode::ClampToEdge => crate::world::WrappingMode::ClampToEdge,
+        gltf::texture::WrappingMode::MirroredRepeat => crate::world::WrappingMode::MirroredRepeat,
+        gltf::texture::WrappingMode::Repeat => crate::world::WrappingMode::Repeat,
     };
 
     let wrap_t = match gltf_sampler.wrap_t() {
-        gltf::texture::WrappingMode::ClampToEdge => crate::asset::WrappingMode::ClampToEdge,
-        gltf::texture::WrappingMode::MirroredRepeat => crate::asset::WrappingMode::MirroredRepeat,
-        gltf::texture::WrappingMode::Repeat => crate::asset::WrappingMode::Repeat,
+        gltf::texture::WrappingMode::ClampToEdge => crate::world::WrappingMode::ClampToEdge,
+        gltf::texture::WrappingMode::MirroredRepeat => crate::world::WrappingMode::MirroredRepeat,
+        gltf::texture::WrappingMode::Repeat => crate::world::WrappingMode::Repeat,
     };
 
-    crate::asset::Sampler {
+    crate::world::Sampler {
         min_filter,
         mag_filter,
         wrap_s,
@@ -433,7 +433,7 @@ fn map_sampler(gltf_sampler: gltf::texture::Sampler) -> crate::asset::Sampler {
     }
 }
 
-fn map_image(data: gltf::image::Data) -> crate::asset::Image {
+fn map_image(data: gltf::image::Data) -> crate::world::Image {
     let img = match data.format {
         gltf::image::Format::R8 => image::DynamicImage::ImageLuma8(
             image::ImageBuffer::from_raw(data.width, data.height, data.pixels.to_vec()).unwrap(),
@@ -451,19 +451,19 @@ fn map_image(data: gltf::image::Data) -> crate::asset::Image {
     };
     let rgba_img = img.to_rgba8();
     let pixels = rgba_img.into_raw();
-    crate::asset::Image {
+    crate::world::Image {
         pixels,
-        format: crate::asset::ImageFormat::R8G8B8A8,
+        format: crate::world::ImageFormat::R8G8B8A8,
         width: data.width,
         height: data.height,
     }
 }
 
-fn map_camera(camera: gltf::Camera) -> crate::asset::Camera {
-    crate::asset::Camera {
+fn map_camera(camera: gltf::Camera) -> crate::world::Camera {
+    crate::world::Camera {
         projection: match camera.projection() {
             gltf::camera::Projection::Perspective(camera) => {
-                crate::asset::Projection::Perspective(crate::asset::PerspectiveCamera {
+                crate::world::Projection::Perspective(crate::world::PerspectiveCamera {
                     aspect_ratio: camera.aspect_ratio(),
                     y_fov_rad: camera.yfov(),
                     z_far: camera.zfar(),
@@ -471,7 +471,7 @@ fn map_camera(camera: gltf::Camera) -> crate::asset::Camera {
                 })
             }
             gltf::camera::Projection::Orthographic(camera) => {
-                crate::asset::Projection::Orthographic(crate::asset::OrthographicCamera {
+                crate::world::Projection::Orthographic(crate::world::OrthographicCamera {
                     x_mag: camera.xmag(),
                     y_mag: camera.ymag(),
                     z_far: camera.zfar(),
@@ -482,8 +482,8 @@ fn map_camera(camera: gltf::Camera) -> crate::asset::Camera {
     }
 }
 
-fn map_light(light: gltf::khr_lights_punctual::Light) -> crate::asset::Light {
-    crate::asset::Light {
+fn map_light(light: gltf::khr_lights_punctual::Light) -> crate::world::Light {
+    crate::world::Light {
         color: light.color().into(),
         intensity: light.intensity(),
         range: light.range().unwrap_or(0.0),
@@ -491,28 +491,28 @@ fn map_light(light: gltf::khr_lights_punctual::Light) -> crate::asset::Light {
     }
 }
 
-fn map_light_kind(kind: gltf::khr_lights_punctual::Kind) -> crate::asset::LightKind {
+fn map_light_kind(kind: gltf::khr_lights_punctual::Kind) -> crate::world::LightKind {
     match kind {
-        gltf::khr_lights_punctual::Kind::Directional => crate::asset::LightKind::Directional,
-        gltf::khr_lights_punctual::Kind::Point => crate::asset::LightKind::Point,
+        gltf::khr_lights_punctual::Kind::Directional => crate::world::LightKind::Directional,
+        gltf::khr_lights_punctual::Kind::Point => crate::world::LightKind::Point,
         gltf::khr_lights_punctual::Kind::Spot {
             inner_cone_angle,
             outer_cone_angle,
-        } => crate::asset::LightKind::Spot {
+        } => crate::world::LightKind::Spot {
             inner_cone_angle,
             outer_cone_angle,
         },
     }
 }
 
-fn map_mesh_mode(mode: gltf::mesh::Mode) -> crate::asset::PrimitiveTopology {
+fn map_mesh_mode(mode: gltf::mesh::Mode) -> crate::world::PrimitiveTopology {
     match mode {
-        gltf::mesh::Mode::Points => crate::asset::PrimitiveTopology::Points,
-        gltf::mesh::Mode::Lines => crate::asset::PrimitiveTopology::Lines,
-        gltf::mesh::Mode::LineStrip => crate::asset::PrimitiveTopology::LineStrip,
-        gltf::mesh::Mode::TriangleStrip => crate::asset::PrimitiveTopology::TriangleStrip,
-        gltf::mesh::Mode::LineLoop => crate::asset::PrimitiveTopology::LineLoop,
-        gltf::mesh::Mode::TriangleFan => crate::asset::PrimitiveTopology::TriangleFan,
-        gltf::mesh::Mode::Triangles => crate::asset::PrimitiveTopology::Triangles,
+        gltf::mesh::Mode::Points => crate::world::PrimitiveTopology::Points,
+        gltf::mesh::Mode::Lines => crate::world::PrimitiveTopology::Lines,
+        gltf::mesh::Mode::LineStrip => crate::world::PrimitiveTopology::LineStrip,
+        gltf::mesh::Mode::TriangleStrip => crate::world::PrimitiveTopology::TriangleStrip,
+        gltf::mesh::Mode::LineLoop => crate::world::PrimitiveTopology::LineLoop,
+        gltf::mesh::Mode::TriangleFan => crate::world::PrimitiveTopology::TriangleFan,
+        gltf::mesh::Mode::Triangles => crate::world::PrimitiveTopology::Triangles,
     }
 }

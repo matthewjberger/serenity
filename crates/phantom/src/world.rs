@@ -1,5 +1,7 @@
+use std::path::Path;
+
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Asset {
+pub struct World {
     pub name: String,
     pub animations: Vec<Animation>,
     pub cameras: Vec<Camera>,
@@ -18,10 +20,82 @@ pub struct Asset {
     pub vertices: Vec<Vertex>,
     pub instances: Vec<Instance>,
     pub orientations: Vec<Orientation>,
+    pub fonts: Vec<bmfont::BMFont>,
+    pub sdf_fonts: Vec<Font>,
     pub physics: crate::physics::PhysicsWorld,
 }
 
-impl Asset {
+impl World {
+    pub fn font_positions(&self, sdf_font_index: usize, text: &str) -> Vec<bmfont::CharPosition> {
+        let sdf_font = self.sdf_fonts[sdf_font_index];
+        let font = &self.fonts[sdf_font.font_index];
+        let char_positions = font.parse(text).expect("Failed to parse text!");
+        char_positions.into_iter().collect()
+    }
+
+    pub fn font_atlas(&self, sdf_font_index: usize) -> &Image {
+        let sdf_font = &self.sdf_fonts[sdf_font_index];
+        let texture = &self.textures[sdf_font.texture_index];
+        &self.images[texture.image_index]
+    }
+
+    pub fn load_sdf_font(
+        &mut self,
+        font_path: impl AsRef<Path>,
+        texture_path: impl AsRef<Path>,
+    ) -> usize {
+        let font = load_font_from_file(font_path).expect("Failed to load font!");
+        let font_index = self.add_font(font);
+
+        let image = load_image_from_file(texture_path).expect("Failed to load font texture!");
+        let image_index = self.add_image(&image);
+
+        let sampler = Sampler::default();
+        let sampler_index = self.add_sampler(sampler);
+
+        let texture = Texture {
+            image_index,
+            sampler_index: Some(sampler_index),
+        };
+        let texture_index = self.add_texture(texture);
+
+        let sdf_font = Font {
+            texture_index,
+            font_index,
+        };
+        self.add_sdf_font(sdf_font)
+    }
+
+    pub fn add_sdf_font(&mut self, sdf_font: Font) -> usize {
+        let sdf_font_index = self.sdf_fonts.len();
+        self.sdf_fonts.push(sdf_font);
+        sdf_font_index
+    }
+
+    pub fn add_sampler(&mut self, sampler: Sampler) -> usize {
+        let sampler_index = self.samplers.len();
+        self.samplers.push(sampler);
+        sampler_index
+    }
+
+    pub fn add_texture(&mut self, texture: Texture) -> usize {
+        let texture_index = self.textures.len();
+        self.textures.push(texture);
+        texture_index
+    }
+
+    pub fn add_image(&mut self, image: &Image) -> usize {
+        let image_index = self.images.len();
+        self.images.push(image.clone());
+        image_index
+    }
+
+    pub fn add_font(&mut self, font: bmfont::BMFont) -> usize {
+        let font_index = self.fonts.len();
+        self.fonts.push(font);
+        font_index
+    }
+
     pub fn add_child_node_to_scenegraph(
         &mut self,
         scene_index: usize,
@@ -38,15 +112,15 @@ impl Asset {
 
     pub fn add_node(&mut self) -> usize {
         let transform_index = self.transforms.len();
-        self.transforms.push(crate::asset::Transform::default());
+        self.transforms.push(crate::world::Transform::default());
 
         let metadata_index = self.metadata.len();
-        self.metadata.push(crate::asset::NodeMetadata {
+        self.metadata.push(crate::world::NodeMetadata {
             name: "Node".to_string(),
         });
 
         let node_index = self.nodes.len();
-        let node = crate::asset::Node {
+        let node = crate::world::Node {
             transform_index,
             metadata_index,
             ..Default::default()
@@ -90,7 +164,7 @@ impl Asset {
 
     pub fn add_orientation(&mut self) -> usize {
         let orientation_index = self.orientations.len();
-        self.orientations.push(crate::asset::Orientation::default());
+        self.orientations.push(crate::world::Orientation::default());
         orientation_index
     }
 
@@ -102,7 +176,7 @@ impl Asset {
 
     pub fn add_camera(&mut self) -> usize {
         let camera_index = self.cameras.len();
-        self.cameras.push(crate::asset::Camera::default());
+        self.cameras.push(crate::world::Camera::default());
         camera_index
     }
 
@@ -327,8 +401,8 @@ impl Default for Projection {
 }
 
 pub fn create_camera_matrices(
-    asset: &crate::asset::Asset,
-    scene: &crate::asset::Scene,
+    asset: &crate::world::World,
+    scene: &crate::world::Scene,
     aspect_ratio: f32,
 ) -> (nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4) {
     let camera_graph_node_index = scene
@@ -597,6 +671,27 @@ pub struct Image {
     pub height: u32,
 }
 
+pub fn load_image_from_file(path: impl AsRef<Path>) -> Result<Image, image::ImageError> {
+    let image = image::open(path)?;
+    Ok(load_image(&image))
+}
+
+pub fn load_image_from_bytes(bytes: &[u8]) -> Result<Image, image::ImageError> {
+    let image = image::load_from_memory(bytes)?;
+    Ok(load_image(&image))
+}
+
+pub fn load_image(image: &image::DynamicImage) -> Image {
+    let rgba = image.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Image {
+        pixels: rgba.into_raw(),
+        format: ImageFormat::R8G8B8A8,
+        width,
+        height,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ImageFormat {
     R8,
@@ -714,5 +809,32 @@ pub struct Skin {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Joint {
     pub target_node_index: usize,
+    // TODO: store this in contiguous vec and use an index here
     pub inverse_bind_matrix: nalgebra_glm::Mat4,
+}
+
+/// Fonts consist of a texture atlas and a font file
+/// SDF fonts and plain bitmap fonts can both be loaded this way
+#[derive(Default, Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Font {
+    pub texture_index: usize,
+    pub font_index: usize,
+}
+
+pub fn load_font_from_file(
+    path: impl AsRef<Path>,
+) -> Result<bmfont::BMFont, Box<dyn std::error::Error>> {
+    let file = std::fs::File::open(path).expect("Failed to open font file!");
+    let font = bmfont::BMFont::new(file, bmfont::OrdinateOrientation::TopToBottom)?;
+    Ok(font)
+}
+
+pub fn save_image_to_disk(image: &Image, path: impl AsRef<Path>) -> Result<(), image::ImageError> {
+    let image_buffer = image::ImageBuffer::<image::Rgba<u8>, _>::from_vec(
+        image.width,
+        image.height,
+        image.pixels.to_vec(),
+    )
+    .expect("Failed to create image buffer");
+    image_buffer.save_with_format(path, image::ImageFormat::Png)
 }
