@@ -301,13 +301,13 @@ impl WorldRender {
         context: &crate::app::Context,
     ) {
         let scene = &context
-            .world
+            .asset
             .scenes
             .first()
             .expect("No scene is available!");
 
         let (camera_position, projection, view) =
-            crate::asset::create_camera_matrices(&context.world, scene, gpu.aspect_ratio());
+            crate::asset::create_camera_matrices(&context.asset, scene, gpu.aspect_ratio());
 
         gpu.queue.write_buffer(
             &self.uniform_buffer,
@@ -319,16 +319,19 @@ impl WorldRender {
             }]),
         );
 
-        let mut mesh_ubos = vec![DynamicUniform::default(); context.world.transforms.len()];
+        let mut mesh_ubos = vec![DynamicUniform::default(); context.asset.transforms.len()];
         scene
             .graph
             .node_indices()
             .enumerate()
             .for_each(|(ubo_index, graph_node_index)| {
                 mesh_ubos[ubo_index] = DynamicUniform {
-                    model: context
-                        .world
-                        .global_transform(&scene.graph, graph_node_index),
+                    model: crate::asset::global_transform(
+                        &context.asset.nodes,
+                        &context.asset.transforms,
+                        &scene.graph,
+                        graph_node_index,
+                    ),
                 };
             });
         gpu.queue
@@ -357,11 +360,11 @@ impl WorldRender {
                 .enumerate()
                 .for_each(|(ubo_index, graph_node_index)| {
                     let node_index = scene.graph[graph_node_index];
-                    let node = &context.world.nodes[node_index];
+                    let node = &context.asset.nodes[node_index];
                     if let Some(mesh_index) = node.mesh_index {
                         let offset = (ubo_index as u64 * gpu.alignment()) as wgpu::DynamicOffset;
                         render_pass.set_bind_group(1, &self.dynamic_uniform_bind_group, &[offset]);
-                        let mesh = &context.world.meshes[mesh_index];
+                        let mesh = &context.asset.meshes[mesh_index];
 
                         for primitive in mesh.primitives.iter() {
                             match primitive.topology {
@@ -393,7 +396,7 @@ impl WorldRender {
 
                             match primitive.material_index {
                                 Some(material_index) => {
-                                    let material = &context.world.materials[material_index];
+                                    let material = &context.asset.materials[material_index];
                                     if material.alpha_mode != *alpha_mode {
                                         continue;
                                     }

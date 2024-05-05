@@ -1,3 +1,131 @@
+pub fn global_transform(
+    nodes: &[Node],
+    transforms: &[Transform],
+    scenegraph: &SceneGraph,
+    graph_node_index: petgraph::graph::NodeIndex,
+) -> nalgebra_glm::Mat4 {
+    let node_index = scenegraph[graph_node_index];
+    let transform_index = nodes[node_index].transform_index;
+    let transform = transforms[transform_index].matrix();
+    match scenegraph
+        .neighbors_directed(graph_node_index, petgraph::Direction::Incoming)
+        .next()
+    {
+        Some(parent_node_index) => {
+            global_transform(nodes, transforms, scenegraph, parent_node_index) * transform
+        }
+        None => transform,
+    }
+}
+
+pub fn add_node(
+    nodes: &mut Vec<Node>,
+    metadata: &mut Vec<NodeMetadata>,
+    transforms: &mut Vec<Transform>,
+) -> usize {
+    let transform_index = add_transform(transforms);
+    let metadata_index = add_metadata(metadata);
+    let node_index = nodes.len();
+    let node = crate::asset::Node {
+        transform_index,
+        metadata_index,
+        ..Default::default()
+    };
+    nodes.push(node);
+    node_index
+}
+
+pub fn add_metadata(metadata: &mut Vec<NodeMetadata>) -> usize {
+    let metadata_index = metadata.len();
+    metadata.push(crate::asset::NodeMetadata::default());
+    metadata_index
+}
+
+pub fn add_transform(transforms: &mut Vec<Transform>) -> usize {
+    let transform_index = transforms.len();
+    transforms.push(crate::asset::Transform::default());
+    transform_index
+}
+
+pub fn add_main_camera_to_scenegraph(
+    scenes: &mut [Scene],
+    metadata: &mut Vec<NodeMetadata>,
+    nodes: &mut Vec<Node>,
+    cameras: &mut Vec<Camera>,
+    orientations: &mut Vec<Orientation>,
+    transforms: &mut Vec<Transform>,
+    scene_index: usize,
+) {
+    let node_index = add_node(nodes, metadata, transforms);
+    add_camera_to_node(nodes, transforms, orientations, cameras, node_index);
+    let camera_graph_node_index = add_child_node_to_scenegraph(
+        scenes,
+        scene_index,
+        petgraph::graph::NodeIndex::new(0),
+        node_index,
+    );
+    scenes[scene_index].default_camera_graph_node_index = Some(camera_graph_node_index);
+    let node = &nodes[node_index];
+    let metadata = &mut metadata[node.metadata_index];
+    metadata.name = "Main Camera".to_string();
+}
+
+pub fn add_camera(cameras: &mut Vec<Camera>) -> usize {
+    let camera_index = cameras.len();
+    cameras.push(crate::asset::Camera::default());
+    camera_index
+}
+
+pub fn add_camera_to_node(
+    nodes: &mut [Node],
+    transforms: &mut [Transform],
+    orientations: &mut Vec<Orientation>,
+    cameras: &mut Vec<Camera>,
+    node_index: usize,
+) -> usize {
+    let orientation_index = add_orientation_to_node(nodes, orientations, node_index);
+    let camera_index = add_camera(cameras);
+
+    let node = &mut nodes[node_index];
+    let transform = &mut transforms[node.transform_index];
+    let orientation = &orientations[orientation_index];
+    transform.translation = orientation.position();
+    transform.rotation = orientation.look_at_offset();
+
+    node.camera_index = Some(camera_index);
+    camera_index
+}
+
+pub fn add_orientation_to_node(
+    nodes: &mut [Node],
+    orientations: &mut Vec<Orientation>,
+    node_index: usize,
+) -> usize {
+    let orientation_index = add_orientation(orientations);
+    nodes[node_index].orientation_index = Some(orientation_index);
+    orientation_index
+}
+
+pub fn add_orientation(orientations: &mut Vec<Orientation>) -> usize {
+    let orientation_index = orientations.len();
+    orientations.push(crate::asset::Orientation::default());
+    orientation_index
+}
+
+pub fn add_child_node_to_scenegraph(
+    scenes: &mut [Scene],
+    scene_index: usize,
+    parent_graph_node_index: petgraph::graph::NodeIndex,
+    node_index: usize,
+) -> petgraph::graph::NodeIndex {
+    let scene = &mut scenes[scene_index];
+    let graph_node_index = scene.graph.add_node(node_index);
+    scene
+        .graph
+        .add_edge(parent_graph_node_index, graph_node_index, ());
+    graph_node_index
+}
+
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Asset {
     pub name: String,
@@ -19,156 +147,6 @@ pub struct Asset {
     pub instances: Vec<Instance>,
     pub orientations: Vec<Orientation>,
     pub physics: crate::physics::PhysicsWorld,
-}
-
-impl Asset {
-    pub fn add_child_node_to_scenegraph(
-        &mut self,
-        scene_index: usize,
-        parent_graph_node_index: petgraph::graph::NodeIndex,
-        node_index: usize,
-    ) -> petgraph::graph::NodeIndex {
-        let scene = &mut self.scenes[scene_index];
-        let graph_node_index = scene.graph.add_node(node_index);
-        scene
-            .graph
-            .add_edge(parent_graph_node_index, graph_node_index, ());
-        graph_node_index
-    }
-
-    pub fn add_node(&mut self) -> usize {
-        let transform_index = self.transforms.len();
-        self.transforms.push(crate::asset::Transform::default());
-
-        let metadata_index = self.metadata.len();
-        self.metadata.push(crate::asset::NodeMetadata {
-            name: "Node".to_string(),
-        });
-
-        let node_index = self.nodes.len();
-        let node = crate::asset::Node {
-            transform_index,
-            metadata_index,
-            ..Default::default()
-        };
-        self.nodes.push(node);
-        node_index
-    }
-
-    pub fn add_node_instance(&mut self, node_index: usize, instance: Instance) -> usize {
-        let instance_index = self.instances.len();
-        self.instances.push(instance);
-        self.nodes[node_index].instances.push(instance_index);
-        instance_index
-    }
-
-    pub fn add_main_camera_to_scenegraph(&mut self, scene_index: usize) {
-        let node_index = self.add_node();
-        self.add_camera_to_node(node_index);
-        let camera_graph_node_index = self.add_child_node_to_scenegraph(
-            scene_index,
-            petgraph::graph::NodeIndex::new(0),
-            node_index,
-        );
-        self.scenes[scene_index].default_camera_graph_node_index = Some(camera_graph_node_index);
-        let node = &self.nodes[node_index];
-        let metadata = &mut self.metadata[node.metadata_index];
-        metadata.name = "Main Camera".to_string();
-    }
-
-    pub fn add_root_node_to_scenegraph(
-        &mut self,
-        scene_index: usize,
-        node_index: usize,
-    ) -> petgraph::graph::NodeIndex {
-        self.add_child_node_to_scenegraph(
-            scene_index,
-            petgraph::graph::NodeIndex::new(0),
-            node_index,
-        )
-    }
-
-    pub fn add_orientation(&mut self) -> usize {
-        let orientation_index = self.orientations.len();
-        self.orientations.push(crate::asset::Orientation::default());
-        orientation_index
-    }
-
-    pub fn add_orientation_to_node(&mut self, node_index: usize) -> usize {
-        let orientation_index = self.add_orientation();
-        self.nodes[node_index].orientation_index = Some(orientation_index);
-        orientation_index
-    }
-
-    pub fn add_camera(&mut self) -> usize {
-        let camera_index = self.cameras.len();
-        self.cameras.push(crate::asset::Camera::default());
-        camera_index
-    }
-
-    pub fn add_camera_to_node(&mut self, node_index: usize) -> usize {
-        let orientation_index = self.add_orientation_to_node(node_index);
-        let camera_index = self.add_camera();
-
-        let node = &mut self.nodes[node_index];
-        let transform = &mut self.transforms[node.transform_index];
-        let orientation = &self.orientations[orientation_index];
-        transform.translation = orientation.position();
-        transform.rotation = orientation.look_at_offset();
-
-        node.camera_index = Some(camera_index);
-        camera_index
-    }
-
-    pub fn add_light_to_node(&mut self, node_index: usize) -> usize {
-        let light_index = self.lights.len();
-        self.lights.push(Light::default());
-        self.nodes[node_index].light_index = Some(light_index);
-        node_index
-    }
-
-    pub fn global_transform(
-        &self,
-        scenegraph: &SceneGraph,
-        graph_node_index: petgraph::graph::NodeIndex,
-    ) -> nalgebra_glm::Mat4 {
-        let node_index = scenegraph[graph_node_index];
-        let transform_index = self.nodes[node_index].transform_index;
-        let transform = self.transforms[transform_index].matrix();
-        match scenegraph
-            .neighbors_directed(graph_node_index, petgraph::Direction::Incoming)
-            .next()
-        {
-            Some(parent_node_index) => {
-                self.global_transform(scenegraph, parent_node_index) * transform
-            }
-            None => transform,
-        }
-    }
-
-    pub fn global_isometry(
-        &self,
-        scenegraph: &SceneGraph,
-        graph_node_index: petgraph::graph::NodeIndex,
-    ) -> (nalgebra_glm::Vec3, nalgebra_glm::Quat) {
-        let node_index = scenegraph[graph_node_index];
-        let transform_index = self.nodes[node_index].transform_index;
-        let transform = self.transforms[transform_index];
-        match scenegraph
-            .neighbors_directed(graph_node_index, petgraph::Direction::Incoming)
-            .next()
-        {
-            Some(parent_node_index) => {
-                let (parent_translation, parent_rotation) =
-                    self.global_isometry(scenegraph, parent_node_index);
-                (
-                    parent_translation + transform.translation,
-                    parent_rotation * transform.rotation,
-                )
-            }
-            None => (transform.translation, transform.rotation),
-        }
-    }
 }
 
 #[repr(C)]
@@ -339,7 +317,12 @@ pub fn create_camera_matrices(
     let camera = &asset.cameras[camera_node
         .camera_index
         .expect("Every scene requires a camera")];
-    let transform = Transform::from(asset.global_transform(&scene.graph, camera_graph_node_index));
+    let transform = Transform::from(global_transform(
+        &asset.nodes,
+        &asset.transforms,
+        &scene.graph,
+        camera_graph_node_index,
+    ));
     (
         transform.translation,
         camera.projection_matrix(aspect_ratio),
@@ -584,7 +567,7 @@ pub struct Node {
     pub instances: Vec<usize>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NodeMetadata {
     pub name: String,
 }
@@ -715,4 +698,155 @@ pub struct Skin {
 pub struct Joint {
     pub target_node_index: usize,
     pub inverse_bind_matrix: nalgebra_glm::Mat4,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_global_transform() {
+        let nodes = vec![
+            Node {
+                transform_index: 0,
+                ..Default::default()
+            },
+            Node {
+                transform_index: 1,
+                ..Default::default()
+            },
+        ];
+        let transforms = vec![
+            Transform {
+                translation: nalgebra_glm::vec3(1.0, 0.0, 0.0),
+                ..Default::default()
+            },
+            Transform {
+                translation: nalgebra_glm::vec3(0.0, 2.0, 0.0),
+                ..Default::default()
+            },
+        ];
+        let mut scenegraph: SceneGraph = SceneGraph::new();
+        let root_node_index = scenegraph.add_node(0);
+        let child_node_index = scenegraph.add_node(1);
+        scenegraph.add_edge(root_node_index, child_node_index, ());
+
+        let global_transform_root =
+            global_transform(&nodes, &transforms, &scenegraph, root_node_index);
+        let global_transform_child =
+            global_transform(&nodes, &transforms, &scenegraph, child_node_index);
+
+        assert_eq!(
+            global_transform_root,
+            nalgebra_glm::translation(&nalgebra_glm::vec3(1.0, 0.0, 0.0))
+        );
+        assert_eq!(
+            global_transform_child,
+            nalgebra_glm::translation(&nalgebra_glm::vec3(1.0, 0.0, 0.0))
+                * nalgebra_glm::translation(&nalgebra_glm::vec3(0.0, 2.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn test_add_node() {
+        let mut nodes = vec![];
+        let mut metadata = vec![];
+        let mut transforms = vec![];
+
+        let node_index = add_node(&mut nodes, &mut metadata, &mut transforms);
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(transforms.len(), 1);
+        assert_eq!(node_index, 0);
+    }
+
+    #[test]
+    fn test_add_metadata() {
+        let mut metadata = vec![];
+        let metadata_index = add_metadata(&mut metadata);
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(metadata_index, 0);
+    }
+
+    #[test]
+    fn test_add_transform() {
+        let mut transforms = vec![];
+        let transform_index = add_transform(&mut transforms);
+        assert_eq!(transforms.len(), 1);
+        assert_eq!(transform_index, 0);
+    }
+
+    #[test]
+    fn test_add_main_camera_to_scenegraph() {
+        let mut scenes = vec![Scene::default()];
+        let mut metadata = vec![];
+        let mut nodes = vec![];
+        let mut cameras = vec![];
+        let mut orientations = vec![];
+        let mut transforms = vec![];
+
+        add_main_camera_to_scenegraph(
+            &mut scenes,
+            &mut metadata,
+            &mut nodes,
+            &mut cameras,
+            &mut orientations,
+            &mut transforms,
+            0,
+        );
+
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(cameras.len(), 1);
+        assert_eq!(orientations.len(), 1);
+        assert_eq!(transforms.len(), 1);
+        assert!(scenes[0].default_camera_graph_node_index.is_some());
+    }
+
+    #[test]
+    fn test_add_camera() {
+        let mut cameras = vec![];
+        let camera_index = add_camera(&mut cameras);
+        assert_eq!(cameras.len(), 1);
+        assert_eq!(camera_index, 0);
+    }
+
+    #[test]
+    fn test_add_camera_to_node() {
+        let mut nodes = vec![Node::default()];
+        let mut transforms = vec![Transform::default()];
+        let mut orientations = vec![];
+        let mut cameras = vec![];
+
+        let camera_index = add_camera_to_node(
+            &mut nodes,
+            &mut transforms,
+            &mut orientations,
+            &mut cameras,
+            0,
+        );
+        assert_eq!(orientations.len(), 1);
+        assert_eq!(cameras.len(), 1);
+        assert_eq!(camera_index, 0);
+        assert_eq!(nodes[0].camera_index, Some(0));
+    }
+
+    #[test]
+    fn test_add_orientation_to_node() {
+        let mut nodes = vec![Node::default()];
+        let mut orientations = vec![];
+
+        let orientation_index = add_orientation_to_node(&mut nodes, &mut orientations, 0);
+        assert_eq!(orientations.len(), 1);
+        assert_eq!(orientation_index, 0);
+        assert_eq!(nodes[0].orientation_index, Some(0));
+    }
+
+    #[test]
+    fn test_add_orientation() {
+        let mut orientations = vec![];
+        let orientation_index = add_orientation(&mut orientations);
+        assert_eq!(orientations.len(), 1);
+        assert_eq!(orientation_index, 0);
+    }
 }

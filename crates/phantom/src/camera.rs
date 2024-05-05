@@ -1,6 +1,6 @@
 pub fn camera_system(context: &mut crate::app::Context) {
     let scene = &context
-        .world
+        .asset
         .scenes
         .first()
         .expect("No scene is available!");
@@ -8,15 +8,15 @@ pub fn camera_system(context: &mut crate::app::Context) {
     let camera_node_index = scene.graph[scene
         .default_camera_graph_node_index
         .expect("No camera is available in the active scene!")];
-    let camera_node = &mut context.world.nodes[camera_node_index];
+    let camera_node = &mut context.asset.nodes[camera_node_index];
 
-    let metadata = &context.world.metadata[camera_node.metadata_index];
+    let metadata = &context.asset.metadata[camera_node.metadata_index];
     if metadata.name != "Main Camera" {
         return;
     }
 
-    let transform = &mut context.world.transforms[camera_node.transform_index];
-    let orientation = &mut context.world.orientations[camera_node.orientation_index.unwrap()];
+    let transform = &mut context.asset.transforms[camera_node.transform_index];
+    let orientation = &mut context.asset.orientations[camera_node.orientation_index.unwrap()];
 
     let mut sync_transform = false;
     let speed = 10.0 * context.delta_time as f32;

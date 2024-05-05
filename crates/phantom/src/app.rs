@@ -23,7 +23,7 @@ pub async fn run_async(mut state: impl State + 'static) {
         io: Io::default(),
         delta_time: 0.01,
         last_frame: chrono::Utc::now(),
-        world: crate::asset::Asset::default(),
+        asset: crate::asset::Asset::default(),
         should_exit: false,
         should_reload_view: false,
     };
@@ -64,7 +64,7 @@ pub async fn run_async(mut state: impl State + 'static) {
             state.receive_event(&mut context, &event);
 
             if context.should_reload_view {
-                renderer.load_world(&context.world);
+                renderer.load_world(&context.asset);
                 context.should_reload_view = false;
                 return;
             }
@@ -153,7 +153,7 @@ pub struct Context {
     pub io: Io,
     pub delta_time: f64,
     pub last_frame: chrono::DateTime<chrono::Utc>,
-    pub world: crate::asset::Asset,
+    pub asset: crate::asset::Asset,
     pub should_exit: bool,
     pub should_reload_view: bool,
 }

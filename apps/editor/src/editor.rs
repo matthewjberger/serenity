@@ -43,13 +43,18 @@ impl Editor {
                             if asset.scenes.is_empty() {
                                 asset.scenes.push(phantom::asset::Scene::default());
                             }
-                            asset.add_main_camera_to_scenegraph(0);
+                            phantom::asset::add_main_camera_to_scenegraph(
+                                &mut context.asset.scenes,
+                                &mut context.asset.metadata,
+                                &mut context.asset.nodes,
+                                &mut context.asset.cameras,
+                                &mut context.asset.orientations,
+                                &mut context.asset.transforms,
+                                0,
+                            );
                             context.should_reload_view = true;
 
-                            let light_node = asset.add_node();
-                            asset.add_light_to_node(light_node);
-                            asset.add_root_node_to_scenegraph(0, light_node);
-                            context.world = asset.clone();
+                            context.asset = asset.clone();
                             self.assets.push(asset);
                         }
                     }
@@ -68,7 +73,7 @@ impl Editor {
             .resizable(true)
             .show(ui, |ui| {
                 let scene = &context
-                    .world
+                    .asset
                     .scenes
                     .first()
                     .expect("No scene is available!");
@@ -77,7 +82,7 @@ impl Editor {
                         .id_source(ui.next_auto_id())
                         .show(ui, |ui| {
                             node_ui(
-                                &context.world,
+                                &context.asset,
                                 ui,
                                 &scene.graph,
                                 0.into(),
@@ -120,13 +125,18 @@ impl phantom::app::State for Editor {
     fn initialize(&mut self, context: &mut phantom::app::Context) {
         let mut asset = phantom::gltf::import_gltf_slice(include_bytes!("../glb/helmet.glb"));
 
-        asset.add_main_camera_to_scenegraph(0);
+        phantom::asset::add_main_camera_to_scenegraph(
+            &mut asset.scenes,
+            &mut asset.metadata,
+            &mut asset.nodes,
+            &mut asset.cameras,
+            &mut asset.orientations,
+            &mut asset.transforms,
+            0,
+        );
         context.should_reload_view = true;
 
-        let light_node = asset.add_node();
-        asset.add_light_to_node(light_node);
-        asset.add_root_node_to_scenegraph(0, light_node);
-        context.world = asset;
+        context.asset = asset;
     }
 
     fn receive_event(

@@ -4,6 +4,7 @@ pub mod camera;
 pub mod gltf;
 pub mod physics;
 pub mod render;
+pub mod world;
 
 pub use egui;
 pub use log;
