@@ -1,175 +1,49 @@
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct Asset {
     pub name: String,
+    pub physics: crate::physics::PhysicsWorld,
+
+    // Entity Graphs
+    pub scenes: Vec<Scene>,
+
+    // Resources
     pub animations: Vec<Animation>,
-    pub cameras: Vec<Camera>,
     pub images: Vec<Image>,
     pub indices: Vec<u32>,
-    pub lights: Vec<Light>,
+    pub instances: Vec<Instance>,
     pub materials: Vec<Material>,
     pub meshes: Vec<Mesh>,
-    pub nodes: Vec<Node>,
-    pub metadata: Vec<NodeMetadata>,
     pub samplers: Vec<Sampler>,
-    pub scenes: Vec<Scene>,
     pub skins: Vec<Skin>,
     pub textures: Vec<Texture>,
-    pub transforms: Vec<Transform>,
     pub vertices: Vec<Vertex>,
-    pub instances: Vec<Instance>,
-    pub orientations: Vec<Orientation>,
-    pub physics: crate::physics::PhysicsWorld,
+
+    // Entities
+    pub entity_allocator: crate::genvec::HandleAllocator,
+
+    // Components
+    pub cameras: crate::genvec::GenerationalVec<Camera>,
+    pub lights: crate::genvec::GenerationalVec<Light>,
+    pub metadata: crate::genvec::GenerationalVec<NodeMetadata>,
+    pub orientations: crate::genvec::GenerationalVec<Orientation>,
+    pub transforms: crate::genvec::GenerationalVec<Transform>,
 }
 
 impl Asset {
-    pub fn add_child_node_to_scenegraph(
-        &mut self,
-        scene_index: usize,
-        parent_graph_node_index: petgraph::graph::NodeIndex,
-        node_index: usize,
-    ) -> petgraph::graph::NodeIndex {
-        let scene = &mut self.scenes[scene_index];
-        let graph_node_index = scene.graph.add_node(node_index);
-        scene
-            .graph
-            .add_edge(parent_graph_node_index, graph_node_index, ());
-        graph_node_index
+    pub fn spawn_entities(&mut self, count: usize) -> Vec<Entity> {
+        (0..count)
+            .map(|_| self.entity_allocator.allocate())
+            .collect()
     }
 
-    pub fn add_node(&mut self) -> usize {
-        let transform_index = self.transforms.len();
-        self.transforms.push(crate::asset::Transform::default());
-
-        let metadata_index = self.metadata.len();
-        self.metadata.push(crate::asset::NodeMetadata {
-            name: "Node".to_string(),
+    pub fn despawn_entities(&mut self, entities: &[crate::genvec::GenerationalIndex]) {
+        entities.into_iter().for_each(|handle| {
+            self.entity_allocator.deallocate(handle);
         });
-
-        let node_index = self.nodes.len();
-        let node = crate::asset::Node {
-            transform_index,
-            metadata_index,
-            ..Default::default()
-        };
-        self.nodes.push(node);
-        node_index
-    }
-
-    pub fn add_node_instance(&mut self, node_index: usize, instance: Instance) -> usize {
-        let instance_index = self.instances.len();
-        self.instances.push(instance);
-        self.nodes[node_index].instances.push(instance_index);
-        instance_index
-    }
-
-    pub fn add_main_camera_to_scenegraph(&mut self, scene_index: usize) {
-        let node_index = self.add_node();
-        self.add_camera_to_node(node_index);
-        let camera_graph_node_index = self.add_child_node_to_scenegraph(
-            scene_index,
-            petgraph::graph::NodeIndex::new(0),
-            node_index,
-        );
-        self.scenes[scene_index].default_camera_graph_node_index = Some(camera_graph_node_index);
-        let node = &self.nodes[node_index];
-        let metadata = &mut self.metadata[node.metadata_index];
-        metadata.name = "Main Camera".to_string();
-    }
-
-    pub fn add_root_node_to_scenegraph(
-        &mut self,
-        scene_index: usize,
-        node_index: usize,
-    ) -> petgraph::graph::NodeIndex {
-        self.add_child_node_to_scenegraph(
-            scene_index,
-            petgraph::graph::NodeIndex::new(0),
-            node_index,
-        )
-    }
-
-    pub fn add_orientation(&mut self) -> usize {
-        let orientation_index = self.orientations.len();
-        self.orientations.push(crate::asset::Orientation::default());
-        orientation_index
-    }
-
-    pub fn add_orientation_to_node(&mut self, node_index: usize) -> usize {
-        let orientation_index = self.add_orientation();
-        self.nodes[node_index].orientation_index = Some(orientation_index);
-        orientation_index
-    }
-
-    pub fn add_camera(&mut self) -> usize {
-        let camera_index = self.cameras.len();
-        self.cameras.push(crate::asset::Camera::default());
-        camera_index
-    }
-
-    pub fn add_camera_to_node(&mut self, node_index: usize) -> usize {
-        let orientation_index = self.add_orientation_to_node(node_index);
-        let camera_index = self.add_camera();
-
-        let node = &mut self.nodes[node_index];
-        let transform = &mut self.transforms[node.transform_index];
-        let orientation = &self.orientations[orientation_index];
-        transform.translation = orientation.position();
-        transform.rotation = orientation.look_at_offset();
-
-        node.camera_index = Some(camera_index);
-        camera_index
-    }
-
-    pub fn add_light_to_node(&mut self, node_index: usize) -> usize {
-        let light_index = self.lights.len();
-        self.lights.push(Light::default());
-        self.nodes[node_index].light_index = Some(light_index);
-        node_index
-    }
-
-    pub fn global_transform(
-        &self,
-        scenegraph: &SceneGraph,
-        graph_node_index: petgraph::graph::NodeIndex,
-    ) -> nalgebra_glm::Mat4 {
-        let node_index = scenegraph[graph_node_index];
-        let transform_index = self.nodes[node_index].transform_index;
-        let transform = self.transforms[transform_index].matrix();
-        match scenegraph
-            .neighbors_directed(graph_node_index, petgraph::Direction::Incoming)
-            .next()
-        {
-            Some(parent_node_index) => {
-                self.global_transform(scenegraph, parent_node_index) * transform
-            }
-            None => transform,
-        }
-    }
-
-    pub fn global_isometry(
-        &self,
-        scenegraph: &SceneGraph,
-        graph_node_index: petgraph::graph::NodeIndex,
-    ) -> (nalgebra_glm::Vec3, nalgebra_glm::Quat) {
-        let node_index = scenegraph[graph_node_index];
-        let transform_index = self.nodes[node_index].transform_index;
-        let transform = self.transforms[transform_index];
-        match scenegraph
-            .neighbors_directed(graph_node_index, petgraph::Direction::Incoming)
-            .next()
-        {
-            Some(parent_node_index) => {
-                let (parent_translation, parent_rotation) =
-                    self.global_isometry(scenegraph, parent_node_index);
-                (
-                    parent_translation + transform.translation,
-                    parent_rotation * transform.rotation,
-                )
-            }
-            None => (transform.translation, transform.rotation),
-        }
     }
 }
+
+pub type Entity = crate::genvec::GenerationalIndex;
 
 #[repr(C)]
 #[derive(
@@ -584,7 +458,7 @@ pub struct Node {
     pub instances: Vec<usize>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NodeMetadata {
     pub name: String,
 }
