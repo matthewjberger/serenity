@@ -126,27 +126,30 @@ pub fn add_child_node_to_scenegraph(
     graph_node_index
 }
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct Asset {
     pub name: String,
+    pub physics: crate::physics::PhysicsWorld,
+    pub scenes: Vec<Scene>,
+    // Resources
     pub animations: Vec<Animation>,
-    pub cameras: Vec<Camera>,
     pub images: Vec<Image>,
     pub indices: Vec<u32>,
-    pub lights: Vec<Light>,
+    pub instances: Vec<Instance>,
     pub materials: Vec<Material>,
     pub meshes: Vec<Mesh>,
-    pub nodes: Vec<Node>,
-    pub metadata: Vec<NodeMetadata>,
     pub samplers: Vec<Sampler>,
-    pub scenes: Vec<Scene>,
     pub skins: Vec<Skin>,
     pub textures: Vec<Texture>,
-    pub transforms: Vec<Transform>,
     pub vertices: Vec<Vertex>,
-    pub instances: Vec<Instance>,
-    pub orientations: Vec<Orientation>,
-    pub physics: crate::physics::PhysicsWorld,
+    // Components
+    pub cameras: crate::genvec::GenerationalVec<Camera>,
+    pub lights: crate::genvec::GenerationalVec<Light>,
+    pub metadata: crate::genvec::GenerationalVec<NodeMetadata>,
+    pub orientations: crate::genvec::GenerationalVec<Orientation>,
+    pub transforms: crate::genvec::GenerationalVec<Transform>,
+    // Entities
+    pub entity_allocator: crate::genvec::HandleAllocator,
 }
 
 #[repr(C)]
