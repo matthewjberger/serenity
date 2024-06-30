@@ -3,7 +3,6 @@ pub struct Editor {
     selected_graph_node_index: Option<phantom::petgraph::graph::NodeIndex>,
     redo_stack: Vec<Command>,
     command_history: std::collections::VecDeque<Command>,
-    assets: Vec<phantom::asset::Asset>,
 }
 
 impl Editor {
@@ -13,7 +12,6 @@ impl Editor {
             pending_messages: Vec::new(),
             redo_stack: Vec::new(),
             command_history: std::collections::VecDeque::new(),
-            assets: Vec::new(),
         }
     }
 
@@ -37,20 +35,19 @@ impl Editor {
                             self.command_history = std::collections::VecDeque::new();
                             let name = path.to_string();
 
-                            let mut asset = phantom::gltf::import_gltf_file(path);
-                            asset.name = name;
+                            let mut world = phantom::gltf::import_gltf_file(path);
+                            world.name = name;
 
-                            if asset.scenes.is_empty() {
-                                asset.scenes.push(phantom::asset::Scene::default());
+                            if world.scenes.is_empty() {
+                                world.scenes.push(phantom::world::Scene::default());
                             }
-                            asset.add_main_camera_to_scenegraph(0);
+                            world.add_main_camera_to_scenegraph(0);
                             context.should_reload_view = true;
 
-                            let light_node = asset.add_node();
-                            asset.add_light_to_node(light_node);
-                            asset.add_root_node_to_scenegraph(0, light_node);
-                            context.world = asset.clone();
-                            self.assets.push(asset);
+                            let light_node = world.add_node();
+                            world.add_light_to_node(light_node);
+                            world.add_root_node_to_scenegraph(0, light_node);
+                            context.world = world.clone();
                         }
                     }
                 }
@@ -118,15 +115,15 @@ impl Editor {
 
 impl phantom::app::State for Editor {
     fn initialize(&mut self, context: &mut phantom::app::Context) {
-        let mut asset = phantom::gltf::import_gltf_slice(include_bytes!("../glb/helmet.glb"));
+        let mut world = phantom::gltf::import_gltf_slice(include_bytes!("../glb/helmet.glb"));
 
-        asset.add_main_camera_to_scenegraph(0);
+        world.add_main_camera_to_scenegraph(0);
         context.should_reload_view = true;
 
-        let light_node = asset.add_node();
-        asset.add_light_to_node(light_node);
-        asset.add_root_node_to_scenegraph(0, light_node);
-        context.world = asset;
+        let light_node = world.add_node();
+        world.add_light_to_node(light_node);
+        world.add_root_node_to_scenegraph(0, light_node);
+        context.world = world;
     }
 
     fn receive_event(
@@ -168,9 +165,9 @@ impl phantom::app::State for Editor {
 }
 
 fn node_ui(
-    asset: &phantom::asset::Asset,
+    asset: &phantom::world::World,
     ui: &mut phantom::egui::Ui,
-    graph: &phantom::asset::SceneGraph,
+    graph: &phantom::world::SceneGraph,
     graph_node_index: phantom::petgraph::graph::NodeIndex,
     selected_graph_node_index: &mut Option<phantom::petgraph::graph::NodeIndex>,
 ) {
@@ -178,7 +175,7 @@ fn node_ui(
     phantom::egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
         .show_header(ui, |ui| {
             let node_index = graph[graph_node_index];
-            let phantom::asset::NodeMetadata { name } = &asset.metadata[node_index];
+            let phantom::world::NodeMetadata { name } = &asset.metadata[node_index];
             let selected = selected_graph_node_index
                 .as_ref()
                 .map(|index| *index == graph_node_index)

@@ -23,7 +23,8 @@ pub async fn run_async(mut state: impl State + 'static) {
         io: Io::default(),
         delta_time: 0.01,
         last_frame: chrono::Utc::now(),
-        world: crate::asset::Asset::default(),
+        world: crate::world::World::default(),
+        physics_world: crate::physics::PhysicsWorld::default(),
         should_exit: false,
         should_reload_view: false,
     };
@@ -116,6 +117,7 @@ pub async fn run_async(mut state: impl State + 'static) {
                     gui_state.egui_ctx().begin_frame(gui_input);
 
                     state.update(&mut context, gui_state.egui_ctx());
+                    context.physics_world.integrate(context.delta_time as _);
 
                     let egui::FullOutput {
                         textures_delta,
@@ -153,7 +155,8 @@ pub struct Context {
     pub io: Io,
     pub delta_time: f64,
     pub last_frame: chrono::DateTime<chrono::Utc>,
-    pub world: crate::asset::Asset,
+    pub world: crate::world::World,
+    pub physics_world: crate::physics::PhysicsWorld,
     pub should_exit: bool,
     pub should_reload_view: bool,
 }

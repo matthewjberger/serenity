@@ -1,11 +1,7 @@
 pub struct PostprocessingPipeline {
     pub pipeline: wgpu::RenderPipeline,
     pub bind_group: wgpu::BindGroup,
-    pub texture: wgpu::Texture,
     pub texture_view: wgpu::TextureView,
-    pub width: u32,
-    pub height: u32,
-    pub format: wgpu::TextureFormat,
 }
 
 impl PostprocessingPipeline {
@@ -73,10 +69,6 @@ impl PostprocessingPipeline {
         let pipeline = create_pipeline(gpu, &[&bind_group_layout]);
 
         Self {
-            texture,
-            width,
-            height,
-            format,
             pipeline,
             bind_group,
             texture_view,

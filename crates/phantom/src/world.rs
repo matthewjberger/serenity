@@ -1,5 +1,5 @@
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Asset {
+pub struct World {
     pub name: String,
     pub animations: Vec<Animation>,
     pub cameras: Vec<Camera>,
@@ -18,10 +18,9 @@ pub struct Asset {
     pub vertices: Vec<Vertex>,
     pub instances: Vec<Instance>,
     pub orientations: Vec<Orientation>,
-    pub physics: crate::physics::PhysicsWorld,
 }
 
-impl Asset {
+impl World {
     pub fn add_child_node_to_scenegraph(
         &mut self,
         scene_index: usize,
@@ -38,15 +37,15 @@ impl Asset {
 
     pub fn add_node(&mut self) -> usize {
         let transform_index = self.transforms.len();
-        self.transforms.push(crate::asset::Transform::default());
+        self.transforms.push(crate::world::Transform::default());
 
         let metadata_index = self.metadata.len();
-        self.metadata.push(crate::asset::NodeMetadata {
+        self.metadata.push(crate::world::NodeMetadata {
             name: "Node".to_string(),
         });
 
         let node_index = self.nodes.len();
-        let node = crate::asset::Node {
+        let node = crate::world::Node {
             transform_index,
             metadata_index,
             ..Default::default()
@@ -90,7 +89,7 @@ impl Asset {
 
     pub fn add_orientation(&mut self) -> usize {
         let orientation_index = self.orientations.len();
-        self.orientations.push(crate::asset::Orientation::default());
+        self.orientations.push(crate::world::Orientation::default());
         orientation_index
     }
 
@@ -102,7 +101,7 @@ impl Asset {
 
     pub fn add_camera(&mut self) -> usize {
         let camera_index = self.cameras.len();
-        self.cameras.push(crate::asset::Camera::default());
+        self.cameras.push(crate::world::Camera::default());
         camera_index
     }
 
@@ -327,8 +326,8 @@ impl Default for Projection {
 }
 
 pub fn create_camera_matrices(
-    asset: &crate::asset::Asset,
-    scene: &crate::asset::Scene,
+    asset: &crate::world::World,
+    scene: &crate::world::Scene,
     aspect_ratio: f32,
 ) -> (nalgebra_glm::Vec3, nalgebra_glm::Mat4, nalgebra_glm::Mat4) {
     let camera_graph_node_index = scene

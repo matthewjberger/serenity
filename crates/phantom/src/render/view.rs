@@ -6,8 +6,6 @@ pub struct WorldRender {
     pub dynamic_uniform_buffer: wgpu::Buffer,
     pub dynamic_uniform_bind_group: wgpu::BindGroup,
     pub texture_array_bind_group: wgpu::BindGroup,
-    pub samplers: Vec<wgpu::Sampler>,
-    pub textures: Vec<wgpu::Texture>,
     pub triangle_filled_pipeline: wgpu::RenderPipeline,
     pub triangle_blended_pipeline: wgpu::RenderPipeline,
     pub line_pipeline: wgpu::RenderPipeline,
@@ -16,7 +14,7 @@ pub struct WorldRender {
 }
 
 impl WorldRender {
-    pub fn new(gpu: &crate::render::gpu::Gpu, world: &crate::asset::Asset) -> Self {
+    pub fn new(gpu: &crate::render::gpu::Gpu, world: &crate::world::World) -> Self {
         let (vertex_buffer, index_buffer) =
             create_geometry_buffers(&gpu.device, &world.vertices, &world.indices);
         let (uniform_buffer, uniform_bind_group_layout, uniform_bind_group) = create_uniform(gpu);
@@ -29,43 +27,43 @@ impl WorldRender {
             .map(|sampler| {
                 gpu.device.create_sampler(&wgpu::SamplerDescriptor {
                     address_mode_u: match sampler.wrap_s {
-                        crate::asset::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-                        crate::asset::WrappingMode::MirroredRepeat => {
+                        crate::world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+                        crate::world::WrappingMode::MirroredRepeat => {
                             wgpu::AddressMode::MirrorRepeat
                         }
-                        crate::asset::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+                        crate::world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
                     },
                     address_mode_v: match sampler.wrap_t {
-                        crate::asset::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-                        crate::asset::WrappingMode::MirroredRepeat => {
+                        crate::world::WrappingMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+                        crate::world::WrappingMode::MirroredRepeat => {
                             wgpu::AddressMode::MirrorRepeat
                         }
-                        crate::asset::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
+                        crate::world::WrappingMode::Repeat => wgpu::AddressMode::Repeat,
                     },
                     address_mode_w: wgpu::AddressMode::ClampToEdge,
                     mag_filter: match sampler.mag_filter {
-                        crate::asset::MagFilter::Nearest => wgpu::FilterMode::Nearest,
-                        crate::asset::MagFilter::Linear => wgpu::FilterMode::Linear,
+                        crate::world::MagFilter::Nearest => wgpu::FilterMode::Nearest,
+                        crate::world::MagFilter::Linear => wgpu::FilterMode::Linear,
                     },
                     min_filter: match sampler.min_filter {
-                        crate::asset::MinFilter::Nearest
-                        | crate::asset::MinFilter::NearestMipmapLinear
-                        | crate::asset::MinFilter::NearestMipmapNearest => {
+                        crate::world::MinFilter::Nearest
+                        | crate::world::MinFilter::NearestMipmapLinear
+                        | crate::world::MinFilter::NearestMipmapNearest => {
                             wgpu::FilterMode::Nearest
                         }
-                        crate::asset::MinFilter::Linear
-                        | crate::asset::MinFilter::LinearMipmapLinear
-                        | crate::asset::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
+                        crate::world::MinFilter::Linear
+                        | crate::world::MinFilter::LinearMipmapLinear
+                        | crate::world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
                     },
                     mipmap_filter: match sampler.min_filter {
-                        crate::asset::MinFilter::Nearest
-                        | crate::asset::MinFilter::NearestMipmapLinear
-                        | crate::asset::MinFilter::NearestMipmapNearest => {
+                        crate::world::MinFilter::Nearest
+                        | crate::world::MinFilter::NearestMipmapLinear
+                        | crate::world::MinFilter::NearestMipmapNearest => {
                             wgpu::FilterMode::Nearest
                         }
-                        crate::asset::MinFilter::Linear
-                        | crate::asset::MinFilter::LinearMipmapLinear
-                        | crate::asset::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
+                        crate::world::MinFilter::Linear
+                        | crate::world::MinFilter::LinearMipmapLinear
+                        | crate::world::MinFilter::LinearMipmapNearest => wgpu::FilterMode::Linear,
                     },
                     compare: Some(wgpu::CompareFunction::LessEqual),
                     lod_min_clamp: 0.0,
@@ -116,11 +114,11 @@ impl WorldRender {
             .collect::<Vec<_>>();
 
         if textures.is_empty() {
-            let image = crate::asset::Image {
+            let image = crate::world::Image {
                 width: 1,
                 height: 1,
                 pixels: vec![0x00, 0xFF, 0xFF, 0x00],
-                format: crate::asset::ImageFormat::R8G8B8A8,
+                format: crate::world::ImageFormat::R8G8B8A8,
             };
             let size = wgpu::Extent3d {
                 width: image.width,
@@ -286,8 +284,6 @@ impl WorldRender {
             texture_array_bind_group,
             triangle_filled_pipeline,
             triangle_blended_pipeline,
-            textures,
-            samplers,
             line_pipeline,
             line_strip_pipeline,
             triangle_strip_pipeline,
@@ -307,7 +303,7 @@ impl WorldRender {
             .expect("No scene is available!");
 
         let (camera_position, projection, view) =
-            crate::asset::create_camera_matrices(&context.world, scene, gpu.aspect_ratio());
+            crate::world::create_camera_matrices(&context.world, scene, gpu.aspect_ratio());
 
         gpu.queue.write_buffer(
             &self.uniform_buffer,
@@ -345,9 +341,9 @@ impl WorldRender {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         for alpha_mode in [
-            crate::asset::AlphaMode::Opaque,
-            crate::asset::AlphaMode::Mask,
-            crate::asset::AlphaMode::Blend,
+            crate::world::AlphaMode::Opaque,
+            crate::world::AlphaMode::Mask,
+            crate::world::AlphaMode::Blend,
         ]
         .iter()
         {
@@ -365,22 +361,22 @@ impl WorldRender {
 
                         for primitive in mesh.primitives.iter() {
                             match primitive.topology {
-                                crate::asset::PrimitiveTopology::Lines => {
+                                crate::world::PrimitiveTopology::Lines => {
                                     render_pass.set_pipeline(&self.line_pipeline);
                                 }
-                                crate::asset::PrimitiveTopology::LineStrip => {
+                                crate::world::PrimitiveTopology::LineStrip => {
                                     render_pass.set_pipeline(&self.line_strip_pipeline);
                                 }
-                                crate::asset::PrimitiveTopology::Triangles => match alpha_mode {
-                                    crate::asset::AlphaMode::Opaque
-                                    | crate::asset::AlphaMode::Mask => {
+                                crate::world::PrimitiveTopology::Triangles => match alpha_mode {
+                                    crate::world::AlphaMode::Opaque
+                                    | crate::world::AlphaMode::Mask => {
                                         render_pass.set_pipeline(&self.triangle_filled_pipeline);
                                     }
-                                    crate::asset::AlphaMode::Blend => {
+                                    crate::world::AlphaMode::Blend => {
                                         render_pass.set_pipeline(&self.triangle_blended_pipeline);
                                     }
                                 },
-                                crate::asset::PrimitiveTopology::TriangleStrip => {
+                                crate::world::PrimitiveTopology::TriangleStrip => {
                                     render_pass.set_pipeline(&self.triangle_strip_pipeline);
                                 }
 
@@ -539,7 +535,7 @@ fn create_uniform(
 
 fn create_geometry_buffers(
     device: &wgpu::Device,
-    vertices: &[crate::asset::Vertex],
+    vertices: &[crate::world::Vertex],
     indices: &[u32],
 ) -> (wgpu::Buffer, wgpu::Buffer) {
     let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
@@ -601,8 +597,8 @@ fn create_pipeline(
             vertex: wgpu::VertexState {
                 module: &shader_module,
                 entry_point: "vertex_main",
-                buffers: &[crate::asset::Vertex::description(
-                    &crate::asset::Vertex::attributes(),
+                buffers: &[crate::world::Vertex::description(
+                    &crate::world::Vertex::attributes(),
                 )],
             },
             primitive: wgpu::PrimitiveState {
@@ -646,7 +642,7 @@ fn create_pipeline(
         })
 }
 
-impl crate::asset::Vertex {
+impl crate::world::Vertex {
     pub fn attributes() -> Vec<wgpu::VertexAttribute> {
         wgpu::vertex_attr_array![
             0 => Float32x3, // position
@@ -662,7 +658,7 @@ impl crate::asset::Vertex {
 
     pub fn description(attributes: &[wgpu::VertexAttribute]) -> wgpu::VertexBufferLayout {
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<crate::asset::Vertex>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<crate::world::Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes,
         }
@@ -762,7 +758,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     if material.base_texture_index > -1 {
         base_color *= textureSampleLevel(texture_array[material.base_texture_index], sampler_array[material.sampler_index], in.tex_coord, 0.0);
-    } 
+    }
 
     if material.alpha_mode == 1 && base_color.a < material.alpha_cutoff {
         discard;
@@ -774,7 +770,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 ";
 
-impl From<wgpu::PrimitiveTopology> for crate::asset::PrimitiveTopology {
+impl From<wgpu::PrimitiveTopology> for crate::world::PrimitiveTopology {
     fn from(value: wgpu::PrimitiveTopology) -> Self {
         match value {
             wgpu::PrimitiveTopology::PointList => Self::Points,
