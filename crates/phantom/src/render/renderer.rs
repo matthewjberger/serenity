@@ -1,6 +1,6 @@
 pub struct Renderer<'window> {
     pub gpu: crate::render::gpu::Gpu<'window>,
-    view: Option<crate::render::view::WorldRender>,
+    view: Option<crate::render::world::WorldRender>,
     depth_texture_view: wgpu::TextureView,
     postprocess_pipeline: crate::render::postprocess::PostprocessingPipeline,
     gui_renderer: egui_wgpu::Renderer,
@@ -34,7 +34,7 @@ impl<'window> Renderer<'window> {
     pub fn load_world(&mut self, asset: &crate::world::World) {
         let _ = std::mem::replace(
             &mut self.view,
-            Some(crate::render::view::WorldRender::new(&self.gpu, asset)),
+            Some(crate::render::world::WorldRender::new(&self.gpu, asset)),
         );
     }
 

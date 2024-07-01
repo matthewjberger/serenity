@@ -11,6 +11,7 @@ pub struct WorldRender {
     pub line_pipeline: wgpu::RenderPipeline,
     pub line_strip_pipeline: wgpu::RenderPipeline,
     pub triangle_strip_pipeline: wgpu::RenderPipeline,
+    pub sky: crate::render::sky::SkyRender,
 }
 
 impl WorldRender {
@@ -274,6 +275,8 @@ impl WorldRender {
             wgpu::PolygonMode::Fill,
         );
 
+        let sky = crate::render::sky::SkyRender::new(gpu);
+
         Self {
             vertex_buffer,
             index_buffer,
@@ -287,6 +290,7 @@ impl WorldRender {
             line_pipeline,
             line_strip_pipeline,
             triangle_strip_pipeline,
+            sky,
         }
     }
 
@@ -314,6 +318,23 @@ impl WorldRender {
                 camera_position: nalgebra_glm::vec3_to_vec4(&camera_position),
             }]),
         );
+
+        let (camera_position, projection, view) =
+            crate::world::create_camera_matrices(&context.world, scene, gpu.aspect_ratio());
+        let camera_position = nalgebra_glm::vec3_to_vec4(&camera_position);
+
+        // TODO: sky
+        // gpu.queue.write_buffer(
+        //     &self.sky.uniform_buffer,
+        //     0,
+        //     bytemuck::cast_slice(&[crate::render::sky::SkyUniform {
+        //         view_position: camera_position,
+        //         view,
+        //         view_projection: projection * view,
+        //         inverse_projection: nalgebra_glm::inverse(&projection),
+        //         inverse_view: nalgebra_glm::inverse(&view),
+        //     }]),
+        // );
 
         let mut mesh_ubos = vec![DynamicUniform::default(); context.world.transforms.len()];
         scene
@@ -437,6 +458,8 @@ impl WorldRender {
                     }
                 });
         }
+
+        // self.sky.render(render_pass);
     }
 }
 
