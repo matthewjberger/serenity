@@ -579,10 +579,8 @@ impl serenity::app::State for Editor {
                         let scene = &mut context.world.scenes[scene_index];
                         let node_index = scene.graph[selected_graph_node_index];
                         let node = &context.world.nodes[node_index];
-                        if node.camera_index.is_some() {
-                            if ui.button("Select camera").clicked() {
-                                scene.default_camera_graph_node_index = selected_graph_node_index;
-                            }
+                        if node.camera_index.is_some() && ui.button("Select camera").clicked() {
+                            scene.default_camera_graph_node_index = selected_graph_node_index;
                         }
                         egui::ScrollArea::vertical()
                             .id_source(ui.next_auto_id())

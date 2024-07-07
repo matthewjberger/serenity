@@ -358,9 +358,11 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     let camera = crate::world::Camera::default();
 
     let transform_index = transforms.len();
-    let mut transform = crate::world::Transform::default();
-    transform.translation = camera.orientation.position();
-    transform.rotation = camera.orientation.look_at_offset();
+    let transform = crate::world::Transform {
+        translation: camera.orientation.position(),
+        rotation: camera.orientation.look_at_offset(),
+        ..Default::default()
+    };
     transforms.push(transform);
 
     let metadata_index = metadata.len();
