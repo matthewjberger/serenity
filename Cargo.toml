@@ -11,25 +11,25 @@ repository = "https://github.com/matthewjberger/serenity"
 version = "0.1.0"
 
 [dependencies]
-bytemuck = "1.14.0"
+bytemuck = "1.16.1"
 egui = "0.23.0"
 egui-wgpu = { version = "0.23.0", features = ["winit"] }
 egui-winit = "0.23.0"
 egui_extras = { version = "0.23.0", features = ["all_loaders"] }
-env_logger = "0.10.1"
-gltf = { version = "1.4.0", features = ["KHR_lights_punctual", "names"] }
-image = "0.24.7"
-log = "0.4.20"
-nalgebra = "0.32.3"
+env_logger = "0.10.2"
+gltf = { version = "1.4.1", features = ["KHR_lights_punctual", "names"] }
+image = "0.24.9"
+log = "0.4.22"
+nalgebra = "0.32.6"
 nalgebra-glm = { version = "0.18.0", features = [
     "serde-serialize",
     "convert-bytemuck",
 ] }
-petgraph = { version = "0.6.4", features = ["serde-1"] }
+petgraph = { version = "0.6.5", features = ["serde-1"] }
 pollster = "0.3.0"
 raw-window-handle = "0.5.2"
-serde = { version = "1.0.193", features = ["derive"] }
-thiserror = "1.0.53"
-uuid = { version = "1.6.1", features = ["v4"] }
-wgpu = "0.17.1"
+serde = { version = "1.0.204", features = ["derive"] }
+thiserror = "1.0.61"
+uuid = { version = "1.9.1", features = ["v4"] }
+wgpu = "0.17.2"
 winit = "0.28.7"
