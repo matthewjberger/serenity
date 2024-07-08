@@ -20,6 +20,7 @@ pub struct Editor {
         serenity::physics::PhysicsWorld,
         Vec<serenity::world::Transform>,
     )>,
+    new_node_type: SceneGraphNode,
 }
 
 impl Editor {
@@ -43,6 +44,7 @@ impl Editor {
             redo_stack: Vec::new(),
             uniform_scaling: true,
             physics_world_backup: None,
+            new_node_type: SceneGraphNode::Empty,
         }
     }
 
@@ -547,6 +549,18 @@ impl serenity::app::State for Editor {
         egui::SidePanel::left("left_panel")
             .resizable(true)
             .show(ui_context, |ui| {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("New Node");
+                        self.new_node_type.ui_mut(ui);
+                        if ui.button("Insert").clicked() {
+                            // TODO (matt): publish event to insert node
+                        }
+                    });
+                });
+
+                ui.separator();
+
                 ui.set_width(ui.available_width());
                 ui.heading("Scene Tree");
                 if let Some(scene_index) = context.active_scene_index {
@@ -758,4 +772,54 @@ fn node_ui(
                     node_ui(world, ui, graph, child_index, selected_graph_node_index);
                 });
         });
+}
+
+#[macro_export]
+macro_rules! impl_enum_ui {
+    (
+        $name:ident {
+            $($variant:ident),* $(,)?
+        }
+    ) => {
+        #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, PartialEq)]
+        pub enum $name {
+            #[default]
+            $($variant),*
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $(Self::$variant => write!(f, "{}", stringify!($variant)),)*
+                }
+            }
+        }
+
+        impl $name {
+            pub fn ui(&self, ui: &mut serenity::egui::Ui) {
+                ui.label(format!("{}", self));
+            }
+
+            pub fn ui_mut(&mut self, ui: &mut serenity::egui::Ui) {
+                serenity::egui::ComboBox::from_id_source(ui.next_auto_id())
+                    .selected_text(format!("{}", self))
+                    .show_ui(ui, |ui| {
+                        $(
+                            if ui.selectable_value(self, $name::$variant, stringify!($variant)).clicked() {
+                                *self = $name::$variant;
+                            }
+                        )*
+                    });
+            }
+        }
+    }
+}
+
+// Using the macro to generate the Color enum and its methods
+impl_enum_ui! {
+    SceneGraphNode {
+        Empty,
+        Visual,
+        Blue,
+    }
 }
