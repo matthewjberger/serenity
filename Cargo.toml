@@ -11,7 +11,7 @@ repository = "https://github.com/matthewjberger/serenity"
 version = "0.1.0"
 
 [dependencies]
-bytemuck = "1.16.1"
+bytemuck = "1.17.0"
 egui = "0.23.0"
 egui-wgpu = { version = "0.23.0", features = ["winit"] }
 egui-winit = "0.23.0"
@@ -27,7 +27,7 @@ nalgebra-glm = { version = "0.18.0", features = [
 petgraph = { version = "0.6.5", features = ["serde-1"] }
 pollster = "0.3.0"
 raw-window-handle = "0.5.2"
-serde = { version = "1.0.204", features = ["derive"] }
-uuid = { version = "1.9.1", features = ["v4"] }
+serde = { version = "1.0.208", features = ["derive"] }
+uuid = { version = "1.10.0", features = ["v4"] }
 wgpu = "0.17.2"
 winit = "0.28.7"

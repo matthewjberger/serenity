@@ -8,5 +8,5 @@ serenity = { path = "../.." }
 egui-gizmo = "0.12.0"
 egui-toast = "0.9.0"
 rfd = "0.12.1"
-serde = { version = "1.0.204", features = ["derive"] }
-uuid = { version = "1.9.1", features = ["v4"] }
+serde = { version = "1.0.208", features = ["derive"] }
+uuid = { version = "1.10.0", features = ["v4"] }
