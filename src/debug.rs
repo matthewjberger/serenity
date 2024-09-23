@@ -1,5 +1,5 @@
 // TODO: add other shapes for instanced debug display
-//       line, cube, sphere, capsule
+//       line, sphere, capsule
 
 pub struct DebugRender {
     pub vertex_buffer: wgpu::Buffer,
@@ -15,7 +15,7 @@ impl DebugRender {
         let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
             &gpu.device,
             &wgpu::util::BufferInitDescriptor {
-                label: Some("Quad Vertex Buffer"),
+                label: Some("Cube Vertex Buffer"),
                 contents: bytemuck::cast_slice(&VERTICES),
                 usage: wgpu::BufferUsages::VERTEX,
             },
@@ -23,7 +23,7 @@ impl DebugRender {
         let index_buffer = wgpu::util::DeviceExt::create_buffer_init(
             &gpu.device,
             &wgpu::util::BufferInitDescriptor {
-                label: Some("Quad Index Buffer"),
+                label: Some("Cube Index Buffer"),
                 contents: bytemuck::cast_slice(&INDICES),
                 usage: wgpu::BufferUsages::INDEX,
             },
@@ -111,9 +111,8 @@ impl DebugRender {
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
             render_pass.set_pipeline(&self.cube_pipeline);
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            // TODO: We can batch the shapes per shape type and then send the draw calls once per shape
             [crate::world::Shape::Cube, crate::world::Shape::CubeExtents]
                 .iter()
                 .for_each(|shape| {
@@ -121,7 +120,6 @@ impl DebugRender {
                         let node_index = scene.graph[graph_node_index];
                         let node = &context.world.nodes[node_index];
 
-                        // Only show primitive meshes for
                         if node.mesh_index.is_none() {
                             return;
                         }
@@ -136,18 +134,13 @@ impl DebugRender {
 
                             let instance_offset = primitive_mesh_index as u32;
                             match primitive_mesh.shape {
-                                crate::world::Shape::CubeExtents => {
+                                crate::world::Shape::CubeExtents | crate::world::Shape::Cube => {
                                     render_pass.draw_indexed(
-                                        0..24,
+                                        0..(INDICES.len() as u32),
                                         0,
                                         instance_offset..(instance_offset + 1),
                                     );
                                 }
-                                crate::world::Shape::Cube => render_pass.draw_indexed(
-                                    0..(INDICES.len() as _),
-                                    0,
-                                    instance_offset..(instance_offset + 1),
-                                ),
                             }
                         }
                     });
@@ -250,7 +243,7 @@ fn create_cube_pipeline(
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Line,
+                polygon_mode: wgpu::PolygonMode::Fill,
                 conservative: false,
                 unclipped_depth: false,
             },
@@ -295,7 +288,7 @@ struct Vertex {
 
 impl Vertex {
     pub fn vertex_attributes() -> Vec<wgpu::VertexAttribute> {
-        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4].to_vec()
+        wgpu::vertex_attr_array![0 => Float32x3].to_vec()
     }
 
     pub fn description(attributes: &[wgpu::VertexAttribute]) -> wgpu::VertexBufferLayout {
@@ -306,6 +299,7 @@ impl Vertex {
         }
     }
 }
+
 const VERTICES: [Vertex; 8] = [
     Vertex {
         position: nalgebra_glm::Vec3::new(-1.0, -1.0, -1.0),
@@ -333,31 +327,10 @@ const VERTICES: [Vertex; 8] = [
     },
 ];
 
-const INDICES: [u32; 48] = [
-    0, 1, // Bottom Back Edge
-    1, 2, // Right Back Vertical
-    2, 3, // Top Back Edge
-    3, 0, // Left Back Vertical
-    4, 5, // Bottom Front Edge
-    5, 6, // Right Front Vertical
-    6, 7, // Top Front Edge
-    7, 4, // Left Front Vertical
-    0, 4, // Bottom Left Edge
-    1, 5, // Bottom Right Edge
-    2, 6, // Top Right Edge
-    3, 7, // Top Left Edge
-    4, 6, // Front Face Diagonal
-    5, 7, // Front Face Diagonal
-    0, 2, // Back Face Diagonal
-    1, 3, // Back Face Diagonal
-    2, 7, // Top Face Diagonal
-    3, 6, // Top Face Diagonal
-    0, 5, // Bottom Face Diagonal
-    1, 4, // Bottom Face Diagonal
-    0, 7, // Left Face Diagonal
-    3, 4, // Left Face Diagonal
-    1, 6, // Right Face Diagonal
-    2, 5, // Right Face Diagonal
+const INDICES: [u16; 24] = [
+    0, 1, 1, 2, 2, 3, 3, 0, // Front face
+    4, 5, 5, 6, 6, 7, 7, 4, // Back face
+    0, 4, 1, 5, 2, 6, 3, 7, // Connecting edges
 ];
 
 #[repr(C)]
@@ -395,6 +368,7 @@ var<uniform> ubo: Uniform;
 struct VertexInput {
     @location(0) position: vec3<f32>,
 };
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
