@@ -1,5 +1,5 @@
 use serenity::{
-    egui, nalgebra_glm, petgraph,
+    egui, log, nalgebra_glm, petgraph,
     winit::{self, dpi::PhysicalSize},
     world::NodeMetadata,
 };
@@ -43,6 +43,34 @@ impl Editor {
             redo_stack: Vec::new(),
             uniform_scaling: true,
             physics_world_backup: None,
+        }
+    }
+
+    fn raycast(&self, context: &serenity::app::Context) -> Option<usize> {
+        if let Some(scene_index) = context.active_scene_index {
+            let scene = &context.world.scenes[scene_index];
+            let PhysicalSize { width, height } = context.window.inner_size();
+            let mouse_position = context.io.mouse.position;
+
+            let orientation = serenity::world::get_camera_orientation(&context.world, scene);
+
+            let ray_origin = orientation.position()
+                + nalgebra_glm::vec3(
+                    mouse_position.x as f32 / width as f32 * 2.0 - 1.0,
+                    1.0 - mouse_position.y as f32 / height as f32 * 2.0,
+                    0.0,
+                );
+            let direction = orientation.direction();
+            let ray_direction = nalgebra_glm::vec3(direction.x, direction.y, -direction.z);
+
+            let intersections =
+                context
+                    .world
+                    .raycast_aabb(scene_index, &ray_origin, &ray_direction, f32::INFINITY);
+
+            intersections.first().map(|(_, node_index)| *node_index)
+        } else {
+            None
         }
     }
 
@@ -343,6 +371,33 @@ impl serenity::app::State for Editor {
                 context.gui_visible = !context.gui_visible;
             }
         }
+
+        match event {
+            winit::event::Event::WindowEvent {
+                event:
+                    winit::event::WindowEvent::MouseInput {
+                        state: winit::event::ElementState::Pressed,
+                        button: winit::event::MouseButton::Left,
+                        ..
+                    },
+                ..
+            } => {
+                if let Some(node_index) = self.raycast(context) {
+                    if let Some(scene_index) = context.active_scene_index {
+                        let scene = &context.world.scenes[scene_index];
+                        if let Some(graph_node_index) = scene
+                            .graph
+                            .node_indices()
+                            .find(|&index| scene.graph[index] == node_index)
+                        {
+                            self.selected = Some(graph_node_index);
+                            log::info!("Selected node: {:?}", graph_node_index);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     fn update(&mut self, context: &mut serenity::app::Context) {
@@ -402,9 +457,12 @@ impl serenity::app::State for Editor {
                 sync_transform = true;
             }
 
-            camera
-                .orientation
-                .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
+            if context.io.mouse.wheel_delta.y.abs() > 0.0 {
+                camera
+                    .orientation
+                    .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
+                sync_transform = true;
+            }
 
             if context.io.mouse.is_middle_clicked {
                 camera
@@ -566,13 +624,8 @@ impl serenity::app::State for Editor {
                     });
                 }
 
-                ui.allocate_space(ui.available_size());
-            });
+                ui.separator();
 
-        egui::SidePanel::right("right_panel")
-            .resizable(true)
-            .show(ui_context, |ui| {
-                ui.set_width(ui.available_width());
                 ui.heading("Inspector");
                 if let Some(selected_graph_node_index) = self.selected {
                     if let Some(scene_index) = context.active_scene_index {
@@ -598,6 +651,8 @@ impl serenity::app::State for Editor {
                         ui.allocate_space(ui.available_size());
                     }
                 }
+
+                ui.allocate_space(ui.available_size());
             });
 
         egui::Window::new("Console")
@@ -750,6 +805,11 @@ fn node_ui(
             if response.clicked() {
                 *selected_graph_node_index = Some(graph_node_index);
             }
+            response.context_menu(|ui| {
+                if ui.button("Add Child Node").clicked() {
+                    ui.close_menu();
+                }
+            });
         })
         .body(|ui| {
             graph

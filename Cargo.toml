@@ -28,6 +28,7 @@ petgraph = { version = "0.6.5", features = ["serde-1"] }
 pollster = "0.3.0"
 raw-window-handle = "0.5.2"
 serde = { version = "1.0.208", features = ["derive"] }
+thiserror = "1.0.64"
 uuid = { version = "1.10.0", features = ["v4"] }
 wgpu = "0.17.2"
 winit = "0.28.7"

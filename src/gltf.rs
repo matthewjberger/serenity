@@ -1,52 +1,72 @@
-pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
+use crate::world::{
+    self, Channel, Image, ImageFormat, Interpolation, Joint, Material, Mesh, Node, NodeMetadata,
+    Sampler, Scene, Skin, Texture, Transform, TransformationSet, Vertex,
+};
+use nalgebra_glm::{Vec3, Vec4};
+
+pub fn import_gltf(path: impl AsRef<std::path::Path>) -> world::World {
     let (gltf, buffers, raw_images) = gltf::import(path.as_ref()).expect("Failed to import gltf");
 
-    let images = raw_images
-        .into_iter()
-        .map(crate::world::Image::from)
-        .collect::<Vec<_>>();
-    let samplers = gltf
-        .samplers()
-        .map(crate::world::Sampler::from)
-        .collect::<Vec<_>>();
-    let textures = gltf
+    let mut images = vec![Image {
+        pixels: vec![
+            0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
+            0x00, 0x00,
+        ],
+        format: ImageFormat::R8G8B8A8,
+        width: 2,
+        height: 2,
+    }];
+    let raw_images = raw_images.into_iter().map(Image::from).collect::<Vec<_>>();
+    images.extend_from_slice(&raw_images);
+
+    let mut samplers = vec![Sampler::default()];
+    let raw_samplers = gltf.samplers().map(Sampler::from).collect::<Vec<_>>();
+    samplers.extend_from_slice(&raw_samplers);
+
+    let mut textures = vec![Texture {
+        image_index: 0,
+        sampler_index: None,
+    }];
+    let raw_textures = gltf
         .textures()
-        .map(|texture| crate::world::Texture {
-            image_index: texture.source().index(),
-            sampler_index: texture.sampler().index(),
+        .map(|texture| Texture {
+            image_index: texture.source().index() + 1, // +1 because the first image is a dummy image
+            sampler_index: texture.sampler().index().map(|index| index + 1),
         })
         .collect::<Vec<_>>();
-    let materials = gltf
+    textures.extend_from_slice(&raw_textures);
+
+    let mut materials = vec![Material::default()];
+    let raw_materials = gltf
         .materials()
-        .map(|material| crate::world::Material {
-            base_color_factor: nalgebra_glm::Vec4::from(
-                material.pbr_metallic_roughness().base_color_factor(),
-            ),
+        .map(|material| Material {
+            base_color_factor: Vec4::from(material.pbr_metallic_roughness().base_color_factor()),
             alpha_mode: material.alpha_mode().into(),
             alpha_cutoff: material.alpha_cutoff(),
             base_color_texture_index: material
                 .pbr_metallic_roughness()
                 .base_color_texture()
-                .map(|texture| texture.texture().index())
+                .map(|texture| texture.texture().index() + 1)
                 .unwrap_or_default(),
             emissive_factor: material.emissive_factor().into(),
             emissive_texture_index: material
                 .emissive_texture()
-                .map(|texture| texture.texture().index())
+                .map(|texture| texture.texture().index() + 1)
                 .unwrap_or_default(),
         })
         .collect::<Vec<_>>();
+    materials.extend_from_slice(&raw_materials);
 
     let (meshes, vertices, indices) = {
         let (mut vertices, mut indices) = (vec![], vec![]);
         let meshes = gltf
             .meshes()
             .map(|mesh| {
-                crate::world::Mesh {
+                Mesh {
                     primitives: mesh
                         .primitives()
                         .map(|primitive| {
-                            let primitive_vertices: Vec<crate::world::Vertex> = {
+                            let primitive_vertices: Vec<Vertex> = {
                                 let reader =
                                     primitive.reader(|buffer| Some(&*buffers[buffer.index()]));
 
@@ -55,14 +75,12 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                                     .read_positions()
                                     .expect("Failed to read gltf vertex positions");
                                 read_positions.for_each(|position| {
-                                    positions.push(nalgebra_glm::Vec3::from(position));
+                                    positions.push(Vec3::from(position));
                                 });
                                 let number_of_vertices = positions.len();
                                 let normals = reader.read_normals().map_or(
                                     vec![nalgebra_glm::vec3(0.0, 0.0, 0.0); number_of_vertices],
-                                    |normals| {
-                                        normals.map(nalgebra_glm::Vec3::from).collect::<Vec<_>>()
-                                    },
+                                    |normals| normals.map(Vec3::from).collect::<Vec<_>>(),
                                 );
                                 let map_to_vec2 =
                             |coords: gltf::mesh::util::ReadTexCoords| -> Vec<nalgebra_glm::Vec2> {
@@ -80,19 +98,19 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                                     map_to_vec2,
                                 );
                                 let convert_joints =
-                                |joints: gltf::mesh::util::ReadJoints| -> Vec<nalgebra_glm::Vec4> {
-                                    joints
-                                        .into_u16()
-                                        .map(|joint| {
-                                            nalgebra_glm::vec4(
-                                                joint[0] as _,
-                                                joint[1] as _,
-                                                joint[2] as _,
-                                                joint[3] as _,
-                                            )
-                                        })
-                                        .collect::<Vec<_>>()
-                                };
+                                    |joints: gltf::mesh::util::ReadJoints| -> Vec<Vec4> {
+                                        joints
+                                            .into_u16()
+                                            .map(|joint| {
+                                                nalgebra_glm::vec4(
+                                                    joint[0] as _,
+                                                    joint[1] as _,
+                                                    joint[2] as _,
+                                                    joint[3] as _,
+                                                )
+                                            })
+                                            .collect::<Vec<_>>()
+                                    };
                                 let joints_0 = reader.read_joints(0).map_or(
                                     vec![
                                         nalgebra_glm::vec4(0.0, 0.0, 0.0, 0.0);
@@ -101,9 +119,9 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                                     convert_joints,
                                 );
                                 let convert_weights =
-                            |weights: gltf::mesh::util::ReadWeights| -> Vec<nalgebra_glm::Vec4> {
-                                weights.into_f32().map(nalgebra_glm::Vec4::from).collect()
-                            };
+                                    |weights: gltf::mesh::util::ReadWeights| -> Vec<Vec4> {
+                                        weights.into_f32().map(Vec4::from).collect()
+                                    };
                                 let weights_0 = reader.read_weights(0).map_or(
                                     vec![
                                         nalgebra_glm::vec4(1.0, 0.0, 0.0, 0.0);
@@ -112,12 +130,9 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                                     convert_weights,
                                 );
                                 let convert_colors =
-                                |colors: gltf::mesh::util::ReadColors| -> Vec<nalgebra_glm::Vec3> {
-                                    colors
-                                        .into_rgb_f32()
-                                        .map(nalgebra_glm::Vec3::from)
-                                        .collect::<Vec<_>>()
-                                };
+                                    |colors: gltf::mesh::util::ReadColors| -> Vec<Vec3> {
+                                        colors.into_rgb_f32().map(Vec3::from).collect::<Vec<_>>()
+                                    };
                                 let colors_0 = reader.read_colors(0).map_or(
                                     vec![nalgebra_glm::vec3(1.0, 1.0, 1.0); number_of_vertices],
                                     convert_colors,
@@ -129,7 +144,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                                 positions
                                     .into_iter()
                                     .enumerate()
-                                    .map(|(index, position)| crate::world::Vertex {
+                                    .map(|(index, position)| Vertex {
                                         position,
                                         normal: normals[index],
                                         uv_0: uv_0[index],
@@ -148,9 +163,9 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                                 .map(|read_indices| read_indices.into_u32().collect())
                                 .unwrap_or_default();
 
-                            let primitive = crate::world::Primitive {
+                            let primitive = world::Primitive {
                                 topology: primitive.mode().into(),
-                                material_index: primitive.material().index(),
+                                material_index: primitive.material().index().map(|index| index + 1),
                                 vertex_offset: vertices.len(),
                                 index_offset: indices.len(),
                                 number_of_vertices: primitive_vertices.len(),
@@ -179,21 +194,21 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                 fn visit_node(
                     parent_graph_node_index: Option<petgraph::graph::NodeIndex>,
                     node: &gltf::Node,
-                    scene: &mut crate::world::Scene,
-                    nodes: &mut Vec<crate::world::Node>,
-                    transforms: &mut Vec<crate::world::Transform>,
-                    metadata: &mut Vec<crate::world::NodeMetadata>,
+                    scene: &mut Scene,
+                    nodes: &mut Vec<Node>,
+                    transforms: &mut Vec<Transform>,
+                    metadata: &mut Vec<NodeMetadata>,
                 ) {
                     let transform_index = transforms.len();
-                    transforms.push(crate::world::Transform::from(node.transform().decomposed()));
+                    transforms.push(Transform::from(node.transform().decomposed()));
 
                     let metadata_index = metadata.len();
-                    metadata.push(crate::world::NodeMetadata {
+                    metadata.push(NodeMetadata {
                         name: node.name().unwrap_or("Node").to_string(),
                     });
 
                     let node_index = nodes.len();
-                    nodes.push(crate::world::Node {
+                    nodes.push(Node {
                         metadata_index,
                         transform_index,
                         camera_index: node.camera().map(|camera| camera.index() + 1), // + 1 because the first camera slot is reserved for the main camera
@@ -221,18 +236,18 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                     });
                 }
 
-                let mut scene = crate::world::Scene::default();
+                let mut scene = Scene::default();
 
                 let transform_index = transforms.len();
-                transforms.push(crate::world::Transform::default());
+                transforms.push(Transform::default());
 
                 let metadata_index = metadata.len();
-                metadata.push(crate::world::NodeMetadata {
+                metadata.push(NodeMetadata {
                     name: "Scene Root".to_string(),
                 });
 
                 let node_index = nodes.len();
-                nodes.push(crate::world::Node {
+                nodes.push(Node {
                     transform_index,
                     metadata_index,
                     camera_index: None,
@@ -241,6 +256,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                     rigid_body_index: None,
                     primitive_mesh_index: None,
                     aabb_index: None,
+                    instance_indices: Vec::new(),
                 });
 
                 let root_node_index = scene.graph.add_node(node_index);
@@ -276,13 +292,13 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                     let inverse_bind_matrix = *inverse_bind_matrices
                         .get(index)
                         .unwrap_or(&nalgebra_glm::Mat4::identity());
-                    crate::world::Joint {
+                    Joint {
                         inverse_bind_matrix,
                         target_node_index: joint_node.index(),
                     }
                 })
                 .collect();
-            crate::world::Skin { joints }
+            Skin { joints }
         })
         .collect::<Vec<_>>();
 
@@ -303,34 +319,28 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                         .expect("Failed to read animation channel outputs!");
                     let transformations = match outputs {
                         gltf::animation::util::ReadOutputs::Translations(translations) => {
-                            let translations = translations
-                                .map(nalgebra_glm::Vec3::from)
-                                .collect::<Vec<_>>();
-                            crate::world::TransformationSet::Translations(translations)
+                            let translations = translations.map(Vec3::from).collect::<Vec<_>>();
+                            TransformationSet::Translations(translations)
                         }
                         gltf::animation::util::ReadOutputs::Rotations(rotations) => {
-                            let rotations = rotations
-                                .into_f32()
-                                .map(nalgebra_glm::Vec4::from)
-                                .collect::<Vec<_>>();
-                            crate::world::TransformationSet::Rotations(rotations)
+                            let rotations =
+                                rotations.into_f32().map(Vec4::from).collect::<Vec<_>>();
+                            TransformationSet::Rotations(rotations)
                         }
                         gltf::animation::util::ReadOutputs::Scales(scales) => {
-                            let scales = scales.map(nalgebra_glm::Vec3::from).collect::<Vec<_>>();
-                            crate::world::TransformationSet::Scales(scales)
+                            let scales = scales.map(Vec3::from).collect::<Vec<_>>();
+                            TransformationSet::Scales(scales)
                         }
                         gltf::animation::util::ReadOutputs::MorphTargetWeights(weights) => {
                             let morph_target_weights = weights.into_f32().collect::<Vec<_>>();
-                            crate::world::TransformationSet::MorphTargetWeights(
-                                morph_target_weights,
-                            )
+                            TransformationSet::MorphTargetWeights(morph_target_weights)
                         }
                     };
-                    crate::world::Channel {
+                    Channel {
                         target_node_index,
                         inputs,
                         transformations,
-                        interpolation: crate::world::Interpolation::default(),
+                        interpolation: Interpolation::default(),
                     }
                 })
                 .collect::<Vec<_>>();
@@ -338,7 +348,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                 .iter()
                 .flat_map(|channel| channel.inputs.iter().copied())
                 .fold(0.0, f32::max);
-            crate::world::Animation {
+            world::Animation {
                 channels,
                 time: 0.0,
                 max_animation_time,
@@ -347,18 +357,18 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         .collect::<Vec<_>>();
 
     let lights = match gltf.lights() {
-        Some(lights) => lights.into_iter().map(crate::world::Light::from).collect(),
+        Some(lights) => lights.into_iter().map(world::Light::from).collect(),
         None => vec![],
     };
 
     if scenes.is_empty() {
-        scenes.push(crate::world::Scene::default());
+        scenes.push(Scene::default());
     };
 
-    let camera = crate::world::Camera::default();
+    let camera = world::Camera::default();
 
     let transform_index = transforms.len();
-    let transform = crate::world::Transform {
+    let transform = Transform {
         translation: camera.orientation.position(),
         rotation: camera.orientation.look_at_offset(),
         ..Default::default()
@@ -366,14 +376,14 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     transforms.push(transform);
 
     let metadata_index = metadata.len();
-    metadata.push(crate::world::NodeMetadata {
+    metadata.push(NodeMetadata {
         name: "Main Camera".to_string(),
     });
 
     let mut cameras = vec![camera];
 
     let node_index = nodes.len();
-    nodes.push(crate::world::Node {
+    nodes.push(Node {
         transform_index,
         metadata_index,
         camera_index: Some(0),
@@ -382,6 +392,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         rigid_body_index: None,
         primitive_mesh_index: None,
         aabb_index: None,
+        instance_indices: Vec::new(),
     });
 
     let camera_graph_node_index = scenes[0].graph.add_node(node_index);
@@ -392,10 +403,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     );
     scenes[0].default_camera_graph_node_index = camera_graph_node_index;
 
-    let gltf_cameras = gltf
-        .cameras()
-        .map(crate::world::Camera::from)
-        .collect::<Vec<_>>();
+    let gltf_cameras = gltf.cameras().map(world::Camera::from).collect::<Vec<_>>();
     cameras.extend_from_slice(&gltf_cameras);
 
     let physics = crate::physics::PhysicsWorld::default();
@@ -407,16 +415,14 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
             let node = &mut nodes[node_index];
             if let Some(mesh_index) = node.mesh_index {
                 let mesh = &meshes[mesh_index];
-                let mut aabb = crate::world::AxisAlignedBoundingBox::new(
-                    nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
-                    nalgebra_glm::Vec3::new(0.0, 0.0, 0.0),
+                let mut aabb = world::AxisAlignedBoundingBox::new(
+                    Vec3::new(0.0, 0.0, 0.0),
+                    Vec3::new(0.0, 0.0, 0.0),
                 );
                 mesh.primitives.iter().for_each(|primitive| {
                     let vertices = &vertices[primitive.vertex_offset
                         ..(primitive.vertex_offset + primitive.number_of_vertices)];
-                    aabb.expand_to_include(&crate::world::AxisAlignedBoundingBox::from_vertices(
-                        vertices,
-                    ));
+                    aabb.expand_to_include(&world::AxisAlignedBoundingBox::from_vertices(vertices));
                 });
                 node.aabb_index = Some(aabbs.len());
                 aabbs.push(aabb);
@@ -424,7 +430,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         });
     });
 
-    crate::world::World {
+    world::World {
         animations,
         cameras,
         images,
@@ -443,37 +449,38 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         physics,
         primitive_meshes: vec![],
         aabbs,
+        instances: Vec::new(),
     }
 }
 
-impl From<gltf::material::AlphaMode> for crate::world::AlphaMode {
+impl From<gltf::material::AlphaMode> for world::AlphaMode {
     fn from(mode: gltf::material::AlphaMode) -> Self {
         match mode {
-            gltf::material::AlphaMode::Opaque => crate::world::AlphaMode::Opaque,
-            gltf::material::AlphaMode::Mask => crate::world::AlphaMode::Mask,
-            gltf::material::AlphaMode::Blend => crate::world::AlphaMode::Blend,
+            gltf::material::AlphaMode::Opaque => world::AlphaMode::Opaque,
+            gltf::material::AlphaMode::Mask => world::AlphaMode::Mask,
+            gltf::material::AlphaMode::Blend => world::AlphaMode::Blend,
         }
     }
 }
 
-impl From<gltf::texture::Sampler<'_>> for crate::world::Sampler {
+impl From<gltf::texture::Sampler<'_>> for Sampler {
     fn from(sampler: gltf::texture::Sampler) -> Self {
         let min_filter = sampler
             .min_filter()
             .map(|filter| match filter {
-                gltf::texture::MinFilter::Nearest => crate::world::MinFilter::Nearest,
+                gltf::texture::MinFilter::Nearest => world::MinFilter::Nearest,
                 gltf::texture::MinFilter::NearestMipmapNearest => {
-                    crate::world::MinFilter::NearestMipmapNearest
+                    world::MinFilter::NearestMipmapNearest
                 }
                 gltf::texture::MinFilter::LinearMipmapNearest => {
-                    crate::world::MinFilter::LinearMipmapNearest
+                    world::MinFilter::LinearMipmapNearest
                 }
-                gltf::texture::MinFilter::Linear => crate::world::MinFilter::Linear,
+                gltf::texture::MinFilter::Linear => world::MinFilter::Linear,
                 gltf::texture::MinFilter::LinearMipmapLinear => {
-                    crate::world::MinFilter::LinearMipmapLinear
+                    world::MinFilter::LinearMipmapLinear
                 }
                 gltf::texture::MinFilter::NearestMipmapLinear => {
-                    crate::world::MinFilter::NearestMipmapLinear
+                    world::MinFilter::NearestMipmapLinear
                 }
             })
             .unwrap_or_default();
@@ -481,25 +488,21 @@ impl From<gltf::texture::Sampler<'_>> for crate::world::Sampler {
         let mag_filter = sampler
             .mag_filter()
             .map(|filter| match filter {
-                gltf::texture::MagFilter::Linear => crate::world::MagFilter::Linear,
-                gltf::texture::MagFilter::Nearest => crate::world::MagFilter::Nearest,
+                gltf::texture::MagFilter::Linear => world::MagFilter::Linear,
+                gltf::texture::MagFilter::Nearest => world::MagFilter::Nearest,
             })
             .unwrap_or_default();
 
         let wrap_s = match sampler.wrap_s() {
-            gltf::texture::WrappingMode::ClampToEdge => crate::world::WrappingMode::ClampToEdge,
-            gltf::texture::WrappingMode::MirroredRepeat => {
-                crate::world::WrappingMode::MirroredRepeat
-            }
-            gltf::texture::WrappingMode::Repeat => crate::world::WrappingMode::Repeat,
+            gltf::texture::WrappingMode::ClampToEdge => world::WrappingMode::ClampToEdge,
+            gltf::texture::WrappingMode::MirroredRepeat => world::WrappingMode::MirroredRepeat,
+            gltf::texture::WrappingMode::Repeat => world::WrappingMode::Repeat,
         };
 
         let wrap_t = match sampler.wrap_t() {
-            gltf::texture::WrappingMode::ClampToEdge => crate::world::WrappingMode::ClampToEdge,
-            gltf::texture::WrappingMode::MirroredRepeat => {
-                crate::world::WrappingMode::MirroredRepeat
-            }
-            gltf::texture::WrappingMode::Repeat => crate::world::WrappingMode::Repeat,
+            gltf::texture::WrappingMode::ClampToEdge => world::WrappingMode::ClampToEdge,
+            gltf::texture::WrappingMode::MirroredRepeat => world::WrappingMode::MirroredRepeat,
+            gltf::texture::WrappingMode::Repeat => world::WrappingMode::Repeat,
         };
 
         Self {
@@ -511,7 +514,7 @@ impl From<gltf::texture::Sampler<'_>> for crate::world::Sampler {
     }
 }
 
-impl From<gltf::image::Data> for crate::world::Image {
+impl From<gltf::image::Data> for Image {
     fn from(data: gltf::image::Data) -> Self {
         let img = match data.format {
             gltf::image::Format::R8 => image::DynamicImage::ImageLuma8(
@@ -536,14 +539,14 @@ impl From<gltf::image::Data> for crate::world::Image {
         let pixels = rgba_img.into_raw();
         Self {
             pixels,
-            format: crate::world::ImageFormat::R8G8B8A8,
+            format: world::ImageFormat::R8G8B8A8,
             width: data.width,
             height: data.height,
         }
     }
 }
 
-impl From<gltf::image::Format> for crate::world::ImageFormat {
+impl From<gltf::image::Format> for world::ImageFormat {
     fn from(value: gltf::image::Format) -> Self {
         match value {
             gltf::image::Format::R8 => Self::R8,
@@ -560,12 +563,12 @@ impl From<gltf::image::Format> for crate::world::ImageFormat {
     }
 }
 
-impl From<gltf::Camera<'_>> for crate::world::Camera {
+impl From<gltf::Camera<'_>> for world::Camera {
     fn from(camera: gltf::Camera) -> Self {
         Self {
             projection: match camera.projection() {
                 gltf::camera::Projection::Perspective(camera) => {
-                    crate::world::Projection::Perspective(crate::world::PerspectiveCamera {
+                    world::Projection::Perspective(world::PerspectiveCamera {
                         aspect_ratio: camera.aspect_ratio(),
                         y_fov_rad: camera.yfov(),
                         z_far: camera.zfar(),
@@ -573,7 +576,7 @@ impl From<gltf::Camera<'_>> for crate::world::Camera {
                     })
                 }
                 gltf::camera::Projection::Orthographic(camera) => {
-                    crate::world::Projection::Orthographic(crate::world::OrthographicCamera {
+                    world::Projection::Orthographic(world::OrthographicCamera {
                         x_mag: camera.xmag(),
                         y_mag: camera.ymag(),
                         z_far: camera.zfar(),
@@ -581,12 +584,12 @@ impl From<gltf::Camera<'_>> for crate::world::Camera {
                     })
                 }
             },
-            orientation: crate::world::Orientation::default(),
+            orientation: world::Orientation::default(),
         }
     }
 }
 
-impl From<gltf::khr_lights_punctual::Light<'_>> for crate::world::Light {
+impl From<gltf::khr_lights_punctual::Light<'_>> for world::Light {
     fn from(light: gltf::khr_lights_punctual::Light) -> Self {
         Self {
             color: light.color().into(),
@@ -597,7 +600,7 @@ impl From<gltf::khr_lights_punctual::Light<'_>> for crate::world::Light {
     }
 }
 
-impl From<gltf::khr_lights_punctual::Kind> for crate::world::LightKind {
+impl From<gltf::khr_lights_punctual::Kind> for world::LightKind {
     fn from(kind: gltf::khr_lights_punctual::Kind) -> Self {
         match kind {
             gltf::khr_lights_punctual::Kind::Directional => Self::Directional,
@@ -605,7 +608,7 @@ impl From<gltf::khr_lights_punctual::Kind> for crate::world::LightKind {
             gltf::khr_lights_punctual::Kind::Spot {
                 inner_cone_angle,
                 outer_cone_angle,
-            } => crate::world::LightKind::Spot {
+            } => world::LightKind::Spot {
                 inner_cone_angle,
                 outer_cone_angle,
             },
@@ -613,7 +616,7 @@ impl From<gltf::khr_lights_punctual::Kind> for crate::world::LightKind {
     }
 }
 
-impl From<gltf::mesh::Mode> for crate::world::PrimitiveTopology {
+impl From<gltf::mesh::Mode> for world::PrimitiveTopology {
     fn from(mode: gltf::mesh::Mode) -> Self {
         match mode {
             gltf::mesh::Mode::Points => Self::Points,

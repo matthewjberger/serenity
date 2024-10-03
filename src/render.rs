@@ -130,7 +130,7 @@ impl Renderer {
             }
 
             if let Some(view) = self.view.as_mut() {
-                view.render(&mut render_pass, &self.gpu, context);
+                view.render(&mut render_pass, &self.gpu, &mut context.world);
             }
 
             self.gui

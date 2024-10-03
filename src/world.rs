@@ -18,6 +18,7 @@ pub struct World {
     pub primitive_meshes: Vec<PrimitiveMesh>,
     pub aabbs: Vec<AxisAlignedBoundingBox>,
     pub physics: crate::physics::PhysicsWorld,
+    pub instances: Vec<Instance>,
 }
 
 impl World {
@@ -30,6 +31,79 @@ impl World {
         let scene = &mut self.scenes[scene_index];
         let graph_node_index = scene.graph.add_node(node_index);
         scene.graph.add_edge(parent_index, graph_node_index, ());
+    }
+
+    pub fn raycast_aabb(
+        &self,
+        scene_index: usize,
+        origin: &nalgebra_glm::Vec3,
+        direction: &nalgebra_glm::Vec3,
+        extent: f32,
+    ) -> Vec<(petgraph::graph::NodeIndex, usize)> {
+        let scene = &self.scenes[scene_index];
+        let mut intersections = Vec::new();
+
+        for graph_node_index in scene.graph.node_indices() {
+            let node_index = scene.graph[graph_node_index];
+            let node = &self.nodes[node_index];
+
+            if let Some(aabb_index) = node.aabb_index {
+                let aabb = &self.aabbs[aabb_index];
+                let global_transform = self.global_transform(&scene.graph, graph_node_index);
+
+                // Transform the AABB
+                let transform_point = |p: &nalgebra_glm::Vec3| -> nalgebra_glm::Vec3 {
+                    let transformed =
+                        global_transform * nalgebra_glm::Vec4::new(p.x, p.y, p.z, 1.0);
+                    nalgebra_glm::Vec3::new(transformed.x, transformed.y, transformed.z)
+                };
+
+                let min = transform_point(&aabb.min);
+                let max = transform_point(&aabb.max);
+                let transformed_aabb = AxisAlignedBoundingBox { min, max };
+
+                // Check for intersection within the specified extent
+                if let Some(distance) =
+                    self.ray_aabb_intersection(origin, direction, &transformed_aabb)
+                {
+                    if distance <= extent {
+                        intersections.push((graph_node_index, node_index));
+                    }
+                }
+            }
+        }
+
+        intersections
+    }
+
+    fn ray_aabb_intersection(
+        &self,
+        origin: &nalgebra_glm::Vec3,
+        direction: &nalgebra_glm::Vec3,
+        aabb: &AxisAlignedBoundingBox,
+    ) -> Option<f32> {
+        let t1 = (aabb.min - origin).component_div(direction);
+        let t2 = (aabb.max - origin).component_div(direction);
+
+        let tmin = nalgebra_glm::min2(&t1, &t2);
+        let tmax = nalgebra_glm::max2(&t1, &t2);
+
+        let tmin = tmin.x.max(tmin.y).max(tmin.z);
+        let tmax = tmax.x.min(tmax.y).min(tmax.z);
+
+        if tmax >= tmin && tmax >= 0.0 {
+            Some(tmin)
+        } else {
+            None
+        }
+    }
+
+    pub fn add_node_instance(&mut self, node_index: usize, instance: Instance) -> usize {
+        let instance_index = self.instances.len();
+        self.instances.push(instance);
+        let node = &mut self.nodes[node_index];
+        node.instance_indices.push(instance_index);
+        instance_index
     }
 
     pub fn add_node(&mut self) -> usize {
@@ -51,6 +125,7 @@ impl World {
             rigid_body_index: None,
             primitive_mesh_index: None,
             aabb_index: None,
+            instance_indices: Vec::new(),
         };
         self.nodes.push(node);
         node_index
@@ -162,7 +237,7 @@ pub struct Mesh {
     pub primitives: Vec<Primitive>,
 }
 
-#[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize, bytemuck::Zeroable)]
 pub struct Transform {
     pub translation: nalgebra_glm::Vec3,
     pub rotation: nalgebra_glm::Quat,
@@ -270,6 +345,19 @@ impl Default for Projection {
     fn default() -> Self {
         Self::Perspective(PerspectiveCamera::default())
     }
+}
+
+pub fn get_camera_orientation<'a>(
+    world: &'a crate::world::World,
+    scene: &'a crate::world::Scene,
+) -> &'a Orientation {
+    let camera_graph_node_index = scene.default_camera_graph_node_index;
+    let camera_node_index = scene.graph[camera_graph_node_index];
+    let camera_node = &world.nodes[camera_node_index];
+    let camera = &world.cameras[camera_node
+        .camera_index
+        .expect("Every scene requires a camera")];
+    &camera.orientation
 }
 
 pub fn create_camera_matrices(
@@ -525,6 +613,7 @@ pub struct Node {
     pub rigid_body_index: Option<usize>,
     pub primitive_mesh_index: Option<usize>,
     pub aabb_index: Option<usize>,
+    pub instance_indices: Vec<usize>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -694,5 +783,164 @@ impl AxisAlignedBoundingBox {
     pub fn expand_to_include(&mut self, other: &AxisAlignedBoundingBox) {
         self.min = nalgebra_glm::min2(&self.min, &other.min);
         self.max = nalgebra_glm::max2(&self.max, &other.max);
+    }
+}
+
+#[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize, bytemuck::Zeroable)]
+pub struct Instance {
+    pub transform: Transform,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nalgebra_glm as glm;
+
+    #[test]
+    fn test_raycast_with_hierarchical_transforms() {
+        let mut world = World::default();
+
+        // Create a scene
+        let scene_index = world.scenes.len();
+        world.scenes.push(Scene {
+            default_camera_graph_node_index: petgraph::graph::NodeIndex::new(0),
+            graph: petgraph::Graph::new(),
+        });
+
+        // Create root node
+        let root_node_index = world.add_node();
+        world.transforms[world.nodes[root_node_index].transform_index].translation =
+            glm::vec3(0.0, 0.0, 0.0);
+        let root_graph_index = world.scenes[scene_index].graph.add_node(root_node_index);
+
+        // Create child node 1
+        let child1_node_index = world.add_node();
+        world.transforms[world.nodes[child1_node_index].transform_index].translation =
+            glm::vec3(2.0, 0.0, 0.0);
+        let child1_graph_index = world.scenes[scene_index].graph.add_node(child1_node_index);
+        world.scenes[scene_index]
+            .graph
+            .add_edge(root_graph_index, child1_graph_index, ());
+
+        // Create child node 2 (child of child1)
+        let child2_node_index = world.add_node();
+        world.transforms[world.nodes[child2_node_index].transform_index].translation =
+            glm::vec3(0.0, 2.0, 0.0);
+        let child2_graph_index = world.scenes[scene_index].graph.add_node(child2_node_index);
+        world.scenes[scene_index]
+            .graph
+            .add_edge(child1_graph_index, child2_graph_index, ());
+
+        // Add AABBs to nodes
+        let aabb = AxisAlignedBoundingBox {
+            min: glm::vec3(-0.5, -0.5, -0.5),
+            max: glm::vec3(0.5, 0.5, 0.5),
+        };
+        let aabb_index = world.aabbs.len();
+        world.aabbs.push(aabb);
+
+        world.nodes[root_node_index].aabb_index = Some(aabb_index);
+        world.nodes[child1_node_index].aabb_index = Some(aabb_index);
+        world.nodes[child2_node_index].aabb_index = Some(aabb_index);
+
+        // Perform raycasts
+        let origin = glm::vec3(0.0, 0.0, -10.0);
+        let direction = glm::vec3(0.0, 0.0, 1.0);
+
+        let intersections = world.raycast_aabb(scene_index, &origin, &direction, f32::INFINITY);
+        assert_eq!(intersections.len(), 1, "Should intersect with root node");
+        assert_eq!(intersections[0].1, root_node_index);
+
+        let origin = glm::vec3(2.0, 0.0, -10.0);
+        let intersections = world.raycast_aabb(scene_index, &origin, &direction, f32::INFINITY);
+        assert_eq!(intersections.len(), 1, "Should intersect with child1 node");
+        assert_eq!(intersections[0].1, child1_node_index);
+
+        let origin = glm::vec3(2.0, 2.0, -10.0);
+        let intersections = world.raycast_aabb(scene_index, &origin, &direction, f32::INFINITY);
+        assert_eq!(intersections.len(), 1, "Should intersect with child2 node");
+        assert_eq!(intersections[0].1, child2_node_index);
+
+        // Test a ray that misses all AABBs
+        let origin = glm::vec3(10.0, 10.0, -10.0);
+        let intersections = world.raycast_aabb(scene_index, &origin, &direction, f32::INFINITY);
+        assert_eq!(intersections.len(), 0, "Should not intersect with any node");
+    }
+
+    #[test]
+    fn test_raycast_with_extent() {
+        let mut world = World::default();
+
+        // Create a scene
+        let scene_index = world.scenes.len();
+        world.scenes.push(Scene {
+            default_camera_graph_node_index: petgraph::graph::NodeIndex::new(0),
+            graph: petgraph::Graph::new(),
+        });
+
+        // Create three nodes at different distances
+        let node_indices = [
+            create_node(&mut world, glm::vec3(0.0, 0.0, 5.0)),
+            create_node(&mut world, glm::vec3(0.0, 0.0, 10.0)),
+            create_node(&mut world, glm::vec3(0.0, 0.0, 15.0)),
+        ];
+
+        // Add nodes to the scene graph
+        node_indices.iter().for_each(|&index| {
+            world.scenes[scene_index].graph.add_node(index);
+        });
+
+        // Add AABBs to nodes
+        let aabb = AxisAlignedBoundingBox {
+            min: glm::vec3(-0.5, -0.5, -0.5),
+            max: glm::vec3(0.5, 0.5, 0.5),
+        };
+        let aabb_index = world.aabbs.len();
+        world.aabbs.push(aabb);
+
+        for &node_index in &node_indices {
+            world.nodes[node_index].aabb_index = Some(aabb_index);
+        }
+
+        // Perform raycasts with different extents
+        let origin = glm::vec3(0.0, 0.0, 0.0);
+        let direction = glm::vec3(0.0, 0.0, 1.0);
+
+        // Test with extent that includes all nodes
+        let intersections = world.raycast_aabb(scene_index, &origin, &direction, 20.0);
+        assert_eq!(
+            intersections.len(),
+            3,
+            "Should intersect with all three nodes"
+        );
+
+        // Test with extent that includes only the first two nodes
+        let intersections = world.raycast_aabb(scene_index, &origin, &direction, 12.0);
+        assert_eq!(
+            intersections.len(),
+            2,
+            "Should intersect with only the first two nodes"
+        );
+        assert_eq!(intersections[0].1, node_indices[0]);
+        assert_eq!(intersections[1].1, node_indices[1]);
+
+        // Test with extent that includes only the first node
+        let intersections = world.raycast_aabb(scene_index, &origin, &direction, 7.0);
+        assert_eq!(
+            intersections.len(),
+            1,
+            "Should intersect with only the first node"
+        );
+        assert_eq!(intersections[0].1, node_indices[0]);
+
+        // Test with extent that doesn't reach any node
+        let intersections = world.raycast_aabb(scene_index, &origin, &direction, 3.0);
+        assert_eq!(intersections.len(), 0, "Should not intersect with any node");
+    }
+
+    fn create_node(world: &mut World, position: glm::Vec3) -> usize {
+        let node_index = world.add_node();
+        world.transforms[world.nodes[node_index].transform_index].translation = position;
+        node_index
     }
 }
