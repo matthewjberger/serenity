@@ -402,9 +402,12 @@ impl serenity::app::State for Editor {
                 sync_transform = true;
             }
 
-            camera
-                .orientation
-                .zoom(6.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
+            if context.io.mouse.wheel_delta.y.abs() > 0.0 {
+                camera
+                    .orientation
+                    .zoom(10.0 * context.io.mouse.wheel_delta.y * (context.delta_time as f32));
+                sync_transform = true;
+            }
 
             if context.io.mouse.is_middle_clicked {
                 camera
