@@ -113,12 +113,8 @@ pub struct PrimitiveMesh {
     Default, Copy, Clone, Debug, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
 )]
 pub enum Shape {
-    // Includes diagonal lines
     #[default]
     Cube,
-
-    // Does not include diagonal lines
-    CubeExtents,
 }
 
 #[repr(C)]

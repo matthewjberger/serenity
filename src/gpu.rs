@@ -84,17 +84,15 @@ impl Gpu {
             .await
             .expect("Failed to request adapter!");
 
-        let required_features = wgpu::Features::PUSH_CONSTANTS
-            | wgpu::Features::TEXTURE_BINDING_ARRAY
-            | wgpu::Features::POLYGON_MODE_LINE;
-        let optional_features = wgpu::Features::POLYGON_MODE_POINT;
+        let required_features =
+            wgpu::Features::PUSH_CONSTANTS | wgpu::Features::TEXTURE_BINDING_ARRAY;
 
         let (device, queue) = {
             log::info!("WGPU Adapter Features: {:#?}", adapter.features());
             adapter
                 .request_device(
                     &wgpu::DeviceDescriptor {
-                        features: (optional_features & adapter.features()) | required_features,
+                        features: adapter.features() | required_features,
                         limits: wgpu::Limits {
                             max_sampled_textures_per_shader_stage: 128,
                             max_push_constant_size: 256,
