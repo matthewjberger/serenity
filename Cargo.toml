@@ -19,6 +19,7 @@ egui_extras = { version = "0.23.0", features = ["all_loaders"] }
 env_logger = "0.10.2"
 gltf = { version = "1.4.1", features = ["KHR_lights_punctual", "names"] }
 image = "0.24.9"
+ktx2 = "0.3.0"
 log = "0.4.22"
 nalgebra-glm = { version = "0.18.0", features = [
     "serde-serialize",

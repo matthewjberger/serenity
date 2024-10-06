@@ -3,6 +3,7 @@ pub struct Renderer {
     pub gui: crate::gui::Gui,
     pub view: Option<crate::view::WorldRender>,
     pub debug: crate::debug::DebugRender,
+    pub sky: crate::sky::SkyRender,
     pub depth_texture_view: wgpu::TextureView,
 }
 
@@ -20,11 +21,13 @@ impl Renderer {
             gpu.create_depth_texture(gpu.surface_config.width, gpu.surface_config.height);
         let gui = crate::gui::Gui::new(&window, &gpu, scale_factor);
         let debug = crate::debug::DebugRender::new(&gpu);
+        let sky = crate::sky::SkyRender::new(&gpu);
         Self {
             gpu,
             gui,
             view: None,
             debug,
+            sky,
             depth_texture_view,
         }
     }
@@ -132,6 +135,8 @@ impl Renderer {
             if let Some(view) = self.view.as_mut() {
                 view.render(&mut render_pass, &self.gpu, context);
             }
+
+            self.sky.render(&mut render_pass, &self.gpu, context);
 
             self.gui
                 .renderer
