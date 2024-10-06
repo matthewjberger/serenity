@@ -6,6 +6,7 @@ pub mod gui;
 pub mod io;
 pub mod physics;
 pub mod render;
+pub mod sky;
 pub mod view;
 pub mod world;
 
