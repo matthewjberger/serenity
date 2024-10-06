@@ -406,6 +406,9 @@ impl WorldRender {
                                         shader_material.base_color = material.base_color_factor;
                                         shader_material.base_texture_index =
                                             material.base_color_texture_index as _;
+                                        shader_material.emissive_texture_index =
+                                            material.emissive_texture_index as _;
+                                        shader_material.emissive_factor = material.emissive_factor;
                                         shader_material.alpha_mode = material.alpha_mode as _;
                                         shader_material.alpha_cutoff =
                                             material.alpha_cutoff.unwrap_or(0.5);
@@ -414,6 +417,7 @@ impl WorldRender {
                                         shader_material.base_color =
                                             nalgebra_glm::vec4(0.5, 0.5, 0.5, 1.0);
                                         shader_material.base_texture_index = -1;
+                                        shader_material.emissive_texture_index = -1;
                                         shader_material.alpha_mode = 0;
                                         shader_material.alpha_cutoff = 0.5;
                                     }
@@ -618,7 +622,7 @@ fn create_pipeline(
             bind_group_layouts,
             push_constant_ranges: &[wgpu::PushConstantRange {
                 stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                range: 0..32, // 1 byte
+                range: 0..(std::mem::size_of::<Material>() as _),
             }],
         });
 
@@ -707,7 +711,9 @@ pub struct DynamicUniform {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Material {
     pub base_color: nalgebra_glm::Vec4,
+    pub emissive_factor: nalgebra_glm::Vec3,
     pub base_texture_index: i32,
+    pub emissive_texture_index: i32,
     pub alpha_mode: i32,
     pub alpha_cutoff: f32,
     pub sampler_index: i32,
@@ -716,8 +722,10 @@ struct Material {
 impl Default for Material {
     fn default() -> Self {
         Self {
-            base_color: nalgebra_glm::vec4(0.0, 1.0, 0.0, 1.0),
+            base_color: nalgebra_glm::vec4(0.5, 0.5, 0.5, 1.0),
+            emissive_factor: nalgebra_glm::zero(),
             base_texture_index: -1,
+            emissive_texture_index: -1,
             alpha_mode: 0,
             alpha_cutoff: 0.5,
             sampler_index: 0,
@@ -749,7 +757,9 @@ var sampler_array: binding_array<sampler>;
 
 struct Material {
     base_color: vec4<f32>,
+    emissive_factor: vec3<f32>,
     base_texture_index: i32,
+    emissive_texture_index: i32,
     alpha_mode: i32,
     alpha_cutoff: f32,
     sampler_index: i32,
@@ -790,7 +800,11 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     if material.base_texture_index > -1 {
         base_color *= textureSampleLevel(texture_array[material.base_texture_index], sampler_array[material.sampler_index], in.tex_coord, 0.0);
-    } 
+    }
+
+    if material.emissive_texture_index > -1 {
+        base_color += textureSampleLevel(texture_array[material.emissive_texture_index], sampler_array[material.sampler_index], in.tex_coord, 0.0) * vec4(material.emissive_factor, 1.0);
+    }
 
     if material.alpha_mode == 1 && base_color.a < material.alpha_cutoff {
         discard;
