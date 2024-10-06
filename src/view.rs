@@ -326,7 +326,18 @@ impl WorldRender {
                         model: context
                             .world
                             .global_transform(&scene.graph, graph_node_index),
+                        joint_count: 0,
+                        joint_offset: 0,
+                        ..Default::default()
                     };
+
+                    let node_index = scene.graph[graph_node_index];
+                    let skin_index = context.world.nodes[node_index].skin_index;
+                    if let Some(skin_index) = skin_index {
+                        let skin = &context.world.skins[skin_index];
+                        mesh_ubos[ubo_index].joint_offset = skin.joints.len() as _;
+                        mesh_ubos[ubo_index].joint_count = mesh_ubos[ubo_index].joint_count;
+                    }
                 });
             gpu.queue
                 .write_buffer(&self.dynamic_uniform_buffer, 0, unsafe {
@@ -705,6 +716,10 @@ impl crate::world::Vertex {
 #[derive(Default, Copy, Clone, Debug, bytemuck::Zeroable)]
 pub struct DynamicUniform {
     pub model: nalgebra_glm::Mat4,
+    pub number_of_joints: i32,
+    pub joint_count: i32,
+    pub joint_offset: i32,
+    pub _padding: nalgebra_glm::Vec2,
 }
 
 #[repr(C)]
@@ -745,6 +760,8 @@ var<uniform> ubo: Uniform;
 
 struct DynamicUniform {
     model: mat4x4<f32>,
+    joint_count: i32,
+    joint_offset: i32,
 };
 
 @group(1) @binding(0)

@@ -51,6 +51,7 @@ impl World {
             rigid_body_index: None,
             primitive_mesh_index: None,
             aabb_index: None,
+            skin_index: None,
         };
         self.nodes.push(node);
         node_index
@@ -99,6 +100,12 @@ impl World {
             }
             None => transform,
         }
+    }
+
+    pub fn joint_matrices(&self) -> Vec<nalgebra_glm::Mat4> {
+        let mut offset = 0;
+        let mut number_of_joints = 0;
+        vec![]
     }
 }
 
@@ -520,6 +527,7 @@ pub struct Node {
     pub light_index: Option<usize>,
     pub rigid_body_index: Option<usize>,
     pub primitive_mesh_index: Option<usize>,
+    pub skin_index: Option<usize>,
     pub aabb_index: Option<usize>,
 }
 

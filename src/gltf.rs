@@ -172,6 +172,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
     let (mut scenes, mut nodes, mut transforms, mut metadata) = {
         let mut nodes = Vec::new();
         let mut transforms = Vec::new();
+        let mut skins = Vec::new();
         let mut metadata = Vec::new();
         let scenes = gltf
             .scenes()
@@ -183,6 +184,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                     nodes: &mut Vec<crate::world::Node>,
                     transforms: &mut Vec<crate::world::Transform>,
                     metadata: &mut Vec<crate::world::NodeMetadata>,
+                    skins: &mut Vec<crate::world::Skin>,
                 ) {
                     let transform_index = transforms.len();
                     transforms.push(crate::world::Transform::from(node.transform().decomposed()));
@@ -217,6 +219,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                             nodes,
                             transforms,
                             metadata,
+                            skins,
                         );
                     });
                 }
@@ -240,6 +243,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                     light_index: None,
                     rigid_body_index: None,
                     primitive_mesh_index: None,
+                    skin_index: None,
                     aabb_index: None,
                 });
 
@@ -252,6 +256,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
                         &mut nodes,
                         &mut transforms,
                         &mut metadata,
+                        &mut skins,
                     );
                 });
                 scene
@@ -382,6 +387,7 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         rigid_body_index: None,
         primitive_mesh_index: None,
         aabb_index: None,
+        skin_index: None,
     });
 
     let camera_graph_node_index = scenes[0].graph.add_node(node_index);
@@ -626,6 +632,37 @@ impl From<gltf::mesh::Mode> for crate::world::PrimitiveTopology {
         }
     }
 }
+
+// fn load_skin(skin: &gltf::Skin, buffers: &[gltf::buffer::Data], entities: &[Entity]) -> Skin {
+//     let reader = skin.reader(|buffer| Some(&buffers[buffer.index()]));
+//     let inverse_bind_matrices = reader
+//         .read_inverse_bind_matrices()
+//         .map_or(Vec::new(), |matrices| {
+//             matrices.map(glm::Mat4::from).collect::<Vec<_>>()
+//         });
+//     let joints = load_joints(skin, &inverse_bind_matrices, entities);
+//     let name = skin.name().unwrap_or(DEFAULT_NAME).to_string();
+//     Skin { name, joints }
+// }
+
+// fn load_joints(
+//     skin: &gltf::Skin,
+//     inverse_bind_matrices: &[glm::Mat4],
+//     entities: &[Entity],
+// ) -> Vec<Joint> {
+//     skin.joints()
+//         .enumerate()
+//         .map(|(index, joint_node)| {
+//             let inverse_bind_matrix = *inverse_bind_matrices
+//                 .get(index)
+//                 .unwrap_or(&glm::Mat4::identity());
+//             Joint {
+//                 inverse_bind_matrix,
+//                 target: entities[joint_node.index()],
+//             }
+//         })
+//         .collect()
+// }
 
 #[cfg(test)]
 mod tests {
