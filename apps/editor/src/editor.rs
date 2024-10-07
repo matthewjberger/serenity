@@ -568,7 +568,6 @@ impl serenity::app::State for Editor {
                             });
                     });
                 }
-
                 ui.allocate_space(ui.available_size());
             });
 
@@ -749,7 +748,12 @@ fn node_ui(
                 .as_ref()
                 .map(|index| *index == graph_node_index)
                 .unwrap_or_default();
-            let response = ui.selectable_label(selected, format!("🔴 {name}"));
+            let prefix = if world.nodes[node_index].camera_index.is_some() {
+                "🎥"
+            } else {
+                "🔴"
+            };
+            let response = ui.selectable_label(selected, format!("{prefix} {name}"));
             if response.clicked() {
                 *selected_graph_node_index = Some(graph_node_index);
             }
