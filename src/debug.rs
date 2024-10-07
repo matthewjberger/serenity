@@ -552,18 +552,43 @@ fn create_grid_buffers(gpu: &crate::gpu::Gpu) -> (wgpu::Buffer, wgpu::Buffer) {
     let grid_color = glm::vec4(0.5, 0.5, 0.5, 1.0);
     let half_size = (GRID_SIZE as f32 * GRID_STEP) / 2.0;
 
+    // X-axis (red)
+    instances.push(LineInstance {
+        start: glm::vec3(-half_size, 0.0, 0.0),
+        end: glm::vec3(half_size, 0.0, 0.0),
+        color: glm::vec4(1.0, 0.0, 0.0, 1.0),
+    });
+
+    // Y-axis (green)
+    instances.push(LineInstance {
+        start: glm::vec3(0.0, -half_size, 0.0),
+        end: glm::vec3(0.0, half_size, 0.0),
+        color: glm::vec4(0.0, 1.0, 0.0, 1.0),
+    });
+
+    // Z-axis (blue)
+    instances.push(LineInstance {
+        start: glm::vec3(0.0, 0.0, -half_size),
+        end: glm::vec3(0.0, 0.0, half_size),
+        color: glm::vec4(0.0, 0.0, 1.0, 1.0),
+    });
+
+    // Create grid lines
     for i in 0..=GRID_SIZE {
         let pos = i as f32 * GRID_STEP - half_size;
-        instances.push(LineInstance {
-            start: glm::vec3(pos, 0.0, -half_size),
-            end: glm::vec3(pos, 0.0, half_size),
-            color: grid_color,
-        });
-        instances.push(LineInstance {
-            start: glm::vec3(-half_size, 0.0, pos),
-            end: glm::vec3(half_size, 0.0, pos),
-            color: grid_color,
-        });
+        if pos != 0.0 {
+            // Skip the center lines as they're covered by the axes
+            instances.push(LineInstance {
+                start: glm::vec3(pos, 0.0, -half_size),
+                end: glm::vec3(pos, 0.0, half_size),
+                color: grid_color,
+            });
+            instances.push(LineInstance {
+                start: glm::vec3(-half_size, 0.0, pos),
+                end: glm::vec3(half_size, 0.0, pos),
+                color: grid_color,
+            });
+        }
     }
 
     let instance_buffer = gpu
