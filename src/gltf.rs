@@ -398,8 +398,6 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         .collect::<Vec<_>>();
     cameras.extend_from_slice(&gltf_cameras);
 
-    let physics = crate::physics::PhysicsWorld::default();
-
     let mut aabbs = Vec::new();
     scenes.iter().for_each(|scene| {
         scene.graph.node_indices().for_each(|graph_node_index| {
@@ -440,7 +438,6 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         textures,
         transforms,
         vertices,
-        physics,
         primitive_meshes: vec![],
         aabbs,
     }

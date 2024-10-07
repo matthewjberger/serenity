@@ -15,5 +15,6 @@ pub use egui;
 pub use log;
 pub use nalgebra_glm;
 pub use petgraph;
+pub use rapier3d;
 pub use uuid;
 pub use winit;

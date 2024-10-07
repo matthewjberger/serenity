@@ -17,10 +17,65 @@ pub struct World {
     pub vertices: Vec<Vertex>,
     pub primitive_meshes: Vec<PrimitiveMesh>,
     pub aabbs: Vec<AxisAlignedBoundingBox>,
-    pub physics: crate::physics::PhysicsWorld,
 }
 
 impl World {
+    pub fn print_scene_debug_info(&self, scene_index: usize) {
+        let scene = &self.scenes[scene_index];
+        for node_index in scene.graph.node_indices() {
+            let node = &self.nodes[scene.graph[node_index]];
+            let metadata = &self.metadata[node.metadata_index];
+            println!(
+                "Node: {} ({}), Parent: {:?}",
+                metadata.name,
+                node_index.index(),
+                scene
+                    .graph
+                    .neighbors_directed(node_index, petgraph::Direction::Incoming)
+                    .next()
+            );
+        }
+    }
+
+    pub fn get_ancestors(&self, scene_index: usize, node_index: usize) -> Vec<usize> {
+        let scene = &self.scenes[scene_index];
+        let mut ancestors = Vec::new();
+        let mut current_node_index = scene
+            .graph
+            .node_indices()
+            .find(|&i| scene.graph[i] == node_index);
+
+        while let Some(node_index) = current_node_index {
+            if let Some(parent_index) = scene
+                .graph
+                .neighbors_directed(node_index, petgraph::Direction::Incoming)
+                .next()
+            {
+                ancestors.push(scene.graph[parent_index]);
+                current_node_index = Some(parent_index);
+            } else {
+                break;
+            }
+        }
+
+        ancestors
+    }
+
+    pub fn get_parent(&self, scene_index: usize, node_index: usize) -> Option<usize> {
+        let scene = &self.scenes[scene_index];
+        scene
+            .graph
+            .neighbors_directed(
+                scene
+                    .graph
+                    .node_indices()
+                    .find(|&i| scene.graph[i] == node_index)?,
+                petgraph::Direction::Incoming,
+            )
+            .next()
+            .map(|parent_index| scene.graph[parent_index])
+    }
+
     pub fn add_child_node(
         &mut self,
         scene_index: usize,
@@ -65,14 +120,6 @@ impl World {
         let camera_index = self.cameras.len();
         self.cameras.push(camera);
         node.camera_index = Some(camera_index);
-    }
-
-    pub fn add_rigid_body_to_node(&mut self, node_index: usize) {
-        let node = &mut self.nodes[node_index];
-        let rigid_body_index = self
-            .physics
-            .add_rigid_body(nalgebra_glm::Vec3::new(0.0, 0.0, 0.0));
-        node.rigid_body_index = Some(rigid_body_index);
     }
 
     pub fn add_primitive_mesh_to_node(&mut self, node_index: usize, primitive_mesh: PrimitiveMesh) {
@@ -669,6 +716,10 @@ impl AxisAlignedBoundingBox {
 
     pub fn extents(&self) -> nalgebra_glm::Vec3 {
         self.max - self.min
+    }
+
+    pub fn half_extents(&self) -> nalgebra_glm::Vec3 {
+        self.extents() / 2.0
     }
 
     pub fn center(&self) -> nalgebra_glm::Vec3 {

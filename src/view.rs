@@ -316,16 +316,22 @@ impl WorldRender {
                 }]),
             );
 
+            // TODO (matt): physics enabled nodes should render at their local transform
+            //              or a separate physics transform that we update
+            //              Also the transforms.len() is probably not right, should walk first and find out how many transforms we actually need
             let mut mesh_ubos = vec![DynamicUniform::default(); context.world.transforms.len()];
             scene
                 .graph
                 .node_indices()
                 .enumerate()
                 .for_each(|(ubo_index, graph_node_index)| {
+                    let node_index = scene.graph[graph_node_index];
+                    let transform_index = context.world.nodes[node_index].transform_index;
                     mesh_ubos[ubo_index] = DynamicUniform {
-                        model: context
-                            .world
-                            .global_transform(&scene.graph, graph_node_index),
+                        // TODO: use this for normal rendering
+                        // model: context.world.global_transform(&scene.graph, graph_node_index),
+                        // TODO: use this for physics rendering
+                        model: context.world.transforms[transform_index].matrix(),
                     };
                 });
             gpu.queue

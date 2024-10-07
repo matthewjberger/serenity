@@ -1,5 +1,12 @@
+use std::collections::HashMap;
+
 use serenity::{
-    egui, nalgebra_glm, petgraph,
+    egui, log, nalgebra_glm, petgraph,
+    physics::PhysicsWorld,
+    rapier3d::{
+        na::Vector3,
+        prelude::{AngVector, ColliderBuilder, RigidBodyBuilder, RigidBodyHandle, RigidBodyType},
+    },
     winit::{self, dpi::PhysicalSize},
     world::NodeMetadata,
 };
@@ -16,10 +23,7 @@ pub struct Editor {
     command_history: std::collections::VecDeque<Command>,
     redo_stack: Vec<Command>,
     uniform_scaling: bool,
-    physics_world_backup: Option<(
-        serenity::physics::PhysicsWorld,
-        Vec<serenity::world::Transform>,
-    )>,
+    rigid_body_handles: HashMap<RigidBodyHandle, usize>,
 }
 
 impl Editor {
@@ -42,7 +46,7 @@ impl Editor {
             command_history: std::collections::VecDeque::new(),
             redo_stack: Vec::new(),
             uniform_scaling: true,
-            physics_world_backup: None,
+            rigid_body_handles: HashMap::new(),
         }
     }
 
@@ -91,6 +95,7 @@ impl Editor {
     }
 
     fn receive_messages(&mut self, context: &mut serenity::app::Context) {
+        let mut reset_physics = false;
         while let Some(message) = self.client.borrow().next_message() {
             match message {
                 Message::Command(command) => {
@@ -108,6 +113,7 @@ impl Editor {
                             self.redo_stack = Vec::new();
                             self.command_history = std::collections::VecDeque::new();
                             context.import_file(&path);
+                            reset_physics = true;
                         }
                         Command::Translate(node_index, x, y, z) => {
                             translate_node(context, node_index, x, y, z);
@@ -150,6 +156,9 @@ impl Editor {
                     });
                 }
             }
+        }
+        if reset_physics {
+            self.setup_physics(context);
         }
     }
 
@@ -234,17 +243,59 @@ impl Editor {
         }
     }
 
-    fn backup_physics_world(&mut self, context: &mut serenity::app::Context) {
-        self.physics_world_backup = Some((
-            context.world.physics.clone(),
-            context.world.transforms.clone(),
-        ))
-    }
+    fn setup_physics(&mut self, context: &mut serenity::app::Context) {
+        self.rigid_body_handles = HashMap::new();
+        context.physics = PhysicsWorld::new();
 
-    fn restore_physics_world(&mut self, context: &mut serenity::app::Context) {
-        if let Some((physics_world, transforms)) = self.physics_world_backup.take() {
-            context.world.physics = physics_world;
-            context.world.transforms = transforms;
+        context.world.print_scene_debug_info(0);
+
+        // Create the ground
+        let collider = ColliderBuilder::cuboid(1000.0, 0.0, 1000.0).build();
+        context.physics.colliders.insert(collider);
+
+        // Add a rigid body to the physics world for every mesh that has no ancestors with a mesh
+
+        for (node_index, node) in context.world.nodes.iter().enumerate() {
+            let has_mesh = context.world.nodes[node_index].mesh_index.is_some();
+            if !has_mesh {
+                continue;
+            }
+            // let ancestors = context.world.get_ancestors(0, node_index);
+            // log::info!("Node {node_index} has ancestors: {ancestors:?}",);
+            // let mut ancestor_has_mesh = false;
+            // for ancestor_node_index in ancestors {
+            //     if context.world.nodes[ancestor_node_index]
+            //         .mesh_index
+            //         .is_some()
+            //     {
+            //         ancestor_has_mesh = true;
+            //         break;
+            //     }
+            // }
+            if has_mesh {
+                let transform = &context.world.transforms[node.transform_index];
+                let rotation = nalgebra_glm::quat_euler_angles(&transform.rotation);
+                let rigid_body = RigidBodyBuilder::new(RigidBodyType::Dynamic)
+                    .translation(Vector3::new(
+                        transform.translation.x,
+                        transform.translation.y,
+                        transform.translation.z,
+                    ))
+                    .rotation(AngVector::new(rotation.x, rotation.y, rotation.z))
+                    .build();
+                let handle = context.physics.rigid_bodies.insert(rigid_body);
+                let dimensions = context.world.aabbs[node.aabb_index.unwrap()].half_extents();
+                let collider = ColliderBuilder::ball(1.0).restitution(0.7).build();
+                // let collider = ColliderBuilder::cuboid(dimensions.x, dimensions.y, dimensions.z).build();
+
+                context.physics.colliders.insert_with_parent(
+                    collider,
+                    handle,
+                    &mut context.physics.rigid_bodies,
+                );
+                self.rigid_body_handles.insert(handle, node_index);
+                log::info!("Added rigid body to node index: {node_index}");
+            }
         }
     }
 }
@@ -283,6 +334,7 @@ fn scale_node(context: &mut serenity::app::Context, node_index: usize, x: f32, y
 impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
         context.import_file("resources/models/Lantern.glb");
+        self.setup_physics(context);
     }
 
     fn receive_event(
@@ -346,6 +398,23 @@ impl serenity::app::State for Editor {
     }
 
     fn update(&mut self, context: &mut serenity::app::Context) {
+        // Sync all mesh transform nodes to their rigid body transform
+        for (rigid_body_handle, node_index) in self.rigid_body_handles.iter() {
+            log::info!("Updating transform for node index: {node_index}");
+            let rigid_body = context
+                .physics
+                .rigid_bodies
+                .get(*rigid_body_handle)
+                .unwrap();
+            let transform =
+                &mut context.world.transforms[context.world.nodes[*node_index].transform_index];
+            transform.translation.x = rigid_body.translation().x;
+            transform.translation.y = rigid_body.translation().y;
+            transform.translation.z = rigid_body.translation().z;
+            let rotation = rigid_body.rotation().quaternion();
+            transform.rotation = nalgebra_glm::quat(rotation.i, rotation.j, rotation.k, rotation.w);
+        }
+
         self.receive_messages(context);
 
         if let Some(active_scene_index) = context.active_scene_index {
@@ -384,6 +453,18 @@ impl serenity::app::State for Editor {
             if context.io.is_key_pressed(winit::event::VirtualKeyCode::D) {
                 camera.orientation.offset -= camera.orientation.right() * speed;
                 sync_transform = true;
+            }
+
+            if context.io.is_key_pressed(winit::event::VirtualKeyCode::E) {
+                // apply an upward impulse to every rigid body
+                for (rigid_body_handle, _) in self.rigid_body_handles.iter() {
+                    let rigid_body = context
+                        .physics
+                        .rigid_bodies
+                        .get_mut(*rigid_body_handle)
+                        .unwrap();
+                    rigid_body.apply_impulse([0.2, 4.0, 0.2].into(), true);
+                }
             }
 
             if context
@@ -529,21 +610,6 @@ impl serenity::app::State for Editor {
                                 "Local",
                             );
                         });
-
-                    ui.separator();
-
-                    ui.horizontal(|ui| {
-                        if ui
-                            .checkbox(&mut context.physics_enabled, "Enable Physics")
-                            .clicked()
-                        {
-                            if context.physics_enabled {
-                                self.backup_physics_world(context);
-                            } else {
-                                self.restore_physics_world(context);
-                            }
-                        }
-                    });
                 });
             });
 
@@ -641,8 +707,7 @@ impl serenity::app::State for Editor {
 
 #[derive(Default)]
 pub struct Broker {
-    pub subscribers:
-        std::collections::HashMap<String, Vec<std::rc::Weak<std::cell::RefCell<Client>>>>,
+    pub subscribers: HashMap<String, Vec<std::rc::Weak<std::cell::RefCell<Client>>>>,
 }
 
 impl Broker {
