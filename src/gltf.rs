@@ -626,27 +626,3 @@ impl From<gltf::mesh::Mode> for crate::world::PrimitiveTopology {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[ignore]
-    #[test]
-    fn import() {
-        let world = crate::gltf::import_gltf("resources/models/DamagedHelmet.glb");
-        println!("{} textures", world.textures.len());
-        println!("{} images", world.images.len());
-        println!("{} samplers", world.samplers.len());
-        println!("{} materials", world.materials.len());
-        println!("{} meshes", world.meshes.len());
-        println!("{} vertices", world.vertices.len());
-        println!("{} indices", world.indices.len());
-        println!("{} nodes", world.nodes.len());
-        println!("{} transforms", world.transforms.len());
-        println!("{} metadata", world.metadata.len());
-        println!("{} scenes", world.scenes.len());
-        println!("{} skins", world.skins.len());
-        println!("{} animations", world.animations.len());
-        println!("{} cameras", world.cameras.len());
-        println!("{} lights", world.lights.len());
-    }
-}

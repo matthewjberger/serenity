@@ -20,6 +20,7 @@ pub struct Editor {
         serenity::physics::PhysicsWorld,
         Vec<serenity::world::Transform>,
     )>,
+    animation_enabled: bool,
 }
 
 impl Editor {
@@ -43,6 +44,7 @@ impl Editor {
             redo_stack: Vec::new(),
             uniform_scaling: true,
             physics_world_backup: None,
+            animation_enabled: false,
         }
     }
 
@@ -348,6 +350,10 @@ impl serenity::app::State for Editor {
     fn update(&mut self, context: &mut serenity::app::Context) {
         self.receive_messages(context);
 
+        if self.animation_enabled && !context.world.animations.is_empty() {
+            context.world.animate(0, 0.75 * context.delta_time as f32);
+        }
+
         if let Some(active_scene_index) = context.active_scene_index {
             let scene = &context.world.scenes[active_scene_index];
             let camera_node_index = scene.graph[scene.default_camera_graph_node_index];
@@ -543,6 +549,7 @@ impl serenity::app::State for Editor {
                                 self.restore_physics_world(context);
                             }
                         }
+                        ui.checkbox(&mut self.animation_enabled, "Enable Animation");
                     });
                 });
             });
@@ -568,6 +575,17 @@ impl serenity::app::State for Editor {
                             });
                     });
                 }
+                ui.separator();
+                ui.group(|ui| {
+                    egui::ScrollArea::vertical()
+                        .id_source(ui.next_auto_id())
+                        .show(ui, |ui| {
+                            ui.label(format!(
+                                "Loaded {} animations",
+                                context.world.animations.len()
+                            ));
+                        });
+                });
 
                 ui.allocate_space(ui.available_size());
             });
@@ -749,7 +767,13 @@ fn node_ui(
                 .as_ref()
                 .map(|index| *index == graph_node_index)
                 .unwrap_or_default();
-            let response = ui.selectable_label(selected, format!("🔴 {name}"));
+            let prefix =
+            if world.nodes[node_index].camera_index.is_some() {
+                "🎥"
+            } else {
+                "🔴"
+            };
+            let response = ui.selectable_label(selected, format!("{prefix} {name}"));
             if response.clicked() {
                 *selected_graph_node_index = Some(graph_node_index);
             }
