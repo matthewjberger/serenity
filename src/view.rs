@@ -802,12 +802,12 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
         base_color *= textureSampleLevel(texture_array[material.base_texture_index], sampler_array[material.sampler_index], in.tex_coord, 0.0);
     }
 
-    if material.emissive_texture_index > -1 {
-        base_color += textureSampleLevel(texture_array[material.emissive_texture_index], sampler_array[material.sampler_index], in.tex_coord, 0.0) * vec4(material.emissive_factor, 1.0);
-    }
-
     if material.alpha_mode == 1 && base_color.a < material.alpha_cutoff {
         discard;
+    }
+
+    if material.emissive_texture_index > -1 {
+        base_color += textureSampleLevel(texture_array[material.emissive_texture_index], sampler_array[material.sampler_index], in.tex_coord, 0.0) * vec4(material.emissive_factor, 1.0);
     }
 
     var color = base_color.rgb * in.color;
