@@ -158,7 +158,7 @@ impl Editor {
             }
         }
         if reset_physics {
-            self.setup_physics(context);
+            // self.setup_physics(context);
         }
     }
 
@@ -334,7 +334,7 @@ fn scale_node(context: &mut serenity::app::Context, node_index: usize, x: f32, y
 impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
         context.import_file("resources/models/Lantern.glb");
-        self.setup_physics(context);
+        // self.setup_physics(context);
     }
 
     fn receive_event(

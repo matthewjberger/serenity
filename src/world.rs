@@ -162,6 +162,16 @@ pub struct PrimitiveMesh {
 pub enum Shape {
     #[default]
     Cube,
+    Sphere {
+        radius: f32,
+    },
+    Capsule {
+        radius: f32,
+        height: f32,
+    },
+    Cuboid {
+        half_extents: nalgebra_glm::Vec3,
+    },
 }
 
 #[repr(C)]

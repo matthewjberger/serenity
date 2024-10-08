@@ -36,12 +36,28 @@ impl Context {
             .node_indices()
             .for_each(|graph_node_index| {
                 let node_index = self.world.scenes[scene_index].graph[graph_node_index];
-                let primitive_mesh = crate::world::PrimitiveMesh {
-                    shape: crate::world::Shape::Cube,
-                    color: nalgebra_glm::vec4(0.983, 0.486, 0.0, 1.0),
-                };
-                self.world
-                    .add_primitive_mesh_to_node(node_index, primitive_mesh);
+                // let primitive_mesh = crate::world::PrimitiveMesh {
+                //     shape: crate::world::Shape::Cube,
+                //     color: nalgebra_glm::vec4(0.983, 0.486, 0.0, 1.0),
+                // };
+                if let Some(mesh) = self.world.meshes.get(node_index) {
+                    if let Some(aabb_index) = self.world.nodes[node_index].aabb_index {
+                        let aabb = self.world.aabbs[aabb_index];
+                        let half_extents = aabb.half_extents();
+                        let primitive_mesh = crate::world::PrimitiveMesh {
+                            // shape: crate::world::Shape::Capsule {
+                            //     radius: half_extents.x,
+                            //     height: half_extents.y,
+                            // },
+                            shape: crate::world::Shape::Cuboid {
+                                half_extents: aabb.half_extents(),
+                            },
+                            color: nalgebra_glm::vec4(0.983, 0.486, 0.0, 1.0),
+                        };
+                        self.world
+                            .add_primitive_mesh_to_node(node_index, primitive_mesh);
+                    }
+                }
             });
     }
 }
