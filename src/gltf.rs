@@ -18,22 +18,36 @@ pub fn import_gltf(path: impl AsRef<std::path::Path>) -> crate::world::World {
         .collect::<Vec<_>>();
     let materials = gltf
         .materials()
-        .map(|material| crate::world::Material {
-            base_color_factor: nalgebra_glm::Vec4::from(
-                material.pbr_metallic_roughness().base_color_factor(),
-            ),
-            alpha_mode: material.alpha_mode().into(),
-            alpha_cutoff: material.alpha_cutoff(),
-            base_color_texture_index: material
+        .map(|material| {
+            // We should load both the pbr_metallic_roughness() and pbr_specular_glossiness()
+            // so they are available separately in the shader
+            let mut base_color_texture_index = material
                 .pbr_metallic_roughness()
                 .base_color_texture()
                 .map(|texture| texture.texture().index())
-                .unwrap_or_default(),
-            emissive_factor: material.emissive_factor().into(),
-            emissive_texture_index: material
-                .emissive_texture()
-                .map(|texture| texture.texture().index())
-                .unwrap_or_default(),
+                .unwrap_or_default();
+            let mut base_color_factor =
+                nalgebra_glm::Vec4::from(material.pbr_metallic_roughness().base_color_factor());
+            if base_color_texture_index == 0 {
+                if let Some(pbr) = material.pbr_specular_glossiness() {
+                    base_color_texture_index = pbr
+                        .diffuse_texture()
+                        .map_or(0, |texture| texture.texture().index());
+                    base_color_factor = nalgebra_glm::Vec4::from(pbr.diffuse_factor());
+                }
+            }
+
+            crate::world::Material {
+                base_color_factor,
+                alpha_mode: material.alpha_mode().into(),
+                alpha_cutoff: material.alpha_cutoff(),
+                base_color_texture_index,
+                emissive_factor: material.emissive_factor().into(),
+                emissive_texture_index: material
+                    .emissive_texture()
+                    .map(|texture| texture.texture().index())
+                    .unwrap_or_default(),
+            }
         })
         .collect::<Vec<_>>();
 
