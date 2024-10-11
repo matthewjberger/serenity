@@ -329,9 +329,11 @@ impl WorldRender {
                     let transform_index = context.world.nodes[node_index].transform_index;
                     mesh_ubos[ubo_index] = DynamicUniform {
                         // TODO: use this for normal rendering
-                        // model: context.world.global_transform(&scene.graph, graph_node_index),
+                        model: context
+                            .world
+                            .global_transform(&scene.graph, graph_node_index),
                         // TODO: use this for physics rendering
-                        model: context.world.transforms[transform_index].matrix(),
+                        // model: context.world.transforms[transform_index].matrix(),
                     };
                 });
             gpu.queue

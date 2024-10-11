@@ -162,6 +162,8 @@ pub struct PrimitiveMesh {
 pub enum Shape {
     #[default]
     Cube,
+    Sphere,
+    Capsule,
 }
 
 #[repr(C)]

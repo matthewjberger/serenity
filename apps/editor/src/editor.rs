@@ -158,7 +158,7 @@ impl Editor {
             }
         }
         if reset_physics {
-            self.setup_physics(context);
+            // self.setup_physics(context);
         }
     }
 
@@ -284,8 +284,9 @@ impl Editor {
                     .rotation(AngVector::new(rotation.x, rotation.y, rotation.z))
                     .build();
                 let handle = context.physics.rigid_bodies.insert(rigid_body);
-                let dimensions = context.world.aabbs[node.aabb_index.unwrap()].half_extents();
-                let collider = ColliderBuilder::ball(1.0).restitution(0.7).build();
+                let half_extents = context.world.aabbs[node.aabb_index.unwrap()].half_extents();
+                let dimension = half_extents.x.max(half_extents.y).max(half_extents.z);
+                let collider = ColliderBuilder::ball(dimension).restitution(0.7).build();
                 // let collider = ColliderBuilder::cuboid(dimensions.x, dimensions.y, dimensions.z).build();
 
                 context.physics.colliders.insert_with_parent(
@@ -334,7 +335,7 @@ fn scale_node(context: &mut serenity::app::Context, node_index: usize, x: f32, y
 impl serenity::app::State for Editor {
     fn initialize(&mut self, context: &mut serenity::app::Context) {
         context.import_file("resources/models/Lantern.glb");
-        self.setup_physics(context);
+        // self.setup_physics(context);
     }
 
     fn receive_event(
