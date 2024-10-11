@@ -163,7 +163,7 @@ pub enum Shape {
     #[default]
     Cube,
     Sphere,
-    Capsule,
+    Cylinder,
 }
 
 #[repr(C)]

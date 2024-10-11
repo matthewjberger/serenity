@@ -131,7 +131,7 @@ impl DebugRender {
             println!("Debug: Instance buffer size: {}, Instance data size: {}, Calculated instance count: {}",
                         self.instance_buffer.size(), instance_data_size, instance_count);
 
-            [Shape::Cube, Shape::Sphere, Shape::Capsule].iter().for_each(|shape| {
+            [Shape::Cube, Shape::Sphere, Shape::Cylinder].iter().for_each(|shape| {
                 let mut shape_instance_count = 0;
                 scene.graph.node_indices().for_each(|graph_node_index| {
                     let node_index = scene.graph[graph_node_index];
@@ -168,7 +168,7 @@ impl DebugRender {
                                     shape_instance_count..(shape_instance_count + 1),
                                 );
                             }
-                            Shape::Capsule => {
+                            Shape::Cylinder => {
                                 render_pass.draw_indexed(
                                     (self.cube_indices_count + self.sphere_indices_count)..
                                         (self.cube_indices_count + self.sphere_indices_count + self.capsule_indices_count),
